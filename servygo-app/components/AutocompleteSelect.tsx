@@ -183,7 +183,7 @@ export default function AutocompleteSelect({
                 Wyczyść
               </button>
             ) : null}
-            <div className="space-y-1">
+            <div className="space-y-1 overflow-y-auto" style={{ maxHeight: "calc(70vh - 140px)" }}>
               {filteredOptions.length === 0 ? (
                 <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
               ) : (

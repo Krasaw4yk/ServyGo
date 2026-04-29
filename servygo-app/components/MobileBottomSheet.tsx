@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 type MobileBottomSheetProps = {
   isOpen: boolean;
@@ -17,8 +17,22 @@ export default function MobileBottomSheet({
   children,
   isDark = false,
 }: MobileBottomSheetProps) {
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const [isActive, setIsActive] = useState(false);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (isOpen) {
+      setShouldRender(true);
+      const frame = window.requestAnimationFrame(() => setIsActive(true));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    setIsActive(false);
+    const timeoutId = window.setTimeout(() => setShouldRender(false), 230);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!shouldRender) return;
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -26,36 +40,40 @@ export default function MobileBottomSheet({
     }
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose]);
+  }, [shouldRender, onClose]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!shouldRender) return;
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = originalOverflow;
     };
-  }, [isOpen]);
+  }, [shouldRender]);
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   return (
     <div className="fixed inset-0 z-[120] sm:hidden">
       <button
         type="button"
         aria-label="Zamknij panel"
-        className="absolute inset-0 bg-zinc-950/55 backdrop-blur-[1px]"
+        className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ease-out ${isActive ? "opacity-100" : "opacity-0"}`}
         onClick={onClose}
       />
       <section
         role="dialog"
         aria-modal="true"
-        className={`absolute bottom-0 left-0 right-0 max-h-[85vh] w-screen overflow-y-auto rounded-t-3xl border-t p-4 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl ${
+        className={`absolute bottom-0 left-0 right-0 w-full max-w-[100vw] overflow-hidden rounded-t-3xl border-t px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-200 ease-out ${
+          isActive ? "translate-y-0" : "translate-y-full"
+        } ${
           isDark
             ? "border-zinc-700 bg-zinc-900 text-zinc-100"
             : "border-blue-200 bg-white text-zinc-900"
         }`}
+        style={{ maxHeight: "min(70vh, 560px)" }}
       >
+        <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-zinc-400/50" />
         <header className="mb-3 flex items-center justify-between gap-3">
           <h3 className="text-base font-semibold">{title}</h3>
           <button
@@ -68,7 +86,9 @@ export default function MobileBottomSheet({
             ✕
           </button>
         </header>
-        {children}
+        <div className="min-w-0 overflow-x-hidden">
+          {children}
+        </div>
       </section>
     </div>
   );

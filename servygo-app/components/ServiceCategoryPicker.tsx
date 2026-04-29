@@ -220,7 +220,7 @@ export default function ServiceCategoryPicker({
                 Wyczyść
               </button>
             ) : null}
-            <div className="max-h-[58vh] overflow-y-auto">
+            <div className="overflow-y-auto" style={{ maxHeight: "calc(70vh - 140px)" }}>
               {normalizeSearchText(query) ? (
                 searchResults.length === 0 ? (
                   <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
