@@ -52,6 +52,7 @@ type ServiceDraftRow = {
   category: string;
   description: string;
   price_from: string;
+  price_to: string;
   duration_minutes: string;
   is_active: boolean;
   is_custom: boolean;
@@ -304,6 +305,7 @@ function WorkshopPanelPageContent() {
     category: "Inne",
     description: "",
     price_from: "",
+    price_to: "",
     duration_minutes: "",
     is_active: true,
   });
@@ -370,6 +372,7 @@ function WorkshopPanelPageContent() {
         category: row.category ?? "Inne",
         description: row.description ?? "",
         price_from: row.price_from == null ? "" : String(row.price_from),
+        price_to: row.price_to == null ? "" : String(row.price_to),
         duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
         is_active: row.is_active,
         is_custom: row.is_custom,
@@ -499,6 +502,7 @@ function WorkshopPanelPageContent() {
                 category: row.category ?? "Inne",
                 description: row.description ?? "",
                 price_from: row.price_from == null ? "" : String(row.price_from),
+                price_to: row.price_to == null ? "" : String(row.price_to),
                 duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
                 is_active: row.is_active,
                 is_custom: row.is_custom,
@@ -727,6 +731,7 @@ function WorkshopPanelPageContent() {
           category: item.category,
           description: "",
           price_from: "",
+          price_to: "",
           duration_minutes: "",
           is_active: false,
           is_custom: false,
@@ -914,7 +919,7 @@ function WorkshopPanelPageContent() {
         const rowKey = row.id ? `id:${row.id}` : `key:${row.service_key ?? row.service_name}`;
         return rowKey === key ? { ...row, ...patch } : row;
       });
-      return merged.filter((r) => r.is_custom || r.service_key !== null || r.is_active || r.price_from || r.duration_minutes);
+      return merged.filter((r) => r.is_custom || r.service_key !== null || r.is_active || r.price_from || r.price_to || r.duration_minutes);
     });
   }
 
@@ -926,7 +931,7 @@ function WorkshopPanelPageContent() {
     setSuccess("");
     try {
       const rows = mergedServiceRows
-        .filter((row) => row.is_custom || row.is_active || row.price_from.trim() || row.duration_minutes.trim())
+        .filter((row) => row.is_custom || row.is_active || row.price_from.trim() || row.price_to.trim() || row.duration_minutes.trim())
         .map((row) => ({
           id: row.id,
           service_key: row.service_key,
@@ -934,6 +939,7 @@ function WorkshopPanelPageContent() {
           category: row.category,
           description: row.description || null,
           price_from: row.price_from.trim() ? Number(row.price_from) : null,
+          price_to: row.price_to.trim() ? Number(row.price_to) : null,
           duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
           is_active: row.is_active,
           is_custom: row.is_custom,
@@ -948,6 +954,7 @@ function WorkshopPanelPageContent() {
           category: row.category ?? "Inne",
           description: row.description ?? "",
           price_from: row.price_from == null ? "" : String(row.price_from),
+          price_to: row.price_to == null ? "" : String(row.price_to),
           duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
           is_active: row.is_active,
           is_custom: row.is_custom,
@@ -1536,6 +1543,7 @@ function WorkshopPanelPageContent() {
                             <th className="px-2 py-2 text-left">Usługa</th>
                             <th className="px-2 py-2 text-left">Oferuję</th>
                             <th className="px-2 py-2 text-left">Cena od</th>
+                            <th className="px-2 py-2 text-left">Cena do</th>
                             <th className="px-2 py-2 text-left">Czas (min)</th>
                             <th className="px-2 py-2 text-left">Status</th>
                           </tr>
@@ -1560,6 +1568,7 @@ function WorkshopPanelPageContent() {
                                 </button>
                               </td>
                               <td className="px-2 py-2"><input disabled={readOnly} value={row.price_from} onChange={(e) => patchServiceRow(row, { price_from: e.target.value })} className="w-36 rounded border border-zinc-300 bg-transparent px-2 py-2 dark:border-zinc-600 disabled:opacity-50" placeholder="np. 150" /></td>
+                              <td className="px-2 py-2"><input disabled={readOnly} value={row.price_to} onChange={(e) => patchServiceRow(row, { price_to: e.target.value })} className="w-36 rounded border border-zinc-300 bg-transparent px-2 py-2 dark:border-zinc-600 disabled:opacity-50" placeholder="np. 220" /></td>
                               <td className="px-2 py-2"><input disabled={readOnly} value={row.duration_minutes} onChange={(e) => patchServiceRow(row, { duration_minutes: e.target.value })} className="w-32 rounded border border-zinc-300 bg-transparent px-2 py-2 dark:border-zinc-600 disabled:opacity-50" placeholder="np. 60" /></td>
                               <td className="px-2 py-2">
                                 <span className={`rounded-full px-2 py-1 text-xs ${row.is_active ? (isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700") : (isDark ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600")}`}>
@@ -1822,6 +1831,7 @@ function WorkshopPanelPageContent() {
                 <input disabled={readOnly} placeholder="Nazwa usługi" value={customServiceDraft.service_name} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, service_name: e.target.value }))} className="sm:col-span-2 rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
                 <input disabled={readOnly} placeholder="Kategoria" value={customServiceDraft.category} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, category: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
                 <input disabled={readOnly} placeholder="Cena od" value={customServiceDraft.price_from} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, price_from: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
+                <input disabled={readOnly} placeholder="Cena do" value={customServiceDraft.price_to} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, price_to: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
                 <input disabled={readOnly} placeholder="Czas (min)" value={customServiceDraft.duration_minutes} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, duration_minutes: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
                 <label className="sm:col-span-2 text-sm">
                   <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Opis</span>
@@ -1846,6 +1856,7 @@ function WorkshopPanelPageContent() {
                         category: customServiceDraft.category.trim() || "Inne",
                         description: customServiceDraft.description.trim(),
                         price_from: customServiceDraft.price_from.trim(),
+                        price_to: customServiceDraft.price_to.trim(),
                         duration_minutes: customServiceDraft.duration_minutes.trim(),
                         is_active: customServiceDraft.is_active,
                         is_custom: true,
@@ -1856,6 +1867,7 @@ function WorkshopPanelPageContent() {
                       category: "Inne",
                       description: "",
                       price_from: "",
+                      price_to: "",
                       duration_minutes: "",
                       is_active: true,
                     });

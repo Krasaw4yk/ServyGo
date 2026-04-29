@@ -39,6 +39,7 @@ Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, 
 16. `supabase/sql/supabase-16-admin-notification-badges.sql` — polityka `profiles_select_admin` (RLS) dla licznika „Użytkownicy (ostatnie 24h)” w badge panelu admina. Uruchom po pliku 15.
 17. `supabase/sql/supabase-17-workshop-availability-and-services.sql` — tabela `workshop_availability_exceptions` (wyjątki kalendarza), rozbudowa `workshop_services` o pola usług/cen (`service_key`, `category`, `description`, `price_from`, `duration_minutes`, `is_active`, `is_custom`) oraz polityki RLS owner/admin i publiczny odczyt tylko aktywnych usług warsztatów `active`. Uruchom po pliku 16.
 18. `supabase/sql/supabase-18-bookings-duration-slots-and-employees.sql` — rozbudowa `bookings` o zakres czasu (`booking_date`, `start_time`, `end_time`, `duration_minutes`), dane klienta/auta i `employee_id`, tabela `workshop_employees`, `required_roles` na `workshop_services`, antykolizyjny constraint dla aktywnych rezerwacji (`new`, `confirmed`) oraz RPC `create_booking_safe(...)` z walidacją kolizji i automatycznym doborem pracownika. Uruchom po pliku 17.
+19. `supabase/sql/supabase-19-workshop-services-price-to.sql` — dodaje kolumnę `price_to` (cena "do") do `workshop_services` i constraint spójności zakresu (`price_to >= price_from`). Uruchom po pliku 18.
 
 ### Opcjonalne / testowe
 
@@ -52,7 +53,7 @@ Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, 
 - `admin_users` — lista administratorów panelu (`owner` / `admin`).
 - `workshops` — zaakceptowane warsztaty; `owner_id` / `owner_user_id` → `auth.users` (właściciel panelu warsztatu, migracja 15); statusy biznesowe: `active`, `suspended`, `hidden` (po migracji 14 publicznie widoczne są tylko `active`; legacy `approved` / `aktywny` są mapowane do `active`); pola `google_maps_url`, `services_summary`, `opening_hours` (po migracjach 13–14).
 - `workshop_leads` — zgłoszenia z formularza (status m.in. `pending`, `approved`, `rejected`, `archived`); pola `services`, `google_maps_url` (po migracji 13).
-- `workshop_services` — usługi przypisane do warsztatu; po migracji 17: `service_key`, `category`, `description`, `price_from`, `duration_minutes`, `is_active`, `is_custom`.
+- `workshop_services` — usługi przypisane do warsztatu; po migracjach 17 i 19: `service_key`, `category`, `description`, `price_from`, `price_to`, `duration_minutes`, `is_active`, `is_custom`.
 - `workshop_employees` — pracownicy warsztatu, role/specjalizacje, aktywność.
 - `workshop_availability_exceptions` — wyjątki dostępności na konkretne dni (`date`, `is_closed`, `open_time`, `close_time`, `note`).
 - `service_requests` — zapytania klientów o usługę.
