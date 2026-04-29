@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 type MobileBottomSheetProps = {
   isOpen: boolean;
@@ -19,6 +20,11 @@ export default function MobileBottomSheet({
 }: MobileBottomSheetProps) {
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isActive, setIsActive] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -51,9 +57,9 @@ export default function MobileBottomSheet({
     };
   }, [shouldRender]);
 
-  if (!shouldRender) return null;
+  if (!shouldRender || !portalReady) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[120] sm:hidden">
       <button
         type="button"
@@ -90,6 +96,7 @@ export default function MobileBottomSheet({
           {children}
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
