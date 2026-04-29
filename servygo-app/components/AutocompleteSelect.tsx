@@ -85,6 +85,7 @@ export default function AutocompleteSelect({
   }, []);
 
   useEffect(() => {
+    if (isMobile) return;
     function handleClickOutside(event: MouseEvent) {
       if (!rootRef.current) return;
       if (!rootRef.current.contains(event.target as Node)) {
@@ -94,7 +95,7 @@ export default function AutocompleteSelect({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isMobile]);
 
   const displayValue = isOpen ? query : selectedOption?.label ?? value;
 
@@ -161,6 +162,10 @@ export default function AutocompleteSelect({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
               placeholder={placeholder ?? "Szukaj..."}
               className={`w-full rounded-xl border px-3 py-2 text-sm ${
                 isDark

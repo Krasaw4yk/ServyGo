@@ -60,17 +60,20 @@ export default function MobileBottomSheet({
   if (!shouldRender || !portalReady) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[120] sm:hidden">
+    <div className="fixed inset-0 z-[9999] sm:hidden">
       <button
         type="button"
         aria-label="Zamknij panel"
-        className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ease-out ${isActive ? "opacity-100" : "opacity-0"}`}
+        className={`absolute inset-0 z-0 bg-black/30 transition-opacity duration-200 ease-out ${isActive ? "opacity-100" : "opacity-0"}`}
         onClick={onClose}
       />
       <section
         role="dialog"
         aria-modal="true"
-        className={`absolute bottom-0 left-0 right-0 w-full max-w-[100vw] overflow-hidden rounded-t-3xl border-t px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-200 ease-out ${
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        className={`absolute bottom-0 left-0 right-0 z-10 w-full max-w-[100vw] overflow-hidden rounded-t-3xl border-t px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-200 ease-out ${
           isActive ? "translate-y-0" : "translate-y-full"
         } ${
           isDark
