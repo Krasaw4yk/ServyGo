@@ -1672,12 +1672,14 @@ export default function Home() {
                       const nextId = event.target.value;
                       setSelectedSavedCarId(nextId);
                       if (!nextId) {
+                        setShowManualVehicle(false);
                         setVehicleType("");
                         setBrand("");
                         setModel("");
                         setYear("");
                         setFuel("");
                         setService("");
+                        setSearchCity("");
                         setSearchVin("");
                       }
                     }}
@@ -1872,13 +1874,14 @@ export default function Home() {
                   type="button"
                   onClick={() => {
                     setSelectedSavedCarId("");
-                    setShowManualVehicle(false);
+                    setShowManualVehicle((prev) => !prev);
                     setVehicleType("");
                     setBrand("");
                     setModel("");
                     setYear("");
                     setFuel("");
                     setService("");
+                    setSearchCity("");
                     setSearchVin("");
                   }}
                   className={`inline-flex h-12 w-full items-center justify-center rounded-xl border px-6 py-3 font-semibold transition-all duration-300 hover:scale-[1.02] ${
@@ -1887,7 +1890,7 @@ export default function Home() {
                       : "border-blue-300/80 bg-white/72 text-zinc-800 hover:border-orange-400/85 hover:text-orange-600 hover:shadow-[0_0_24px_rgba(59,130,246,0.16),0_0_18px_rgba(249,115,22,0.22)]"
                   }`}
                 >
-                  Wpisz dane ręcznie
+                  {t("form.manual.toggleShow")}
                 </button>
               </div>
 
