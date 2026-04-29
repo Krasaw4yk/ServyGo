@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -261,7 +261,7 @@ function weekdayKeyFromDate(dateKey: string): WorkshopOpeningDayKey {
 }
 
 
-export default function WorkshopPanelPage() {
+function WorkshopPanelPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isAdminPreview = searchParams.get("adminPreview") === "1";
@@ -1871,5 +1871,13 @@ export default function WorkshopPanelPage() {
         ) : null}
       </main>
     </ServyGoPageShell>
+  );
+}
+
+export default function WorkshopPanelPage() {
+  return (
+    <Suspense fallback={null}>
+      <WorkshopPanelPageContent />
+    </Suspense>
   );
 }

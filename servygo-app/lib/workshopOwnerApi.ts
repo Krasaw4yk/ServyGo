@@ -251,12 +251,14 @@ export async function listWorkshopEmployeesForOwner(workshopId: string): Promise
     .eq("workshop_id", workshopId)
     .order("created_at", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
-  return ((data as Omit<WorkshopEmployeeRow, "specializations">[] | null) ?? []).map((row) => ({
-    ...row,
-    specializations: Array.isArray((row as { specializations?: unknown }).specializations)
-      ? ((row as { specializations: unknown[] }).specializations.map((x) => String(x)))
-      : [],
-  }));
+  type EmployeeRowFromDb = Omit<WorkshopEmployeeRow, "specializations"> & { specializations?: unknown };
+  return ((data as EmployeeRowFromDb[] | null) ?? []).map((row) => {
+    const specializations = Array.isArray(row.specializations) ? row.specializations.map((x) => String(x)) : [];
+    return {
+      ...row,
+      specializations,
+    };
+  });
 }
 
 export async function upsertWorkshopEmployeeForOwner(
