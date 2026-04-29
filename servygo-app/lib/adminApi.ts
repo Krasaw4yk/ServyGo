@@ -1,0 +1,453 @@
+import { supabase } from "@/lib/supabaseClient";
+import { formatSupabaseError, workshopLeadStatusLabelMap } from "@/lib/workshopApi";
+
+export type AdminRole = "owner" | "admin";
+
+export type AdminUserRow = {
+  id: string;
+  user_id: string;
+  email: string;
+  role: AdminRole;
+  created_at: string;
+};
+
+export type AdminWorkshopStatus = "pending" | "approved" | "rejected" | "suspended" | "archived";
+
+export type WorkshopLeadRow = {
+  id: string;
+  created_at: string;
+  updated_at: string | null;
+  workshop_name: string;
+  nip: string | null;
+  city: string | null;
+  postal_code: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  contact_person: string | null;
+  description: string | null;
+  message: string | null;
+  services?: string | null;
+  google_maps_url?: string | null;
+  status: string | null;
+};
+
+export type AdminWorkshopListRow = {
+  id: string;
+  owner_id?: string | null;
+  owner_user_id?: string | null;
+  name: string;
+  nip: string | null;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  address: string | null;
+  description: string | null;
+  status: string | null;
+  google_maps_url?: string | null;
+  services_summary?: string | null;
+  opening_hours?: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  service_count?: number;
+};
+
+/** Status warsztatu w tabeli `workshops` (panel admina). */
+export type AdminWorkshopEntityStatus = "active" | "suspended" | "hidden";
+
+export type AdminWorkshopServiceRow = {
+  id: string;
+  service_name: string;
+};
+
+export type AdminWorkshopBookingRow = {
+  id: string;
+  user_id: string;
+  workshop_id: string;
+  workshop_name: string;
+  service_name: string;
+  price: number;
+  duration_minutes: number;
+  date: string;
+  time: string;
+  status: string;
+  created_at: string;
+};
+
+export type AdminWorkshopDetail = AdminWorkshopListRow & {
+  services: AdminWorkshopServiceRow[];
+  bookings: AdminWorkshopBookingRow[];
+};
+
+export type AdminWorkshopUpdatePayload = {
+  name: string;
+  city: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  description: string | null;
+  google_maps_url: string | null;
+  opening_hours: string | null;
+  status: AdminWorkshopEntityStatus;
+};
+
+export type AdminSidebarNotificationCounts = {
+  pendingLeads: number;
+  newBookings: number;
+  newUsers24h: number;
+  newReviews: number;
+  servicesChanges: number;
+};
+
+function normalizeEmail(email: string | null | undefined) {
+  return (email ?? "").trim().toLowerCase();
+}
+
+export function normalizeWorkshopStatus(status: string | null | undefined): AdminWorkshopStatus {
+  const normalized = (status ?? "").toLowerCase().trim();
+  if (normalized === "archived") {
+    return "archived";
+  }
+  if (normalized === "approved" || normalized === "aktywny" || normalized === "umowa_podpisana" || normalized === "active") {
+    return "approved";
+  }
+  if (normalized === "rejected" || normalized === "odmowil") {
+    return "rejected";
+  }
+  if (normalized === "suspended" || normalized === "wylaczony") {
+    return "suspended";
+  }
+  return "pending";
+}
+
+export function formatWorkshopLeadStatusLabel(status: string | null | undefined): string {
+  const raw = (status ?? "").trim();
+  if (raw && workshopLeadStatusLabelMap[raw]) {
+    return workshopLeadStatusLabelMap[raw];
+  }
+  const norm = normalizeWorkshopStatus(status);
+  const labels: Record<AdminWorkshopStatus, string> = {
+    pending: "Oczekuje",
+    approved: "Zaakceptowane",
+    rejected: "Odrzucone",
+    suspended: "Zawieszone",
+    archived: "Zarchiwizowane",
+  };
+  return labels[norm] ?? (raw || "Oczekuje");
+}
+
+export async function getAdminRecord(userId: string, email?: string | null): Promise<AdminUserRow | null> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const normalizedEmail = normalizeEmail(email);
+  let query = supabase.from("admin_users").select("*").eq("user_id", userId);
+  if (normalizedEmail) {
+    query = query.or(`email.eq.${normalizedEmail}`);
+  }
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) throw new Error(formatSupabaseError(error));
+  return (data as AdminUserRow | null) ?? null;
+}
+
+export async function isAdmin(userId: string, email?: string | null): Promise<boolean> {
+  const record = await getAdminRecord(userId, email);
+  return Boolean(record);
+}
+
+export async function bootstrapFirstAdmin(): Promise<AdminUserRow | null> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { data, error } = await supabase.rpc("bootstrap_first_admin");
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return (row as AdminUserRow | null) ?? null;
+}
+
+export async function addAdmin(
+  userId: string,
+  email: string,
+): Promise<AdminUserRow | null> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const normalizedEmail = normalizeEmail(email);
+  const { data, error } = await supabase.rpc("add_admin_if_empty", {
+    target_user_id: userId,
+    target_email: normalizedEmail,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return (row as AdminUserRow | null) ?? null;
+}
+
+export async function listWorkshopLeadsForAdmin(
+  userId: string,
+  email?: string | null,
+): Promise<WorkshopLeadRow[]> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do zgłoszeń warsztatów.");
+  const { data, error } = await supabase
+    .from("workshop_leads")
+    .select(
+      "id, created_at, updated_at, workshop_name, nip, city, postal_code, address, phone, email, contact_person, description, message, services, google_maps_url, status",
+    )
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(formatSupabaseError(error));
+  return (data as WorkshopLeadRow[] | null) ?? [];
+}
+
+export function formatAdminWorkshopEntityStatusLabel(status: string | null | undefined): string {
+  const s = (status ?? "").toLowerCase().trim();
+  if (s === "active") return "Aktywny";
+  if (s === "suspended" || s === "wylaczony") return "Zawieszony";
+  if (s === "hidden") return "Ukryty";
+  if (s === "pending") return "Oczekuje";
+  return status?.trim() || "—";
+}
+
+export async function listWorkshopsForAdmin(
+  userId: string,
+  email?: string | null,
+): Promise<AdminWorkshopListRow[]> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do listy warsztatów.");
+  const { data, error } = await supabase
+    .from("workshops")
+    .select(
+      "id, owner_id, owner_user_id, name, nip, phone, email, city, address, description, status, google_maps_url, services_summary, opening_hours, created_at, updated_at",
+    )
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(formatSupabaseError(error));
+  const rows = (data as AdminWorkshopListRow[] | null) ?? [];
+  if (rows.length === 0) return rows;
+  const ids = rows.map((r) => r.id);
+  const { data: svcRows, error: svcError } = await supabase.from("workshop_services").select("workshop_id").in("workshop_id", ids);
+  if (svcError) throw new Error(formatSupabaseError(svcError));
+  const counts = new Map<string, number>();
+  for (const row of (svcRows as { workshop_id: string }[] | null) ?? []) {
+    counts.set(row.workshop_id, (counts.get(row.workshop_id) ?? 0) + 1);
+  }
+  return rows.map((r) => ({ ...r, service_count: counts.get(r.id) ?? 0 }));
+}
+
+export async function getWorkshopDetailForAdmin(
+  userId: string,
+  email: string | null | undefined,
+  workshopId: string,
+): Promise<AdminWorkshopDetail> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do szczegółów warsztatu.");
+  const { data: workshop, error: wError } = await supabase
+    .from("workshops")
+    .select(
+      "id, owner_id, owner_user_id, name, nip, phone, email, city, address, description, status, google_maps_url, services_summary, opening_hours, created_at, updated_at",
+    )
+    .eq("id", workshopId)
+    .single();
+  if (wError) throw new Error(formatSupabaseError(wError));
+  const base = workshop as AdminWorkshopListRow;
+  const { data: services, error: sError } = await supabase
+    .from("workshop_services")
+    .select("id, service_name")
+    .eq("workshop_id", workshopId)
+    .order("created_at", { ascending: true });
+  if (sError) throw new Error(formatSupabaseError(sError));
+  const { data: bookings, error: bError } = await supabase
+    .from("bookings")
+    .select("id, user_id, workshop_id, workshop_name, service_name, price, duration_minutes, date, time, status, created_at")
+    .eq("workshop_id", workshopId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (bError) throw new Error(formatSupabaseError(bError));
+  return {
+    ...base,
+    service_count: (services as AdminWorkshopServiceRow[] | null)?.length ?? 0,
+    services: (services as AdminWorkshopServiceRow[] | null) ?? [],
+    bookings: (bookings as AdminWorkshopBookingRow[] | null) ?? [],
+  };
+}
+
+export async function updateWorkshopAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+  workshopId: string,
+  payload: AdminWorkshopUpdatePayload,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do edycji warsztatu.");
+  const st = payload.status.toLowerCase().trim();
+  if (st !== "active" && st !== "suspended" && st !== "hidden") {
+    throw new Error("Niedozwolony status warsztatu.");
+  }
+  const { error } = await supabase
+    .from("workshops")
+    .update({
+      name: payload.name.trim(),
+      city: payload.city?.trim() || null,
+      address: payload.address?.trim() || null,
+      phone: payload.phone?.trim() || null,
+      email: payload.email?.trim() || null,
+      description: payload.description?.trim() || null,
+      google_maps_url: payload.google_maps_url?.trim() || null,
+      opening_hours: payload.opening_hours?.trim() || null,
+      status: st,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", workshopId);
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function replaceWorkshopServicesAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+  workshopId: string,
+  serviceNames: string[],
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do edycji usług warsztatu.");
+  const normalized = Array.from(new Set(serviceNames.map((n) => n.trim()).filter(Boolean)));
+  const { data: existing, error: exError } = await supabase.from("workshop_services").select("id").eq("workshop_id", workshopId);
+  if (exError) throw new Error(formatSupabaseError(exError));
+  const existingIds = ((existing as { id: string }[] | null) ?? []).map((r) => r.id);
+  if (existingIds.length > 0) {
+    const { error: delError } = await supabase.from("workshop_services").delete().in("id", existingIds);
+    if (delError) throw new Error(formatSupabaseError(delError));
+  }
+  if (normalized.length > 0) {
+    const { error: insError } = await supabase.from("workshop_services").insert(
+      normalized.map((service_name) => ({
+        workshop_id: workshopId,
+        service_name,
+      })),
+    );
+    if (insError) throw new Error(formatSupabaseError(insError));
+  }
+  const summary = normalized.length > 0 ? normalized.join(", ") : null;
+  const { error: sumError } = await supabase
+    .from("workshops")
+    .update({ services_summary: summary, updated_at: new Date().toISOString() })
+    .eq("id", workshopId);
+  if (sumError) throw new Error(formatSupabaseError(sumError));
+}
+
+export async function setWorkshopStatusAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+  workshopId: string,
+  status: AdminWorkshopEntityStatus,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do zmiany statusu warsztatu.");
+  const st = status.toLowerCase().trim() as AdminWorkshopEntityStatus;
+  const { error } = await supabase
+    .from("workshops")
+    .update({ status: st, updated_at: new Date().toISOString() })
+    .eq("id", workshopId);
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function getAdminSidebarNotificationCounts(
+  userId: string,
+  email?: string | null,
+): Promise<AdminSidebarNotificationCounts> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do powiadomień admina.");
+
+  const now = new Date();
+  const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+  const [
+    pendingLeadsRes,
+    newBookingsRes,
+    newUsersRes,
+    newReviewsRes,
+  ] = await Promise.all([
+    supabase.from("workshop_leads").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("bookings").select("id", { count: "exact", head: true }).in("status", ["new", "pending"]),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", since24h),
+    supabase.from("workshops").select("id", { count: "exact", head: true }).gte("updated_at", since24h).not("google_maps_url", "is", null),
+  ]);
+
+  return {
+    pendingLeads: pendingLeadsRes.error ? 0 : (pendingLeadsRes.count ?? 0),
+    newBookings: newBookingsRes.error ? 0 : (newBookingsRes.count ?? 0),
+    newUsers24h: newUsersRes.error ? 0 : (newUsersRes.count ?? 0),
+    newReviews: newReviewsRes.error ? 0 : (newReviewsRes.count ?? 0),
+    servicesChanges: 0,
+  };
+}
+
+/** Akceptacja zgłoszenia: konto Auth + mail (invite / reset) + warsztat z owner_id (wywołanie API serwerowego). */
+export async function approveWorkshopLeadWithOwnerEmail(
+  accessToken: string,
+  leadId: string,
+  ownerEmail: string,
+): Promise<{ workshopId: string; invited: boolean }> {
+  const res = await fetch("/api/admin/approve-workshop-lead", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ leadId, ownerEmail: ownerEmail.trim() }),
+  });
+  const json = (await res.json().catch(() => ({}))) as { error?: string; workshopId?: string; invited?: boolean };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Błąd akceptacji (${res.status}).`);
+  }
+  if (!json.workshopId || typeof json.workshopId !== "string") {
+    throw new Error("Brak identyfikatora warsztatu w odpowiedzi serwera.");
+  }
+  return { workshopId: json.workshopId, invited: Boolean(json.invited) };
+}
+
+export async function resendWorkshopOwnerAccessEmail(accessToken: string, workshopId: string): Promise<void> {
+  const res = await fetch("/api/admin/resend-workshop-access", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ workshopId }),
+  });
+  const json = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Błąd wysyłki (${res.status}).`);
+  }
+}
+
+export async function updateWorkshopLeadStatusAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+  leadId: string,
+  status: AdminWorkshopStatus,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do zmiany statusu zgłoszenia.");
+  const { error } = await supabase
+    .from("workshop_leads")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", leadId);
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+/** Tworzy przykładowe zgłoszenie (status pending) — wymaga funkcji RPC z supabase-admin-approve-lead.sql. */
+export async function seedTestWorkshopLeadAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+): Promise<string> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu.");
+  const { data, error } = await supabase.rpc("admin_seed_test_workshop_lead");
+  if (error) throw new Error(formatSupabaseError(error));
+  const id = Array.isArray(data) ? data[0] : data;
+  if (typeof id !== "string") {
+    throw new Error("Nie udało się utworzyć testowego zgłoszenia (oczekiwano UUID).");
+  }
+  return id;
+}
