@@ -33,6 +33,7 @@ import {
   updateWorkshopLeadStatusAsAdmin,
 } from "@/lib/adminApi";
 import { isValidWorkshopGoogleMapsUrl } from "@/lib/workshopApi";
+import { getAdminDashboardStats, type AdminDashboardStats } from "@/lib/adminStatsApi";
 
 const SIDEBAR_ITEMS = [
   "Dashboard",
@@ -159,6 +160,9 @@ export default function AdminPage() {
   const [liveSidebarBadges, setLiveSidebarBadges] = useState<SidebarBadgeState>(EMPTY_SIDEBAR_BADGES);
   const [seenSidebarBadges, setSeenSidebarBadges] = useState<SidebarBadgeState>(EMPTY_SIDEBAR_BADGES);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [dashboardStatsData, setDashboardStatsData] = useState<AdminDashboardStats | null>(null);
+  const [loadingDashboardStats, setLoadingDashboardStats] = useState(false);
+  const [dashboardStatsError, setDashboardStatsError] = useState("");
 
   const detailLead = useMemo(() => rows.find((r) => r.id === leadDetailId) ?? null, [rows, leadDetailId]);
 
@@ -624,6 +628,26 @@ export default function AdminPage() {
     return () => window.clearTimeout(timer);
   }, [successMessage]);
 
+  const refreshDashboardStats = useCallback(async () => {
+    if (!currentUser) return;
+    setLoadingDashboardStats(true);
+    setDashboardStatsError("");
+    try {
+      const stats = await getAdminDashboardStats(currentUser.id, currentUser.email);
+      setDashboardStatsData(stats);
+    } catch (err) {
+      setDashboardStatsData(null);
+      setDashboardStatsError(err instanceof Error ? err.message : "Nie udało się pobrać statystyk.");
+    } finally {
+      setLoadingDashboardStats(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || !isAdmin) return;
+    void refreshDashboardStats();
+  }, [currentUser, isAdmin, refreshDashboardStats]);
+
   const isDark = mounted ? theme === "dark" : false;
   const pendingLeads = rows.filter((row) => normalizeWorkshopStatus(row.status) === "pending");
   const unreadSidebarBadges = useMemo<SidebarBadgeState>(() => {
@@ -638,61 +662,33 @@ export default function AdminPage() {
     () => Object.values(unreadSidebarBadges).reduce((sum, n) => sum + n, 0),
     [unreadSidebarBadges],
   );
+  const stats = dashboardStatsData;
   const dashboardStats = useMemo(
     () => [
-      { label: "Liczba użytkowników", value: "1 284", tone: "from-blue-600 to-blue-400", icon: "👥" },
-      { label: "Aktywne warsztaty", value: "142", tone: "from-cyan-600 to-blue-500", icon: "🛠️" },
-      { label: "Oczekujące zgłoszenia", value: String(pendingLeads.length), tone: "from-orange-500 to-amber-400", icon: "📥" },
-      { label: "Rezerwacje dzisiaj", value: "63", tone: "from-violet-600 to-blue-500", icon: "📅" },
-      { label: "Rezerwacje w miesiącu", value: "1 092", tone: "from-blue-700 to-indigo-500", icon: "📈" },
-      { label: "Średnia ocena warsztatów", value: "4.7", tone: "from-orange-500 to-pink-500", icon: "⭐" },
-      { label: "Kliknięcia „Umów termin”", value: "3 410", tone: "from-sky-600 to-cyan-400", icon: "🖱️" },
-      { label: "Wejścia na stronę", value: "24 590", tone: "from-blue-500 to-orange-400", icon: "🌐" },
+      { label: "Liczba użytkowników", value: String(stats?.usersCount ?? 0), tone: "from-blue-600 to-blue-400", icon: "👥" },
+      { label: "Aktywne warsztaty", value: String(stats?.workshopsCount ?? 0), tone: "from-cyan-600 to-blue-500", icon: "🛠️" },
+      { label: "Oczekujące zgłoszenia", value: String(stats?.pendingLeadsCount ?? 0), tone: "from-orange-500 to-amber-400", icon: "📥" },
+      { label: "Rezerwacje dzisiaj", value: String(stats?.bookingsTodayCount ?? 0), tone: "from-violet-600 to-blue-500", icon: "📅" },
+      { label: "Rezerwacje w miesiącu", value: String(stats?.bookingsMonthCount ?? 0), tone: "from-blue-700 to-indigo-500", icon: "📈" },
+      { label: "Średnia ocena warsztatów", value: (stats?.avgWorkshopRating ?? 0).toFixed(1), tone: "from-orange-500 to-pink-500", icon: "⭐" },
+      { label: "Kliknięcia „Umów termin”", value: String(stats?.bookingStartClicks ?? 0), tone: "from-sky-600 to-cyan-400", icon: "🖱️" },
+      { label: "Wejścia na stronę", value: String(stats?.pageViewsCount ?? 0), tone: "from-blue-500 to-orange-400", icon: "🌐" },
     ],
-    [pendingLeads.length],
+    [stats],
   );
+  const recentBookings = stats?.recentBookings ?? [];
+  const bookingsByStatusMock = stats?.bookingsByStatus ?? [];
+  const popularServicesMock = stats?.popularServices ?? [];
+  const popularCitiesMock = stats?.popularCities ?? [];
+  const conversionFunnelMock = stats?.funnel ?? [];
   const analyticsSnapshot = {
-    visits: 24590,
-    uniques: 13240,
-    searches: 7160,
-    workshopClicks: 3984,
-    bookClicks: 3410,
-    topCity: "Kraków",
-    topService: "Wymiana oleju",
-    visits7d: [1800, 2250, 2400, 2100, 2800, 3150, 3320],
-    bookings7d: [74, 88, 96, 84, 109, 118, 124],
-    conversion7d: [4.1, 3.9, 4.0, 4.0, 3.9, 3.7, 3.8],
+    visits: stats?.pageViewsCount ?? 0,
+    searches: conversionFunnelMock.find((x) => x.label === "Wyszukiwania")?.value ?? 0,
+    workshopClicks: conversionFunnelMock.find((x) => x.label === "Kliknięcia warsztatów")?.value ?? 0,
+    bookClicks: stats?.bookingStartClicks ?? 0,
+    visits7d: stats?.visits7d ?? [0, 0, 0, 0, 0, 0, 0],
+    bookings7d: stats?.bookings7d ?? [0, 0, 0, 0, 0, 0, 0],
   };
-  const recentBookings = [
-    { date: "2026-04-27", client: "Jan Kowalski", workshop: "AutoSerwis Beskid Premium", service: "Wymiana oleju", car: "Fiat Croma 1.9 Diesel", term: "2026-04-29 10:30", status: "nowe" },
-    { date: "2026-04-27", client: "Anna Nowak", workshop: "Moto Klinik Lipnik", service: "Diagnostyka komputerowa", car: "VW Golf 1.6 TDI", term: "2026-04-28 14:00", status: "potwierdzone" },
-    { date: "2026-04-26", client: "Marek Wiśniewski", workshop: "Serwis Pod Szyndzielnią", service: "Hamulce", car: "Opel Astra 1.7 CDTI", term: "2026-04-30 08:00", status: "anulowane" },
-    { date: "2026-04-25", client: "Ewa Krawczyk", workshop: "Beskid Auto Care", service: "Klimatyzacja", car: "Toyota Corolla 1.6", term: "2026-04-28 16:30", status: "zakończone" },
-  ];
-  const bookingsByStatusMock = [
-    { label: "Nowe", count: 186 },
-    { label: "Potwierdzone", count: 312 },
-    { label: "Anulowane", count: 54 },
-    { label: "Zakończone", count: 528 },
-  ];
-  const popularServicesMock = [
-    { label: "Wymiana oleju", count: 412 },
-    { label: "Diagnostyka", count: 298 },
-    { label: "Hamulce", count: 241 },
-    { label: "Klimatyzacja", count: 176 },
-  ];
-  const popularCitiesMock = [
-    { label: "Bielsko-Biała", count: 892 },
-    { label: "Kraków", count: 654 },
-    { label: "Katowice", count: 521 },
-    { label: "Tychy", count: 387 },
-  ];
-  const conversionFunnelMock = [
-    { label: "Wejścia na stronę", value: 24590 },
-    { label: "Wyszukiwania", value: 7160 },
-    { label: "Kliknięcia warsztatów", value: 3984 },
-    { label: "Rezerwacje", value: 412 },
-  ];
   const maxBookingStatusCount = Math.max(...bookingsByStatusMock.map((b) => b.count), 1);
   const maxPopularServiceCount = Math.max(...popularServicesMock.map((b) => b.count), 1);
   const maxPopularCityCount = Math.max(...popularCitiesMock.map((b) => b.count), 1);
@@ -862,16 +858,11 @@ export default function AdminPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <h1 className="text-2xl font-bold sm:text-3xl">Panel administratora ServyGo</h1>
-                      {activeTab === "Dashboard" ? (
-                        <span
-                          className={`inline-flex max-w-full shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium leading-tight sm:text-xs ${
-                            isDark
-                              ? "border-amber-500/35 bg-amber-500/10 text-amber-200/90"
-                              : "border-amber-400/60 bg-amber-50 text-amber-900/80"
-                          }`}
-                          title="Liczby i wykresy na tym widoku są przykładowe"
-                        >
-                          Dane testowe — statystyki zostaną podłączone później
+                      {activeTab === "Dashboard" && loadingDashboardStats ? (
+                        <span className={`inline-flex max-w-full shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium leading-tight sm:text-xs ${
+                          isDark ? "border-blue-500/35 bg-blue-500/10 text-blue-200/90" : "border-blue-400/60 bg-blue-50 text-blue-900/80"
+                        }`}>
+                          Ładowanie statystyk…
                         </span>
                       ) : null}
                     </div>
@@ -954,6 +945,11 @@ export default function AdminPage() {
 
             {activeTab === "Dashboard" ? (
               <>
+                {dashboardStatsError ? (
+                  <p className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-orange-400/40 bg-orange-500/10 text-orange-200" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
+                    {dashboardStatsError}
+                  </p>
+                ) : null}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-4">
                   {dashboardStats.map((stat) => (
                     <article
@@ -976,14 +972,15 @@ export default function AdminPage() {
                     className={`shrink-0 rounded-2xl border p-4 xl:w-[min(100%,34%)] xl:max-w-[34%] ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}
                   >
                     <h2 className="text-base font-semibold leading-tight">Statystyki strony</h2>
+                    {stats && !stats.hasAnalytics ? (
+                      <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
+                        Brak tabeli analytics_events lub brak danych - pokazano wartości 0.
+                      </p>
+                    ) : null}
                     <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-xs leading-snug sm:gap-x-3">
                       <p className="min-w-0">
                         <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Wizyty:</span>{" "}
                         {analyticsSnapshot.visits.toLocaleString("pl-PL")}
-                      </p>
-                      <p className="min-w-0">
-                        <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Unikalni:</span>{" "}
-                        {analyticsSnapshot.uniques.toLocaleString("pl-PL")}
                       </p>
                       <p className="min-w-0">
                         <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Wyszukiwania:</span>{" "}
@@ -996,9 +993,6 @@ export default function AdminPage() {
                       <p className="col-span-2 min-w-0">
                         <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Klik. „Umów termin”:</span>{" "}
                         {analyticsSnapshot.bookClicks.toLocaleString("pl-PL")}
-                      </p>
-                      <p className={`col-span-2 min-w-0 truncate text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`} title={`${analyticsSnapshot.topCity} / ${analyticsSnapshot.topService}`}>
-                        <span className={`font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>Top:</span> {analyticsSnapshot.topCity} / {analyticsSnapshot.topService}
                       </p>
                     </div>
                     <div className={`mt-3 rounded-lg border px-2 py-2 ${isDark ? "border-zinc-600/60 bg-zinc-950/40" : "border-blue-200/80 bg-blue-50/50"}`}>
@@ -1046,8 +1040,12 @@ export default function AdminPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {recentBookings.map((booking) => (
-                            <tr key={`${booking.client}-${booking.term}`} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                          {recentBookings.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="px-3 py-6 text-center text-sm">Brak danych do wyświetlenia</td>
+                            </tr>
+                          ) : recentBookings.map((booking, index) => (
+                            <tr key={`${booking.workshop}-${booking.term}-${index}`} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
                               <td className="whitespace-nowrap px-2 py-2 align-middle tabular-nums sm:px-3 sm:py-2.5">{booking.date}</td>
                               <td className="max-w-0 px-2 py-2 align-middle sm:px-3 sm:py-2.5">
                                 <span className="block truncate" title={booking.client}>
@@ -1087,8 +1085,8 @@ export default function AdminPage() {
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h3 className="text-sm font-semibold">Rezerwacje według statusu</h3>
-                    <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>Dane testowe</p>
                     <ul className="mt-3 space-y-2.5">
+                      {bookingsByStatusMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {bookingsByStatusMock.map((row) => (
                         <li key={row.label}>
                           <div className="flex items-center justify-between gap-2 text-xs">
@@ -1108,8 +1106,8 @@ export default function AdminPage() {
 
                   <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h3 className="text-sm font-semibold">Najpopularniejsze usługi</h3>
-                    <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>Dane testowe</p>
                     <ul className="mt-3 space-y-2.5">
+                      {popularServicesMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {popularServicesMock.map((row) => (
                         <li key={row.label}>
                           <div className="flex items-center justify-between gap-2 text-xs">
@@ -1131,8 +1129,8 @@ export default function AdminPage() {
 
                   <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h3 className="text-sm font-semibold">Najpopularniejsze miasta</h3>
-                    <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>Dane testowe</p>
                     <ul className="mt-3 space-y-2.5">
+                      {popularCitiesMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {popularCitiesMock.map((row) => (
                         <li key={row.label}>
                           <div className="flex items-center justify-between gap-2 text-xs">
@@ -1154,8 +1152,8 @@ export default function AdminPage() {
 
                   <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h3 className="text-sm font-semibold">Konwersja (lejek)</h3>
-                    <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>Dane testowe</p>
                     <ul className="mt-3 space-y-2">
+                      {conversionFunnelMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {conversionFunnelMock.map((step) => (
                         <li key={step.label}>
                           <div className="flex items-center justify-between gap-2 text-[11px] leading-tight">

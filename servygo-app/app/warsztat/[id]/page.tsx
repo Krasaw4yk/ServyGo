@@ -10,6 +10,7 @@ import { fetchPublicWorkshopByIdAsMock } from "@/lib/publicWorkshopsFromDb";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { createTranslator, LanguageCode } from "@/lib/translations";
 import { getAvailableSlots, inferEndTime } from "@/lib/bookingAvailability";
+import { trackEvent } from "@/lib/analytics";
 
 function padTime(value: number) {
   return String(value).padStart(2, "0");
@@ -150,6 +151,11 @@ export default function WorkshopDetailsPage() {
     if (!mounted) return;
     window.localStorage.setItem("servygo-theme", theme);
   }, [mounted, theme]);
+
+  useEffect(() => {
+    if (!mounted || !workshopId) return;
+    void trackEvent("page_view", { page: `/warsztat/${workshopId}`, workshopId });
+  }, [mounted, workshopId]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -395,6 +401,11 @@ export default function WorkshopDetailsPage() {
         p_employee_id: selectedEmployeeId === "any" ? null : selectedEmployeeId,
       });
       if (error) throw error;
+      void trackEvent("booking_confirm", {
+        workshopId: workshop.supabaseId,
+        workshopName: workshop.name,
+        service: selectedService.service_name,
+      });
       setBookingSuccess(t("workshopDetails.bookingSaved"));
       setSelectedTime("");
     } catch (e) {
@@ -790,6 +801,11 @@ export default function WorkshopDetailsPage() {
                   onClick={() => {
                     setBookingSuccess("");
                     setBookingError("");
+                    void trackEvent("booking_start", {
+                      workshopId: workshop.supabaseId,
+                      workshopName: workshop.name,
+                      service: selectedService?.service_name ?? null,
+                    });
                     setIsBookingModalOpen(true);
                   }}
                   className="mt-6 w-full rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-3 text-sm font-semibold text-white"

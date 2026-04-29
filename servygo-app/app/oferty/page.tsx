@@ -7,6 +7,7 @@ import { createTranslator, LanguageCode } from "@/lib/translations";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopsAsMock } from "@/lib/publicWorkshopsFromDb";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import { trackEvent } from "@/lib/analytics";
 
 type ViewMode = "list" | "map";
 
@@ -43,6 +44,11 @@ export default function OffersPage() {
     });
     return () => window.cancelAnimationFrame(frameId);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    void trackEvent("page_view", { page: "/oferty" });
+  }, [mounted]);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,6 +290,14 @@ export default function OffersPage() {
                       </div>
                       <Link
                         href={`/warsztat/${workshop.id}?${detailsParams.toString()}`}
+                        onClick={() =>
+                          void trackEvent("workshop_click", {
+                            workshopId: workshop.id,
+                            workshopName: workshop.name,
+                            service: firstOffer.service_name,
+                            city: workshop.city,
+                          })
+                        }
                         className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-3 py-2 text-sm font-semibold text-white md:w-auto md:px-4 md:text-sm"
                       >
                         {t("offers.details")}

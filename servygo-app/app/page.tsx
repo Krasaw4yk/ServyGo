@@ -27,6 +27,7 @@ import {
   vehicleTypeOptions,
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
+import { trackEvent } from "@/lib/analytics";
 type ActiveDropdown = "user" | "lang" | "theme" | null;
 type AuthModalType = "login" | "register" | null;
 type AccountTab = "profile" | "vehicles" | "security";
@@ -242,6 +243,11 @@ export default function Home() {
     if (!mounted) return;
     window.localStorage.setItem("servygo_language", language);
   }, [mounted, language]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    void trackEvent("page_view", { page: "/" });
+  }, [mounted]);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
@@ -539,6 +545,17 @@ export default function Home() {
       },
       vehicleSource: isManualMode ? "reczne_dodanie" : "lista",
     };
+
+    void trackEvent("search_submit", {
+      page: "/",
+      vehicleType: String(payload.vehicleType ?? ""),
+      brand: payload.brand,
+      model: payload.model,
+      year: payload.year,
+      fuel: payload.fuel,
+      city: String(payload.city ?? ""),
+      service: String(payload.service ?? ""),
+    });
 
     setIsSubmitting(true);
     const query = new URLSearchParams();
