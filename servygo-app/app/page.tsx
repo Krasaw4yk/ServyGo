@@ -108,6 +108,7 @@ export default function Home() {
   const [fuel, setFuel] = useState("");
   const [service, setService] = useState("");
   const [searchCity, setSearchCity] = useState("");
+  const [searchVin, setSearchVin] = useState("");
   const [showManualVehicle, setShowManualVehicle] = useState(false);
   const [manualType, setManualType] = useState("");
   const [manualBrand, setManualBrand] = useState("");
@@ -341,7 +342,15 @@ export default function Home() {
     if (selected.city.trim()) {
       setSearchCity(selected.city);
     }
+    setSearchVin(selected.vin.trim().slice(0, 17).toUpperCase());
   }, [selectedSavedCarId, vehicles]);
+
+  const hasSavedCars = currentUser != null && vehicles.length > 0;
+  const selectedSavedCar = useMemo(
+    () => vehicles.find((v) => v.id === selectedSavedCarId) ?? null,
+    [selectedSavedCarId, vehicles],
+  );
+  const isManualMode = !hasSavedCars || selectedSavedCarId === "";
 
   const currentVehicleConfig = vehicleType ? vehicleData[vehicleType] : null;
   const brandsForVehicleType = getVehicleBrands(vehicleType);
@@ -492,31 +501,18 @@ export default function Home() {
       return;
     }
 
-    const hasSelectedVehicle =
-      String(formData.get("vehicleType") ?? "").trim() !== "" &&
-      resolvedBrand !== "" &&
-      resolvedModel !== "" &&
-      resolvedYear !== "";
-
-    const hasManualVehicle =
-      String(formData.get("manualType") ?? "").trim() !== "" &&
-      String(formData.get("manualBrand") ?? "").trim() !== "" &&
-      String(formData.get("manualModel") ?? "").trim() !== "" &&
-      String(formData.get("manualYear") ?? "").trim() !== "";
-
-    if (!hasSelectedVehicle && !hasManualVehicle) {
-      setMessage(t("form.messages.chooseVehicle"));
+    const selectedService = String(formData.get("service") ?? "").trim();
+    if (!resolvedFuel || !selectedService) {
+      setMessage(t("form.messages.fillFuelService"));
       setMessageType("error");
       return;
     }
 
-    if (hasSelectedVehicle) {
-      const selectedService = String(formData.get("service") ?? "").trim();
-      if (!resolvedFuel || !selectedService) {
-        setMessage(t("form.messages.fillFuelService"));
-        setMessageType("error");
-        return;
-      }
+    const vinInput = String(formData.get("vin") ?? "").trim().toUpperCase();
+    if (vinInput.length > 17) {
+      setMessage("VIN może mieć maksymalnie 17 znaków.");
+      setMessageType("error");
+      return;
     }
 
     const payload = {
@@ -529,6 +525,11 @@ export default function Home() {
       service: formData.get("service"),
       problem: formData.get("problem"),
       city: formData.get("city"),
+      vin: vinInput,
+      selectedCarId: selectedSavedCar?.id ?? null,
+      selectedCarLabel: selectedSavedCar ? `${selectedSavedCar.brand} ${selectedSavedCar.model}` : null,
+      firstName: profileDraft.firstName.trim(),
+      lastName: profileDraft.lastName.trim(),
       manualVehicle: {
         type: formData.get("manualType"),
         brand: formData.get("manualBrand"),
@@ -536,7 +537,7 @@ export default function Home() {
         year: formData.get("manualYear"),
         description: formData.get("manualDescription"),
       },
-      vehicleSource: hasSelectedVehicle ? "lista" : "reczne_dodanie",
+      vehicleSource: isManualMode ? "reczne_dodanie" : "lista",
     };
 
     setIsSubmitting(true);
@@ -549,6 +550,10 @@ export default function Home() {
     query.set("year", String(payload.year ?? ""));
     query.set("fuel", String(payload.fuel ?? ""));
     query.set("engine", String(payload.fuel ?? ""));
+    if (payload.vin) query.set("vin", payload.vin);
+    if (payload.firstName) query.set("firstName", payload.firstName);
+    if (payload.lastName) query.set("lastName", payload.lastName);
+    if (payload.selectedCarId) query.set("carId", payload.selectedCarId);
     const problemText = String(payload.problem ?? "").trim();
     if (problemText) {
       query.set("problem", problemText);
@@ -1660,12 +1665,25 @@ export default function Home() {
               </h2>
               {currentUser && vehicles.length > 0 ? (
                 <label className="flex w-full flex-col gap-1 sm:w-[320px]">
-                  <span className="text-xs font-semibold uppercase tracking-wide opacity-80">{t("form.selectSavedCar")}</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide opacity-80">Wybierz auto</span>
                   <select
                     value={selectedSavedCarId}
-                    onChange={(event) => setSelectedSavedCarId(event.target.value)}
+                    onChange={(event) => {
+                      const nextId = event.target.value;
+                      setSelectedSavedCarId(nextId);
+                      if (!nextId) {
+                        setVehicleType("");
+                        setBrand("");
+                        setModel("");
+                        setYear("");
+                        setFuel("");
+                        setService("");
+                        setSearchVin("");
+                      }
+                    }}
                     className={currentFieldClassName}
                   >
+                    <option value="">Wpisz dane ręcznie</option>
                     {vehicles.map((vehicle) => (
                       <option key={vehicle.id} value={vehicle.id}>
                         {vehicle.brand} {vehicle.model} ({vehicle.year || "—"}){vehicle.isPrimary ? " • domyślne" : ""}
@@ -1794,7 +1812,7 @@ export default function Home() {
                   value={service}
                   onChange={setService}
                   categories={serviceCatalogForVehicleType}
-                  disabled={!vehicleType}
+                  disabled={!vehicleType || serviceCatalogForVehicleType.length === 0}
                   isDark={isDark}
                   inputClassName={currentFieldClassName}
                   placeholder={
@@ -1815,18 +1833,32 @@ export default function Home() {
                 />
               </label>
 
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium">{t("form.labels.city")}</span>
-                <input
-                  type="text"
-                  name="city"
-                  required
-                  value={searchCity}
-                  onChange={(event) => setSearchCity(event.target.value)}
-                  placeholder={t("form.placeholders.city")}
-                  className={currentFieldClassName}
-                />
-              </label>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:col-span-2">
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium">{t("form.labels.city")}</span>
+                  <input
+                    type="text"
+                    name="city"
+                    required
+                    value={searchCity}
+                    onChange={(event) => setSearchCity(event.target.value)}
+                    placeholder={t("form.placeholders.city")}
+                    className={currentFieldClassName}
+                  />
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium">VIN</span>
+                  <input
+                    type="text"
+                    name="vin"
+                    maxLength={17}
+                    value={searchVin}
+                    onChange={(event) => setSearchVin(event.target.value.toUpperCase().slice(0, 17))}
+                    placeholder="np. WAUZZZ8V6JA000001"
+                    className={currentFieldClassName}
+                  />
+                </label>
+              </div>
 
               <div className="mt-1 grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2">
                 <button
@@ -1838,16 +1870,24 @@ export default function Home() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowManualVehicle((prev) => !prev)}
+                  onClick={() => {
+                    setSelectedSavedCarId("");
+                    setShowManualVehicle(false);
+                    setVehicleType("");
+                    setBrand("");
+                    setModel("");
+                    setYear("");
+                    setFuel("");
+                    setService("");
+                    setSearchVin("");
+                  }}
                   className={`inline-flex h-12 w-full items-center justify-center rounded-xl border px-6 py-3 font-semibold transition-all duration-300 hover:scale-[1.02] ${
                     isDark
                       ? "border-blue-400/40 bg-zinc-900/70 text-zinc-100 hover:border-orange-400/60 hover:text-orange-200"
                       : "border-blue-300/80 bg-white/72 text-zinc-800 hover:border-orange-400/85 hover:text-orange-600 hover:shadow-[0_0_24px_rgba(59,130,246,0.16),0_0_18px_rgba(249,115,22,0.22)]"
                   }`}
                 >
-                  {showManualVehicle
-                    ? t("form.manual.toggleHide")
-                    : t("form.manual.toggleShow")}
+                  Wpisz dane ręcznie
                 </button>
               </div>
 

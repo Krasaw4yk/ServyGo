@@ -188,6 +188,15 @@ export default function WorkshopDetailsPage() {
       year: Number.parseInt(searchParams.get("year") ?? "", 10),
       engine: normalizeText(searchParams.get("engine") ?? ""),
       fuel: normalizeText(searchParams.get("fuel") ?? ""),
+      city: normalizeText(searchParams.get("city") ?? ""),
+      vin: normalizeText(searchParams.get("vin") ?? "").slice(0, 17).toUpperCase(),
+    }),
+    [searchParams],
+  );
+  const selectedClient = useMemo(
+    () => ({
+      firstName: (searchParams.get("firstName") ?? "").trim(),
+      lastName: (searchParams.get("lastName") ?? "").trim(),
     }),
     [searchParams],
   );
@@ -373,11 +382,13 @@ export default function WorkshopDetailsPage() {
           year: Number.isFinite(selectedVehicle.year) ? selectedVehicle.year : null,
           engine: selectedVehicle.engine || null,
           fuel: selectedVehicle.fuel || null,
+          city: selectedVehicle.city || null,
+          vin: selectedVehicle.vin || null,
         },
         p_booking_date: effectiveDateKey,
         p_start_time: effectiveSelectedTime,
         p_duration_minutes: selectedService.duration_minutes,
-        p_client_name: "",
+        p_client_name: [selectedClient.firstName, selectedClient.lastName].filter(Boolean).join(" ").trim(),
         p_client_email: "",
         p_client_phone: "",
         p_notes: null,

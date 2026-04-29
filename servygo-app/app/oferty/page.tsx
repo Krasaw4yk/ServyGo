@@ -26,6 +26,9 @@ export default function OffersPage() {
     model: "",
     year: "",
     engine: "",
+    vin: "",
+    firstName: "",
+    lastName: "",
   });
 
   useEffect(() => {
@@ -79,6 +82,9 @@ export default function OffersPage() {
         model: (params.get("model") ?? "").trim().toLowerCase(),
         year: (params.get("year") ?? "").trim().toLowerCase(),
         engine: (params.get("engine") ?? "").trim().toLowerCase(),
+        vin: (params.get("vin") ?? "").trim().toUpperCase().slice(0, 17),
+        firstName: (params.get("firstName") ?? "").trim(),
+        lastName: (params.get("lastName") ?? "").trim(),
       });
     });
     return () => window.cancelAnimationFrame(frameId);
@@ -246,6 +252,9 @@ export default function OffersPage() {
                     model: queryFilters.model || firstOffer.model,
                     year: queryFilters.year || String(firstOffer.year_from),
                     engine: queryFilters.engine || firstOffer.engine,
+                    vin: queryFilters.vin || "",
+                    firstName: queryFilters.firstName || "",
+                    lastName: queryFilters.lastName || "",
                   });
                   return (
                     <article
