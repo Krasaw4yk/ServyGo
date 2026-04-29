@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ServiceCategory } from "@/lib/serviceCatalog";
+import MobileBottomSheet from "@/components/MobileBottomSheet";
 
 type ServiceCategoryPickerProps = {
   value: string;
@@ -54,8 +55,18 @@ export default function ServiceCategoryPicker({
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   const displayValue = isOpen ? query : value;
+
+  useEffect(() => {
+    function updateViewportMode() {
+      setIsMobile(window.innerWidth < 640);
+    }
+    updateViewportMode();
+    window.addEventListener("resize", updateViewportMode);
+    return () => window.removeEventListener("resize", updateViewportMode);
+  }, []);
 
   useEffect(() => {
     function handleOutside(event: MouseEvent) {
@@ -125,6 +136,7 @@ export default function ServiceCategoryPicker({
     <div ref={rootRef} className="relative w-full">
       <input
         value={displayValue}
+        readOnly={isMobile}
         disabled={disabled}
         onFocus={() => {
           if (disabled) return;
@@ -134,6 +146,7 @@ export default function ServiceCategoryPicker({
           setIsOpen(true);
         }}
         onChange={(event) => {
+          if (isMobile) return;
           const nextValue = event.target.value;
           setQuery(nextValue);
           onChange(nextValue);
@@ -169,7 +182,153 @@ export default function ServiceCategoryPicker({
         </svg>
       </button>
 
-      {isOpen ? (
+      {isOpen && isMobile ? (
+        <MobileBottomSheet
+          isOpen={isOpen}
+          onClose={() => {
+            setIsOpen(false);
+            setQuery("");
+          }}
+          title={placeholder}
+          isDark={isDark}
+        >
+          <div className="space-y-3">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={placeholder}
+              className={`w-full rounded-xl border px-3 py-2 text-sm ${
+                isDark
+                  ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
+                  : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
+              }`}
+            />
+            {value ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("");
+                  setActiveCategory(null);
+                  setActiveSubcategory(null);
+                  setQuery("");
+                  setIsOpen(false);
+                }}
+                className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
+                  isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-700"
+                }`}
+              >
+                Wyczyść
+              </button>
+            ) : null}
+            <div className="max-h-[58vh] overflow-y-auto">
+              {normalizeSearchText(query) ? (
+                searchResults.length === 0 ? (
+                  <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
+                ) : (
+                  searchResults.map((result) => (
+                    <button
+                      key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
+                      type="button"
+                      onClick={() => {
+                        if (result.type === "category") {
+                          setActiveCategory(result.categoryName);
+                          setActiveSubcategory(null);
+                          setQuery("");
+                          return;
+                        }
+                        if (result.type === "subcategory") {
+                          setActiveCategory(result.categoryName);
+                          setActiveSubcategory(result.subcategoryName ?? null);
+                          setQuery("");
+                          return;
+                        }
+                        onChange(result.serviceName ?? "");
+                        setQuery("");
+                        setIsOpen(false);
+                      }}
+                      className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
+                    >
+                      <span className="block font-medium">{result.label}</span>
+                    </button>
+                  ))
+                )
+              ) : selectedSubcategory ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (hasSingleSubcategory) {
+                        setActiveSubcategory(null);
+                        setActiveCategory(null);
+                        return;
+                      }
+                      setActiveSubcategory(null);
+                    }}
+                    className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-xs font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
+                  >
+                    ← {hasSingleSubcategory ? "Kategorie" : "Podkategorie"}
+                  </button>
+                  {selectedSubcategory.services.map((service) => (
+                    <button
+                      key={`${selectedSubcategory.name}-${service.name}`}
+                      type="button"
+                      onClick={() => {
+                        onChange(service.name);
+                        setIsOpen(false);
+                        setQuery("");
+                      }}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
+                    >
+                      <span>{service.name}</span>
+                      {value === service.name ? <span>✓</span> : null}
+                    </button>
+                  ))}
+                </>
+              ) : selectedCategory ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setActiveCategory(null)}
+                    className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-xs font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
+                  >
+                    ← Kategorie
+                  </button>
+                  {selectedCategory.subcategories.map((subcategory) => (
+                    <button
+                      key={`${selectedCategory.name}-${subcategory.name}`}
+                      type="button"
+                      onClick={() => setActiveSubcategory(subcategory.name)}
+                      className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
+                    >
+                      {subcategory.name}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                categories.map((category) => (
+                  <button
+                    key={category.name}
+                    type="button"
+                    onClick={() => {
+                      setActiveCategory(category.name);
+                      if (category.subcategories.length === 1) {
+                        setActiveSubcategory(category.subcategories[0]?.name ?? null);
+                      } else {
+                        setActiveSubcategory(null);
+                      }
+                    }}
+                    className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
+                  >
+                    {category.name}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </MobileBottomSheet>
+      ) : null}
+
+      {isOpen && !isMobile ? (
         <div
           className={`absolute left-0 top-full z-30 mt-2 max-h-72 w-full max-w-[min(100%,92vw)] overflow-auto rounded-xl border p-1 backdrop-blur-xl sm:right-0 sm:max-w-none ${
             isDark

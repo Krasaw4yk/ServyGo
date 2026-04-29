@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import MobileBottomSheet from "@/components/MobileBottomSheet";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopByIdAsMock } from "@/lib/publicWorkshopsFromDb";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
@@ -75,6 +76,8 @@ export default function WorkshopDetailsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [employeeOptions, setEmployeeOptions] = useState<Array<{ id: string; label: string; role: string }>>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("any");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [employeeSheetOpen, setEmployeeSheetOpen] = useState(false);
 
   const workshopId = typeof params?.id === "string" ? params.id : "";
 
@@ -151,6 +154,15 @@ export default function WorkshopDetailsPage() {
     if (!mounted) return;
     window.localStorage.setItem("servygo-theme", theme);
   }, [mounted, theme]);
+
+  useEffect(() => {
+    function updateViewportMode() {
+      setIsMobileViewport(window.innerWidth < 640);
+    }
+    updateViewportMode();
+    window.addEventListener("resize", updateViewportMode);
+    return () => window.removeEventListener("resize", updateViewportMode);
+  }, []);
 
   useEffect(() => {
     if (!mounted || !workshopId) return;
@@ -744,19 +756,68 @@ export default function WorkshopDetailsPage() {
                       <label className="mb-1 block text-xs font-semibold uppercase tracking-wide opacity-80">
                         Pracownik
                       </label>
-                      <select
-                        value={selectedEmployeeId}
-                        onChange={(e) => {
-                          setSelectedEmployeeId(e.target.value);
-                          setSelectedTime("");
-                        }}
-                        className={`w-full rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/80"}`}
-                      >
-                        <option value="any">Dowolny dostępny pracownik</option>
-                        {employeeOptions.map((employee) => (
-                          <option key={employee.id} value={employee.id}>{employee.label}</option>
-                        ))}
-                      </select>
+                      {isMobileViewport ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setEmployeeSheetOpen(true)}
+                            className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/80"}`}
+                          >
+                            {selectedEmployeeId === "any"
+                              ? "Dowolny dostępny pracownik"
+                              : employeeOptions.find((employee) => employee.id === selectedEmployeeId)?.label ?? "Wybierz pracownika"}
+                          </button>
+                          <MobileBottomSheet
+                            isOpen={employeeSheetOpen}
+                            onClose={() => setEmployeeSheetOpen(false)}
+                            title="Wybierz pracownika"
+                            isDark={isDark}
+                          >
+                            <div className="space-y-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedEmployeeId("any");
+                                  setSelectedTime("");
+                                  setEmployeeSheetOpen(false);
+                                }}
+                                className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10"
+                              >
+                                Dowolny dostępny pracownik
+                              </button>
+                              {employeeOptions.map((employee) => (
+                                <button
+                                  key={employee.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedEmployeeId(employee.id);
+                                    setSelectedTime("");
+                                    setEmployeeSheetOpen(false);
+                                  }}
+                                  className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10"
+                                >
+                                  <span>{employee.label}</span>
+                                  {selectedEmployeeId === employee.id ? <span>✓</span> : null}
+                                </button>
+                              ))}
+                            </div>
+                          </MobileBottomSheet>
+                        </>
+                      ) : (
+                        <select
+                          value={selectedEmployeeId}
+                          onChange={(e) => {
+                            setSelectedEmployeeId(e.target.value);
+                            setSelectedTime("");
+                          }}
+                          className={`w-full rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/80"}`}
+                        >
+                          <option value="any">Dowolny dostępny pracownik</option>
+                          {employeeOptions.map((employee) => (
+                            <option key={employee.id} value={employee.id}>{employee.label}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       {dynamicAvailableTimes.map((time) => {

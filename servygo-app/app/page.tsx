@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AutocompleteSelect from "@/components/AutocompleteSelect";
 import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
+import MobileBottomSheet from "@/components/MobileBottomSheet";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
 import { isAdmin } from "@/lib/adminApi";
 import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
@@ -161,6 +162,7 @@ export default function Home() {
   const [authBlockedUntil, setAuthBlockedUntil] = useState<number | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [registerFirstName, setRegisterFirstName] = useState("");
@@ -271,6 +273,15 @@ export default function Home() {
     darkLogo.src = "/servygo-logo-dark-cropped.png";
     const lightLogo = new window.Image();
     lightLogo.src = "/servygo-logo-light-cropped.png";
+  }, []);
+
+  useEffect(() => {
+    function updateViewportMode() {
+      setIsMobileViewport(window.innerWidth < 640);
+    }
+    updateViewportMode();
+    window.addEventListener("resize", updateViewportMode);
+    return () => window.removeEventListener("resize", updateViewportMode);
   }, []);
 
   useEffect(() => {
@@ -1422,7 +1433,7 @@ export default function Home() {
                       activeDropdown === "user"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
-                    }`}
+                    } hidden sm:block`}
                   >
                     {currentUser ? (
                       <>
@@ -1546,7 +1557,7 @@ export default function Home() {
                       activeDropdown === "lang"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
-                    }`}
+                    } hidden sm:block`}
                   >
                     <p className={dropdownHintClass}>{t("header.chooseLanguage")}</p>
                     {[
@@ -1588,7 +1599,7 @@ export default function Home() {
                       activeDropdown === "theme"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
-                    }`}
+                    } hidden sm:block`}
                   >
                     <p className={dropdownHintClass}>{t("header.chooseTheme")}</p>
                     <button
@@ -1619,6 +1630,95 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {isMobileViewport ? (
+            <>
+              <MobileBottomSheet
+                isOpen={activeDropdown === "user"}
+                onClose={() => setActiveDropdown(null)}
+                title="Konto"
+                isDark={isDark}
+              >
+                <div className="space-y-1">
+                  {currentUser ? (
+                    <>
+                      <button type="button" onClick={openAccountModal} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                        {t("auth.account")} {currentUser.email ? `(${currentUser.email})` : ""}
+                      </button>
+                      {!isCurrentUserAdmin ? (
+                        <Link href="/workshop-panel" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                          {t("workshop.panelTitle")}
+                        </Link>
+                      ) : null}
+                      {isCurrentUserAdmin ? (
+                        <Link href="/admin" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                          Panel admina
+                        </Link>
+                      ) : null}
+                      <button type="button" onClick={handleLogout} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                        {t("auth.logout")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" onClick={openLoginModal} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                        {t("header.login")}
+                      </button>
+                      <button type="button" onClick={openRegisterModal} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                        {t("header.register")}
+                      </button>
+                      <Link href="/dodaj-warsztat" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                        {t("header.addWorkshop")}
+                      </Link>
+                    </>
+                  )}
+                </div>
+              </MobileBottomSheet>
+
+              <MobileBottomSheet
+                isOpen={activeDropdown === "lang"}
+                onClose={() => setActiveDropdown(null)}
+                title={t("header.chooseLanguage")}
+                isDark={isDark}
+              >
+                <div className="space-y-1">
+                  {[
+                    { code: "pl", label: t("language.pl"), flag: "🇵🇱" },
+                    { code: "en", label: t("language.en"), flag: "🇬🇧" },
+                    { code: "ua", label: t("language.ua"), flag: "🇺🇦" },
+                  ].map((item) => (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => selectLanguage(item.code as LanguageCode)}
+                      className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10"
+                    >
+                      <span>{item.flag} {item.label}</span>
+                      {language === item.code ? <span>✓</span> : null}
+                    </button>
+                  ))}
+                </div>
+              </MobileBottomSheet>
+
+              <MobileBottomSheet
+                isOpen={activeDropdown === "theme"}
+                onClose={() => setActiveDropdown(null)}
+                title={t("header.chooseTheme")}
+                isDark={isDark}
+              >
+                <div className="space-y-1">
+                  <button type="button" onClick={() => selectTheme("light")} className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                    <span>☀️ {t("header.themeLight")}</span>
+                    {!isDark ? <span>✓</span> : null}
+                  </button>
+                  <button type="button" onClick={() => selectTheme("dark")} className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                    <span>🌙 {t("header.themeDark")}</span>
+                    {isDark ? <span>✓</span> : null}
+                  </button>
+                </div>
+              </MobileBottomSheet>
+            </>
+          ) : null}
 
           <span
             className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${
@@ -1688,10 +1788,9 @@ export default function Home() {
               {currentUser && vehicles.length > 0 ? (
                 <label className="flex w-full flex-col gap-1 sm:w-[320px]">
                   <span className="text-xs font-semibold uppercase tracking-wide opacity-80">Wybierz auto</span>
-                  <select
+                  <AutocompleteSelect
                     value={selectedSavedCarId}
-                    onChange={(event) => {
-                      const nextId = event.target.value;
+                    onChange={(nextId) => {
                       setSelectedSavedCarId(nextId);
                       if (!nextId) {
                         setShowManualVehicle(false);
@@ -1705,15 +1804,17 @@ export default function Home() {
                         setSearchVin("");
                       }
                     }}
-                    className={currentFieldClassName}
-                  >
-                    <option value="">Wpisz dane ręcznie</option>
-                    {vehicles.map((vehicle) => (
-                      <option key={vehicle.id} value={vehicle.id}>
-                        {vehicle.brand} {vehicle.model} ({vehicle.year || "—"}){vehicle.isPrimary ? " • domyślne" : ""}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Wpisz dane ręcznie" },
+                      ...vehicles.map((vehicle) => ({
+                        value: vehicle.id,
+                        label: `${vehicle.brand} ${vehicle.model} (${vehicle.year || "—"})${vehicle.isPrimary ? " • domyślne" : ""}`,
+                      })),
+                    ]}
+                    placeholder="Wybierz auto"
+                    inputClassName={currentFieldClassName}
+                    isDark={isDark}
+                  />
                 </label>
               ) : null}
             </div>
@@ -1730,11 +1831,10 @@ export default function Home() {
             >
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{t("form.labels.vehicleType")}</span>
-                <select
-                  name="vehicleType"
+                <AutocompleteSelect
                   value={vehicleType}
-                  onChange={(event) => {
-                    const selectedType = event.target.value as VehicleTypeKey | "";
+                  onChange={(nextValue) => {
+                    const selectedType = nextValue as VehicleTypeKey | "";
                     setVehicleType(selectedType);
                     setBrand("");
                     setModel("");
@@ -1742,22 +1842,17 @@ export default function Home() {
                     setService("");
                     setFuel("");
                   }}
-                  className={currentFieldClassName}
-                >
-                  <option value="">{t("form.selects.vehicleType")}</option>
-                  {vehicleTypeOptions.map((type) => (
-                    <option key={type.key} value={type.key}>
-                      {t(`form.vehicleTypes.${type.key}`)}
-                    </option>
-                  ))}
-                  <option disabled>{t("form.selects.separator")}</option>
-                  {translatedComingSoonTypes.map((type) => (
-                    <option key={type} value="" disabled>
-                      {type}
-                      {t("form.selects.comingSoonSuffix")}
-                    </option>
-                  ))}
-                </select>
+                  options={vehicleTypeOptions.map((type) => ({
+                    value: type.key,
+                    label: t(`form.vehicleTypes.${type.key}`),
+                  }))}
+                  placeholder={t("form.selects.vehicleType")}
+                  required
+                  noResultsText={t("account.placeholders.noResults")}
+                  inputClassName={currentFieldClassName}
+                  isDark={isDark}
+                />
+                <input type="hidden" name="vehicleType" value={vehicleType} />
               </label>
 
               <label className="flex flex-col gap-2">
