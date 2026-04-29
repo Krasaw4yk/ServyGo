@@ -40,6 +40,7 @@ Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, 
 17. `supabase/sql/supabase-17-workshop-availability-and-services.sql` — tabela `workshop_availability_exceptions` (wyjątki kalendarza), rozbudowa `workshop_services` o pola usług/cen (`service_key`, `category`, `description`, `price_from`, `duration_minutes`, `is_active`, `is_custom`) oraz polityki RLS owner/admin i publiczny odczyt tylko aktywnych usług warsztatów `active`. Uruchom po pliku 16.
 18. `supabase/sql/supabase-18-bookings-duration-slots-and-employees.sql` — rozbudowa `bookings` o zakres czasu (`booking_date`, `start_time`, `end_time`, `duration_minutes`), dane klienta/auta i `employee_id`, tabela `workshop_employees`, `required_roles` na `workshop_services`, antykolizyjny constraint dla aktywnych rezerwacji (`new`, `confirmed`) oraz RPC `create_booking_safe(...)` z walidacją kolizji i automatycznym doborem pracownika. Uruchom po pliku 17.
 19. `supabase/sql/supabase-19-workshop-services-price-to.sql` — dodaje kolumnę `price_to` (cena "do") do `workshop_services` i constraint spójności zakresu (`price_to >= price_from`). Uruchom po pliku 18.
+20. `supabase/sql/supabase-20-cars-vin-multiple.sql` — rozszerza `cars` o `vin` i `city`, dodaje indeks VIN per użytkownik, gwarantuje maksymalnie jedno auto główne (`is_primary = true`) oraz usuwa ewentualny legacy-constraint wymuszający jedno auto na `user_id`. Uruchom po pliku 19.
 
 ### Opcjonalne / testowe
 
@@ -59,6 +60,7 @@ Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, 
 - `service_requests` — zapytania klientów o usługę.
 - `bookings` — rezerwacje terminów; po migracji 18: `booking_date`, `start_time`, `end_time`, `duration_minutes`, `employee_id`, dane klienta/auta + statusy operacyjne (`new`, `confirmed`, `cancelled`, `rejected`, `done`).
 - `cars` — auta użytkowników.
+- `cars` — auta użytkowników (po migracji 20 także: `vin`, `city`; nadal wiele aut na użytkownika + jedno opcjonalne `is_primary`).
 
 ## Jak dodać siebie jako admina
 

@@ -38,6 +38,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
     },
     form: {
       title: "Znajdź najlepszą ofertę serwisową",
+      selectSavedCar: "Wybierz moje auto",
       subtitle:
         "Wypełnij dane pojazdu i opisz problem. ServyGo pomoże Ci zebrać oferty od warsztatów w Twojej okolicy.",
       labels: {
@@ -141,7 +142,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       title: "Moje konto",
       tabs: {
         profile: "Mój profil",
-        vehicles: "Moje auto",
+        vehicles: "Moje auta",
         security: "Bezpieczeństwo",
       },
       profile: {
@@ -157,9 +158,14 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         model: "Model",
         year: "Rocznik",
         registration: "Numer rejestracyjny",
+        vin: "VIN",
+        city: "Miasto domyślne",
         fuel: "Paliwo / napęd",
         add: "Dodaj auto",
         listTitle: "Twoje pojazdy",
+        edit: "Edytuj",
+        save: "Zapisz",
+        cancel: "Anuluj",
         setPrimary: "Ustaw jako główny",
         primary: "Główny",
         remove: "Usuń",
@@ -189,6 +195,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         model: "Wybierz model",
         year: "Wybierz rocznik",
         registration: "np. KR1A234",
+        vin: "np. WAUZZZ8V6JA000001",
         fuel: "Wybierz paliwo",
         noResults: "Brak wyników",
       },
@@ -412,6 +419,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
     },
     form: {
       title: "Find the best service offer",
+      selectSavedCar: "Choose my car",
       subtitle:
         "Fill in your vehicle details and describe the issue. ServyGo will help you collect offers from local workshops.",
       labels: {
@@ -515,7 +523,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       title: "My account",
       tabs: {
         profile: "My profile",
-        vehicles: "My car",
+        vehicles: "My cars",
         security: "Security",
       },
       profile: {
@@ -531,9 +539,14 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         model: "Model",
         year: "Year",
         registration: "Registration number",
+        vin: "VIN",
+        city: "Default city",
         fuel: "Fuel / drive",
         add: "Add car",
         listTitle: "Your vehicles",
+        edit: "Edit",
+        save: "Save",
+        cancel: "Cancel",
         setPrimary: "Set as primary",
         primary: "Primary",
         remove: "Remove",
@@ -563,6 +576,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         model: "Select model",
         year: "Select year",
         registration: "e.g. KR1A234",
+        vin: "e.g. WAUZZZ8V6JA000001",
         fuel: "Select fuel",
         noResults: "No results",
       },
@@ -786,6 +800,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
     },
     form: {
       title: "Знайдіть найкращу сервісну пропозицію",
+      selectSavedCar: "Обрати моє авто",
       subtitle:
         "Заповніть дані авто та опишіть проблему. ServyGo допоможе зібрати пропозиції від СТО у вашому районі.",
       labels: {
@@ -888,7 +903,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       title: "Мій кабінет",
       tabs: {
         profile: "Мій профіль",
-        vehicles: "Моє авто",
+        vehicles: "Мої авто",
         security: "Безпека",
       },
       profile: {
@@ -904,9 +919,14 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         model: "Модель",
         year: "Рік",
         registration: "Номер реєстрації",
+        vin: "VIN",
+        city: "Місто за замовчуванням",
         fuel: "Паливо / привід",
         add: "Додати авто",
         listTitle: "Ваші авто",
+        edit: "Редагувати",
+        save: "Зберегти",
+        cancel: "Скасувати",
         setPrimary: "Зробити основним",
         primary: "Основне",
         remove: "Видалити",
@@ -936,6 +956,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         model: "Оберіть модель",
         year: "Оберіть рік",
         registration: "напр. KR1A234",
+        vin: "напр. WAUZZZ8V6JA000001",
         fuel: "Оберіть паливо",
         noResults: "Немає результатів",
       },

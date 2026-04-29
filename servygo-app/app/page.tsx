@@ -48,6 +48,8 @@ type StoredVehicle = {
   year: string;
   registration: string;
   fuel: string;
+  vin: string;
+  city: string;
   isPrimary: boolean;
 };
 
@@ -77,6 +79,8 @@ type Car = {
   year: number | null;
   fuel: string | null;
   plate_number: string | null;
+  vin: string | null;
+  city: string | null;
   is_primary: boolean | null;
   created_at: string | null;
   updated_at: string | null;
@@ -103,6 +107,7 @@ export default function Home() {
   const [year, setYear] = useState("");
   const [fuel, setFuel] = useState("");
   const [service, setService] = useState("");
+  const [searchCity, setSearchCity] = useState("");
   const [showManualVehicle, setShowManualVehicle] = useState(false);
   const [manualType, setManualType] = useState("");
   const [manualBrand, setManualBrand] = useState("");
@@ -136,7 +141,12 @@ export default function Home() {
   const [vehicleYearDraft, setVehicleYearDraft] = useState("");
   const [vehicleRegistrationDraft, setVehicleRegistrationDraft] = useState("");
   const [vehicleFuelDraft, setVehicleFuelDraft] = useState("");
+  const [vehicleVinDraft, setVehicleVinDraft] = useState("");
+  const [vehicleCityDraft, setVehicleCityDraft] = useState("");
   const [vehicles, setVehicles] = useState<StoredVehicle[]>([]);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [editVehicleDraft, setEditVehicleDraft] = useState<StoredVehicle | null>(null);
+  const [selectedSavedCarId, setSelectedSavedCarId] = useState("");
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [securityPassword, setSecurityPassword] = useState("");
   const [securityPasswordRepeat, setSecurityPasswordRepeat] = useState("");
@@ -289,6 +299,49 @@ export default function Home() {
 
     checkAdminAccess();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!supabase || !currentUser) {
+      setSelectedSavedCarId("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cars = await getUserCars(currentUser.id);
+        if (cancelled) return;
+        const mapped = cars.map(mapCarToStored);
+        setVehicles(mapped);
+        const primary = mapped.find((x) => x.isPrimary) ?? mapped[0] ?? null;
+        setSelectedSavedCarId(primary?.id ?? "");
+      } catch {
+        if (!cancelled) {
+          setVehicles([]);
+          setSelectedSavedCarId("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!selectedSavedCarId) return;
+    const selected = vehicles.find((v) => v.id === selectedSavedCarId);
+    if (!selected) return;
+    const nextType = selected.vehicleType as VehicleTypeKey | "";
+    if (nextType) {
+      setVehicleType(nextType);
+    }
+    setBrand(selected.brand);
+    setModel(selected.model);
+    setYear(selected.year);
+    setFuel(selected.fuel);
+    if (selected.city.trim()) {
+      setSearchCity(selected.city);
+    }
+  }, [selectedSavedCarId, vehicles]);
 
   const currentVehicleConfig = vehicleType ? vehicleData[vehicleType] : null;
   const brandsForVehicleType = getVehicleBrands(vehicleType);
@@ -594,6 +647,8 @@ export default function Home() {
         year: vehicle.year,
         fuel: vehicle.fuel,
         plate_number: vehicle.plate_number,
+        vin: vehicle.vin,
+        city: vehicle.city,
         is_primary: vehicle.is_primary ?? false,
       })
       .select("*")
@@ -606,6 +661,34 @@ export default function Home() {
     if (!supabase) throw new Error("Supabase client not available.");
     const { error } = await supabase.from("cars").delete().eq("id", carId);
     if (error) throw error;
+  }
+
+  async function updateUserCar(
+    userId: string,
+    carId: string,
+    vehicle: Omit<Car, "id" | "user_id" | "created_at" | "updated_at">,
+  ): Promise<Car> {
+    if (!supabase) throw new Error("Supabase client not available.");
+    const { data, error } = await supabase
+      .from("cars")
+      .update({
+        vehicle_type: vehicle.vehicle_type,
+        brand: vehicle.brand,
+        model: vehicle.model,
+        year: vehicle.year,
+        fuel: vehicle.fuel,
+        plate_number: vehicle.plate_number,
+        vin: vehicle.vin,
+        city: vehicle.city,
+        is_primary: vehicle.is_primary ?? false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", carId)
+      .eq("user_id", userId)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data as Car;
   }
 
   async function setPrimaryCar(userId: string, carId: string) {
@@ -633,6 +716,8 @@ export default function Home() {
       year: car.year ? String(car.year) : "",
       registration: car.plate_number ?? "",
       fuel: car.fuel ?? "",
+      vin: car.vin ?? "",
+      city: car.city ?? "",
       isPrimary: Boolean(car.is_primary),
     };
   }
@@ -764,6 +849,8 @@ export default function Home() {
     setVehicleYearDraft("");
     setVehicleRegistrationDraft("");
     setVehicleFuelDraft("");
+    setVehicleVinDraft("");
+    setVehicleCityDraft("");
   }
 
   async function handleVehicleAdd() {
@@ -793,6 +880,8 @@ export default function Home() {
         year: parsedYear,
         fuel: vehicleFuelDraft.trim() || null,
         plate_number: vehicleRegistrationDraft.trim() || null,
+        vin: vehicleVinDraft.trim().toUpperCase() || null,
+        city: vehicleCityDraft.trim() || null,
         is_primary: vehicles.length === 0,
       });
       const nextVehicles = [mapCarToStored(inserted), ...vehicles];
@@ -824,10 +913,70 @@ export default function Home() {
         nextVehicles[0] = { ...nextVehicles[0], isPrimary: true };
       }
       setVehicles(nextVehicles);
+      if (selectedSavedCarId === vehicleId) {
+        setSelectedSavedCarId((nextVehicles.find((v) => v.isPrimary) ?? nextVehicles[0])?.id ?? "");
+      }
+      if (editingVehicleId === vehicleId) {
+        cancelVehicleEdit();
+      }
       setAccountInfo(t("account.messages.vehicleDeleted"));
       setAccountError("");
     } catch (error) {
       const message = error instanceof Error ? error.message : t("account.messages.vehicleDeleteError");
+      setAccountError(message);
+      setAccountInfo("");
+    } finally {
+      setAccountSaving(false);
+    }
+  }
+
+  function beginVehicleEdit(vehicle: StoredVehicle) {
+    setEditingVehicleId(vehicle.id);
+    setEditVehicleDraft({ ...vehicle });
+    setAccountError("");
+    setAccountInfo("");
+  }
+
+  function cancelVehicleEdit() {
+    setEditingVehicleId(null);
+    setEditVehicleDraft(null);
+  }
+
+  async function handleVehicleEditSave() {
+    if (!currentUser || !supabase || !editingVehicleId || !editVehicleDraft) {
+      setAccountError(t("auth.errors.notLoggedIn"));
+      return;
+    }
+    if (!editVehicleDraft.brand.trim() || !editVehicleDraft.model.trim() || !editVehicleDraft.year.trim()) {
+      setAccountError(t("account.validation.vehicleRequired"));
+      setAccountInfo("");
+      return;
+    }
+    const parsedYear = Number.parseInt(editVehicleDraft.year.trim(), 10);
+    if (!Number.isFinite(parsedYear)) {
+      setAccountError(t("account.validation.vehicleRequired"));
+      setAccountInfo("");
+      return;
+    }
+    setAccountSaving(true);
+    try {
+      const updated = await updateUserCar(currentUser.id, editingVehicleId, {
+        vehicle_type: editVehicleDraft.vehicleType.trim() || null,
+        brand: editVehicleDraft.brand.trim(),
+        model: editVehicleDraft.model.trim(),
+        year: parsedYear,
+        fuel: editVehicleDraft.fuel.trim() || null,
+        plate_number: editVehicleDraft.registration.trim() || null,
+        vin: editVehicleDraft.vin.trim().toUpperCase() || null,
+        city: editVehicleDraft.city.trim() || null,
+        is_primary: editVehicleDraft.isPrimary,
+      });
+      setVehicles((prev) => prev.map((v) => (v.id === editingVehicleId ? mapCarToStored(updated) : v)));
+      setAccountError("");
+      setAccountInfo(t("account.messages.vehicleSaved"));
+      cancelVehicleEdit();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("account.messages.vehicleSaveError");
       setAccountError(message);
       setAccountInfo("");
     } finally {
@@ -849,6 +998,7 @@ export default function Home() {
         isPrimary: vehicle.id === vehicleId,
       }));
       setVehicles(nextVehicles);
+      setSelectedSavedCarId(vehicleId);
       setAccountInfo(t("account.messages.primaryVehicleSet"));
       setAccountError("");
     } catch (error) {
@@ -1503,10 +1653,28 @@ export default function Home() {
                 aria-hidden
               />
             ) : null}
-            <h2 className="text-xl font-bold sm:text-2xl">
-              {t("form.title")}
-              <span className="ml-2 text-orange-400">•</span>
-            </h2>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <h2 className="text-xl font-bold sm:text-2xl">
+                {t("form.title")}
+                <span className="ml-2 text-orange-400">•</span>
+              </h2>
+              {currentUser && vehicles.length > 0 ? (
+                <label className="flex w-full flex-col gap-1 sm:w-[320px]">
+                  <span className="text-xs font-semibold uppercase tracking-wide opacity-80">{t("form.selectSavedCar")}</span>
+                  <select
+                    value={selectedSavedCarId}
+                    onChange={(event) => setSelectedSavedCarId(event.target.value)}
+                    className={currentFieldClassName}
+                  >
+                    {vehicles.map((vehicle) => (
+                      <option key={vehicle.id} value={vehicle.id}>
+                        {vehicle.brand} {vehicle.model} ({vehicle.year || "—"}){vehicle.isPrimary ? " • domyślne" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
             <p
               className={`mt-2 max-w-3xl text-sm sm:text-base ${
                 isDark ? "text-zinc-300" : "text-zinc-700"
@@ -1653,6 +1821,8 @@ export default function Home() {
                   type="text"
                   name="city"
                   required
+                  value={searchCity}
+                  onChange={(event) => setSearchCity(event.target.value)}
                   placeholder={t("form.placeholders.city")}
                   className={currentFieldClassName}
                 />
@@ -2107,6 +2277,15 @@ export default function Home() {
                           <span className="text-sm font-medium">{t("account.vehicle.registration")}</span>
                           <input value={vehicleRegistrationDraft} onChange={(event) => setVehicleRegistrationDraft(event.target.value)} className={currentFieldClassName} placeholder={t("account.placeholders.registration")} />
                         </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium">{t("account.vehicle.vin")}</span>
+                          <input
+                            value={vehicleVinDraft}
+                            onChange={(event) => setVehicleVinDraft(event.target.value.toUpperCase())}
+                            className={currentFieldClassName}
+                            placeholder={t("account.placeholders.vin")}
+                          />
+                        </label>
                         <AutocompleteSelect
                           label={t("account.vehicle.fuel")}
                           value={vehicleFuelDraft}
@@ -2115,6 +2294,17 @@ export default function Home() {
                           placeholder={t("account.placeholders.fuel")}
                           noResultsText={t("account.placeholders.noResults")}
                           disabled={!vehicleTypeDraft || accountSaving || accountLoading}
+                          isDark={isDark}
+                          inputClassName={currentFieldClassName}
+                        />
+                        <AutocompleteSelect
+                          label={t("account.vehicle.city")}
+                          value={vehicleCityDraft}
+                          onChange={setVehicleCityDraft}
+                          options={citySelectOptions}
+                          placeholder={t("account.placeholders.city")}
+                          noResultsText={t("account.placeholders.noResults")}
+                          disabled={accountSaving || accountLoading}
                           isDark={isDark}
                           inputClassName={currentFieldClassName}
                         />
@@ -2147,6 +2337,16 @@ export default function Home() {
                                 <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                                   {vehicle.vehicleType ? getVehicleTypeLabel(vehicle.vehicleType) : "—"} · {vehicle.fuel || "—"} · {vehicle.registration || "—"}
                                 </p>
+                                {vehicle.vin ? (
+                                  <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                    VIN: {vehicle.vin}
+                                  </p>
+                                ) : null}
+                                {vehicle.city ? (
+                                  <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                    {t("account.vehicle.city")}: {vehicle.city}
+                                  </p>
+                                ) : null}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   <button
                                     type="button"
@@ -2164,6 +2364,16 @@ export default function Home() {
                                   </button>
                                   <button
                                     type="button"
+                                    onClick={() => beginVehicleEdit(vehicle)}
+                                    disabled={accountSaving || accountLoading}
+                                    className={`rounded-lg px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
+                                      isDark ? "bg-zinc-800 text-zinc-200" : "bg-slate-100 text-zinc-700"
+                                    }`}
+                                  >
+                                    {t("account.vehicle.edit")}
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => handleVehicleDelete(vehicle.id)}
                                     disabled={accountSaving || accountLoading}
                                     className="rounded-lg bg-orange-500/15 px-3 py-1 text-sm text-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2171,6 +2381,27 @@ export default function Home() {
                                     {t("account.vehicle.remove")}
                                   </button>
                                 </div>
+                                {editingVehicleId === vehicle.id && editVehicleDraft ? (
+                                  <div className={`mt-3 grid grid-cols-1 gap-2 rounded-xl border p-3 sm:grid-cols-2 ${
+                                    isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-100 bg-white/80"
+                                  }`}>
+                                    <input value={editVehicleDraft.brand} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, brand: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.brand")} />
+                                    <input value={editVehicleDraft.model} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.model")} />
+                                    <input value={editVehicleDraft.year} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, year: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.year")} />
+                                    <input value={editVehicleDraft.registration} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, registration: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.registration")} />
+                                    <input value={editVehicleDraft.fuel} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, fuel: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.fuel")} />
+                                    <input value={editVehicleDraft.city} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, city: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.city")} />
+                                    <input value={editVehicleDraft.vin} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, vin: e.target.value.toUpperCase() } : prev)} className={`${currentFieldClassName} sm:col-span-2`} placeholder={t("account.vehicle.vin")} />
+                                    <div className="sm:col-span-2 flex flex-wrap gap-2">
+                                      <button type="button" onClick={() => void handleVehicleEditSave()} disabled={accountSaving || accountLoading} className="rounded-lg bg-blue-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-60">
+                                        {t("account.vehicle.save")}
+                                      </button>
+                                      <button type="button" onClick={cancelVehicleEdit} disabled={accountSaving || accountLoading} className={`rounded-lg px-3 py-1 text-sm ${isDark ? "bg-zinc-800 text-zinc-200" : "bg-slate-100 text-zinc-700"}`}>
+                                        {t("account.vehicle.cancel")}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </article>
                             ))
                           )}
