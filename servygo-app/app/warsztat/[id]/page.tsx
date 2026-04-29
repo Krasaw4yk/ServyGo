@@ -9,6 +9,7 @@ import MobileBottomSheet from "@/components/MobileBottomSheet";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopByIdAsMock } from "@/lib/publicWorkshopsFromDb";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { sendSystemMessage } from "@/lib/messagesApi";
 import { createTranslator, LanguageCode } from "@/lib/translations";
 import { getAvailableSlots, inferEndTime } from "@/lib/bookingAvailability";
 import { trackEvent } from "@/lib/analytics";
@@ -413,6 +414,36 @@ export default function WorkshopDetailsPage() {
         p_employee_id: selectedEmployeeId === "any" ? null : selectedEmployeeId,
       });
       if (error) throw error;
+      const { data: ownerRow } = await supabase
+        .from("workshops")
+        .select("owner_user_id")
+        .eq("id", workshop.supabaseId)
+        .maybeSingle();
+      const ownerUserId = ((ownerRow as { owner_user_id?: string | null } | null)?.owner_user_id ?? null) as string | null;
+      await sendSystemMessage({
+        recipientId: ownerUserId,
+        recipientRole: "workshop",
+        subject: `Nowa rezerwacja: ${selectedService.service_name}`,
+        body: [
+          `Warsztat: ${workshop.name}`,
+          `Usługa: ${selectedService.service_name}`,
+          `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
+          `Status: Oczekująca`,
+        ].join("\n"),
+        relatedWorkshopId: workshop.supabaseId,
+      });
+      await sendSystemMessage({
+        recipientId: currentUserId,
+        recipientRole: "client",
+        subject: `Potwierdzenie utworzenia rezerwacji: ${selectedService.service_name}`,
+        body: [
+          `Warsztat: ${workshop.name}`,
+          `Usługa: ${selectedService.service_name}`,
+          `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
+          "Status: Oczekująca",
+        ].join("\n"),
+        relatedWorkshopId: workshop.supabaseId,
+      });
       void trackEvent("booking_confirm", {
         workshopId: workshop.supabaseId,
         workshopName: workshop.name,

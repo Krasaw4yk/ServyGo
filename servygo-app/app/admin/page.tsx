@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import InternalInbox from "@/components/InternalInbox";
+import { getUnreadMessagesCount, sendSystemMessage } from "@/lib/messagesApi";
 import {
   type AdminSidebarNotificationCounts,
   type AdminWorkshopDetail,
@@ -37,6 +39,7 @@ import { getAdminDashboardStats, type AdminDashboardStats } from "@/lib/adminSta
 
 const SIDEBAR_ITEMS = [
   "Dashboard",
+  "Wiadomości",
   "Zgłoszenia warsztatów",
   "Warsztaty",
   "Rezerwacje",
@@ -51,6 +54,7 @@ type SidebarBadgeState = Record<SidebarItem, number>;
 
 const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
   Dashboard: 0,
+  Wiadomości: 0,
   "Zgłoszenia warsztatów": 0,
   Warsztaty: 0,
   Rezerwacje: 0,
@@ -244,9 +248,13 @@ export default function AdminPage() {
   const refreshSidebarBadges = useCallback(async () => {
     if (!currentUser) return;
     try {
-      const counts: AdminSidebarNotificationCounts = await getAdminSidebarNotificationCounts(currentUser.id, currentUser.email);
+      const [counts, unreadMessages]: [AdminSidebarNotificationCounts, number] = await Promise.all([
+        getAdminSidebarNotificationCounts(currentUser.id, currentUser.email),
+        getUnreadMessagesCount(currentUser.id, true),
+      ]);
       setLiveSidebarBadges((prev) => ({
         ...prev,
+        Wiadomości: unreadMessages,
         "Zgłoszenia warsztatów": counts.pendingLeads,
         Rezerwacje: counts.newBookings,
         Użytkownicy: counts.newUsers24h,
@@ -464,8 +472,15 @@ export default function AdminPage() {
       if (!token) throw new Error("Brak sesji — zaloguj się ponownie.");
       const { invited } = await approveWorkshopLeadWithOwnerEmail(token, pendingApproveLead.id, emailRaw);
       setRows((prev) => prev.map((row) => (row.id === pendingApproveLead.id ? { ...row, status: "approved" } : row)));
+      await sendSystemMessage({
+        recipientId: null,
+        recipientRole: "workshop",
+        subject: `Zgłoszenie warsztatu zaakceptowane: ${pendingApproveLead.workshop_name}`,
+        body: `Administrator zaakceptował zgłoszenie warsztatu "${pendingApproveLead.workshop_name}" (${pendingApproveLead.city ?? "miasto nieznane"}).`,
+      });
       await refreshWorkshops();
       await refreshLeads();
+      await refreshSidebarBadges();
       setLeadDetailId(null);
       closeApproveModal();
       setSuccessMessage(
@@ -501,9 +516,19 @@ export default function AdminPage() {
   }
 
   async function rejectLeadFromList(id: string) {
+    const target = rows.find((row) => row.id === id) ?? null;
     const ok = await updateLeadStatus(id, "rejected");
     if (ok) {
+      if (target) {
+        await sendSystemMessage({
+          recipientId: null,
+          recipientRole: "workshop",
+          subject: `Zgłoszenie warsztatu odrzucone: ${target.workshop_name}`,
+          body: `Administrator odrzucił zgłoszenie warsztatu "${target.workshop_name}".`,
+        });
+      }
       await refreshLeads();
+      await refreshSidebarBadges();
       setSuccessMessage("Zgłoszenie odrzucone.");
     }
   }
@@ -803,7 +828,10 @@ export default function AdminPage() {
                     }`}
                   >
                     <span className="flex items-center justify-between gap-2">
-                      <span>{item}</span>
+                      <span className="inline-flex items-center gap-2">
+                        {item === "Wiadomości" ? <span>✉️</span> : null}
+                        <span>{item}</span>
+                      </span>
                       {unreadSidebarBadges[item] > 0 ? (
                         <span
                           className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none ${
@@ -1314,6 +1342,18 @@ export default function AdminPage() {
                   </div>
                 </section>
               </>
+            ) : null}
+
+            {activeTab === "Wiadomości" && currentUser ? (
+              <InternalInbox
+                currentUserId={currentUser.id}
+                isDark={isDark}
+                viewerRole="admin"
+                includeAllForAdmin
+                onUnreadCountChange={(count) =>
+                  setLiveSidebarBadges((prev) => ({ ...prev, Wiadomości: count }))
+                }
+              />
             ) : null}
 
             {activeTab === "Zgłoszenia warsztatów" ? (

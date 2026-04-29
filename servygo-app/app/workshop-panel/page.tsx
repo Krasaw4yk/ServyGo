@@ -5,8 +5,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import InternalInbox from "@/components/InternalInbox";
 import { getWorkshopDetailForAdmin, isAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { getUnreadMessagesCount, sendSystemMessage } from "@/lib/messagesApi";
 import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
 import { getAllServiceOptions } from "@/lib/vehicleData";
 import {
@@ -36,6 +38,7 @@ import {
 const WORKSHOP_SECTIONS = [
   "Dashboard",
   "Rezerwacje",
+  "Wiadomości",
   "Kalendarz / dostępność",
   "Usługi i ceny",
   "Pracownicy",
@@ -310,6 +313,8 @@ function WorkshopPanelPageContent() {
     is_active: true,
   });
   const [bookingActionId, setBookingActionId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const isDark = mounted ? theme === "dark" : false;
   const formInputClassName = `rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-white text-black" : "border-zinc-300 bg-white text-black"}`;
@@ -430,6 +435,13 @@ function WorkshopPanelPageContent() {
           router.replace("/?auth=login");
         }
         return;
+      }
+      setCurrentUserId(u.id);
+      try {
+        const unread = await getUnreadMessagesCount(u.id);
+        if (!cancelled) setUnreadMessages(unread);
+      } catch {
+        if (!cancelled) setUnreadMessages(0);
       }
       const admin = await isAdmin(u.id, u.email);
       if (isAdminPreview) {
@@ -803,11 +815,34 @@ function WorkshopPanelPageContent() {
 
   async function setBookingStatus(id: string, status: "confirmed" | "rejected" | "completed") {
     if (readOnly) return;
+    const booking = bookings.find((item) => item.id === id);
     setBookingActionId(id);
     setError("");
     try {
       await updateBookingStatusAsWorkshopOwner(id, status);
       setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)));
+      if (booking && workshop) {
+        const statusLabel = status === "confirmed" ? "Potwierdzona" : status === "rejected" ? "Odrzucona" : "Zakończona";
+        await sendSystemMessage({
+          recipientId: booking.user_id,
+          recipientRole: "client",
+          subject: `Aktualizacja rezerwacji: ${booking.service_name}`,
+          body: [
+            `Warsztat: ${workshop.name}`,
+            `Usługa: ${booking.service_name}`,
+            `Termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
+            `Status: ${statusLabel}`,
+            "",
+            status === "confirmed"
+              ? "Warsztat potwierdził Twoją wizytę."
+              : status === "rejected"
+                ? "Warsztat odrzucił wizytę."
+                : "Wizyta została oznaczona jako zakończona.",
+          ].join("\n"),
+          relatedBookingId: booking.id,
+          relatedWorkshopId: workshop.id,
+        });
+      }
       setSuccess("Status rezerwacji został zaktualizowany.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Błąd aktualizacji rezerwacji.");
@@ -1066,7 +1101,15 @@ function WorkshopPanelPageContent() {
                           : "text-zinc-700 hover:bg-blue-50"
                     }`}
                   >
-                    {item}
+                    <span className="inline-flex items-center gap-2">
+                      {item === "Wiadomości" ? <span>✉️</span> : null}
+                      <span>{item}</span>
+                      {item === "Wiadomości" && unreadMessages > 0 ? (
+                        <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+                          {unreadMessages > 99 ? "99+" : unreadMessages}
+                        </span>
+                      ) : null}
+                    </span>
                   </button>
                 ))}
               </nav>
@@ -1287,6 +1330,15 @@ function WorkshopPanelPageContent() {
                       </table>
                     </div>
                   </section>
+                ) : null}
+
+                {activeSection === "Wiadomości" && currentUserId ? (
+                  <InternalInbox
+                    currentUserId={currentUserId}
+                    isDark={isDark}
+                    viewerRole="workshop"
+                    onUnreadCountChange={setUnreadMessages}
+                  />
                 ) : null}
 
                 {activeSection === "Kalendarz / dostępność" ? (

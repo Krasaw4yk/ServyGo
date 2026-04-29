@@ -9,6 +9,7 @@ import type { User } from "@supabase/supabase-js";
 import AutocompleteSelect from "@/components/AutocompleteSelect";
 import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
+import InternalInbox from "@/components/InternalInbox";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
 import { isAdmin } from "@/lib/adminApi";
 import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
@@ -29,9 +30,10 @@ import {
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
 import { trackEvent } from "@/lib/analytics";
+import { getUnreadMessagesCount, resolveMessageViewerContext } from "@/lib/messagesApi";
 type ActiveDropdown = "user" | "lang" | "theme" | null;
 type AuthModalType = "login" | "register" | null;
-type AccountTab = "profile" | "vehicles" | "security";
+type AccountTab = "profile" | "vehicles" | "security" | "messages";
 
 type UserProfileDraft = {
   firstName: string;
@@ -130,6 +132,8 @@ export default function Home() {
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountInfo, setAccountInfo] = useState("");
   const [accountError, setAccountError] = useState("");
+  const [accountUnreadMessages, setAccountUnreadMessages] = useState(0);
+  const [accountViewerRole, setAccountViewerRole] = useState<"client" | "workshop" | "admin">("client");
   const [profileDraft, setProfileDraft] = useState<UserProfileDraft>({
     firstName: "",
     lastName: "",
@@ -321,6 +325,29 @@ export default function Home() {
     }
 
     checkAdminAccess();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setAccountUnreadMessages(0);
+      setAccountViewerRole("client");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const context = await resolveMessageViewerContext(currentUser.id, currentUser.email);
+        const unread = await getUnreadMessagesCount(currentUser.id, context.isAdminOrOwner);
+        if (cancelled) return;
+        setAccountUnreadMessages(unread);
+        setAccountViewerRole(context.role);
+      } catch {
+        if (!cancelled) setAccountUnreadMessages(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [currentUser]);
 
   useEffect(() => {
@@ -2265,6 +2292,7 @@ export default function Home() {
                       { key: "profile", label: t("account.tabs.profile") },
                       { key: "vehicles", label: t("account.tabs.vehicles") },
                       { key: "security", label: t("account.tabs.security") },
+                      { key: "messages", label: `✉️ Skrzynka${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
                     ] as { key: AccountTab; label: string }[]).map((tab) => (
                       <button
                         key={tab.key}
@@ -2671,6 +2699,16 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
+                  ) : null}
+
+                  {accountTab === "messages" && currentUser ? (
+                    <InternalInbox
+                      currentUserId={currentUser.id}
+                      isDark={isDark}
+                      viewerRole={accountViewerRole}
+                      includeAllForAdmin={accountViewerRole === "admin"}
+                      onUnreadCountChange={setAccountUnreadMessages}
+                    />
                   ) : null}
                 </section>
               </div>
