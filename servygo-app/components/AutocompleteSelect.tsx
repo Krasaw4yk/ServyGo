@@ -136,7 +136,7 @@ export default function AutocompleteSelect({
       </div>
       {isOpen ? (
         <div
-          className={`absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border p-1 shadow-xl backdrop-blur ${
+          className={`absolute left-0 top-full z-20 mt-1 max-h-56 w-full max-w-[min(100%,92vw)] overflow-auto rounded-xl border p-1 shadow-xl backdrop-blur sm:right-0 sm:max-w-none ${
             isDark
               ? "border-blue-400/20 bg-zinc-900/95 shadow-[0_14px_34px_rgba(2,6,23,0.72),0_0_24px_rgba(59,130,246,0.28)]"
               : "border-blue-200/60 bg-white/95 shadow-[0_18px_40px_rgba(37,99,235,0.2),0_0_22px_rgba(249,115,22,0.18)]"

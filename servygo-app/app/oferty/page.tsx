@@ -143,9 +143,9 @@ export default function OffersPage() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-4 py-8 sm:px-6 xl:px-8">
+      <main className="min-h-screen px-3 py-6 sm:px-6 sm:py-8 xl:px-8">
       <div className="mx-auto w-full max-w-[1680px]">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
           <Link href="/" className="inline-flex items-center">
             <Image
               src={isDark ? "/servygo-logo-dark-cropped.png" : "/servygo-logo-light-cropped.png"}
@@ -155,22 +155,22 @@ export default function OffersPage() {
               className="h-10 w-auto object-contain sm:h-12"
             />
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <button
               type="button"
               onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-              className="inline-flex rounded-xl border border-blue-300/60 px-4 py-2 text-sm font-semibold transition hover:border-orange-300"
+              className="inline-flex w-full justify-center rounded-xl border border-blue-300/60 px-3 py-2 text-sm font-semibold transition hover:border-orange-300 sm:w-auto sm:px-4"
             >
               {theme === "dark" ? "☀️" : "🌙"} {theme === "dark" ? t("header.themeLight") : t("header.themeDark")}
             </button>
           </div>
         </div>
 
-        <div className="mb-4 flex gap-2 md:hidden">
+        <div className="mb-4 grid grid-cols-2 gap-2 md:hidden">
           <button
             type="button"
             onClick={() => setViewMode("list")}
-            className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+            className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
               viewMode === "list"
                 ? "bg-blue-600 text-white"
                 : isDark
@@ -183,7 +183,7 @@ export default function OffersPage() {
           <button
             type="button"
             onClick={() => setViewMode("map")}
-            className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+            className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
               viewMode === "map"
                 ? "bg-blue-600 text-white"
                 : isDark
@@ -259,7 +259,7 @@ export default function OffersPage() {
                             : "border-blue-200 bg-white/80"
                       }`}
                     >
-                      <h3 className="text-base font-semibold leading-tight md:text-lg">{workshop.name}</h3>
+                      <h3 className="break-words text-base font-semibold leading-tight md:text-lg">{workshop.name}</h3>
                       <p className={`mt-0.5 text-xs md:text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                         {workshop.address}
                       </p>
@@ -275,7 +275,7 @@ export default function OffersPage() {
                       </div>
                       <Link
                         href={`/warsztat/${workshop.id}?${detailsParams.toString()}`}
-                        className="mt-2 inline-flex rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white md:px-4 md:py-2 md:text-sm"
+                        className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-3 py-2 text-sm font-semibold text-white md:w-auto md:px-4 md:text-sm"
                       >
                         {t("offers.details")}
                       </Link>

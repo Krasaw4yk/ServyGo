@@ -434,7 +434,7 @@ export default function WorkshopDetailsPage() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-4 py-8 sm:px-6">
+      <main className="min-h-screen px-3 py-6 sm:px-6 sm:py-8">
         <div className="mx-auto max-w-6xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Link href="/" className="inline-flex items-center">
@@ -446,10 +446,10 @@ export default function WorkshopDetailsPage() {
                 className="h-10 w-auto object-contain sm:h-12"
               />
             </Link>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
               <Link
                 href={backToOffersHref}
-                className={`inline-flex rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold transition sm:w-auto ${
                   isDark
                     ? "border-blue-400/50 bg-zinc-900/70 text-zinc-200 hover:border-orange-300"
                     : "border-blue-200 bg-white/80 text-zinc-700 hover:border-orange-300"
@@ -460,7 +460,7 @@ export default function WorkshopDetailsPage() {
               <button
                 type="button"
                 onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-                className={`inline-flex rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold transition sm:w-auto ${
                   isDark
                     ? "border-blue-400/50 bg-zinc-900/70 text-zinc-200 hover:border-orange-300"
                     : "border-blue-200 bg-white/80 text-zinc-700 hover:border-orange-300"
@@ -479,13 +479,13 @@ export default function WorkshopDetailsPage() {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h1 className="text-2xl font-bold sm:text-3xl">{workshop.name}</h1>
+                  <h1 className="break-words text-2xl font-bold sm:text-3xl">{workshop.name}</h1>
                   <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                     {workshop.address}
                   </p>
                   <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{workshop.city}</p>
                 </div>
-                <div className="space-y-2 text-right">
+                <div className="w-full space-y-2 text-left sm:w-auto sm:text-right">
                   <div className="rounded-2xl border border-blue-400/30 bg-blue-500/10 px-3 py-2 text-sm">
                     ⭐ {workshop.rating.toFixed(1)} ({workshop.reviewsCount} {t("workshopDetails.reviews")})
                   </div>
@@ -493,7 +493,7 @@ export default function WorkshopDetailsPage() {
                     href={(workshop.workshopGoogleMapsUrl?.trim() || workshop.googleMapsUrl) || "#"}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`inline-flex rounded-xl border px-3 py-1.5 text-sm font-semibold transition ${
+                    className={`inline-flex w-full items-center justify-center rounded-xl border px-3 py-1.5 text-sm font-semibold transition sm:w-auto ${
                       isDark
                         ? "border-orange-300/50 bg-orange-500/10 text-orange-200 hover:border-orange-300"
                         : "border-orange-300/70 bg-orange-50 text-orange-700 hover:border-orange-400"
@@ -578,7 +578,7 @@ export default function WorkshopDetailsPage() {
                         }`}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-2">
-                          <p className="text-base font-semibold">{service.service_name}</p>
+                          <p className="break-words text-base font-semibold">{service.service_name}</p>
                           <div className="flex items-center gap-2">
                             {highlighted ? (
                               <span className="rounded-full border border-blue-300/40 bg-blue-500/15 px-2 py-0.5 text-xs font-semibold text-blue-200">

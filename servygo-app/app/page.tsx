@@ -371,17 +371,17 @@ export default function Home() {
   );
   const currentFieldClassName = isDark ? fieldClassName : lightFieldClassName;
   const headerShellClass = isDark
-    ? "mb-8 rounded-3xl border border-blue-500/25 bg-zinc-950/70 px-4 py-3 shadow-[0_20px_70px_rgba(2,6,23,0.65)] backdrop-blur-2xl md:px-8 md:py-[1.125rem]"
-    : "mb-8 rounded-3xl border border-transparent bg-white/58 px-4 py-3 shadow-[0_22px_65px_rgba(37,99,235,0.12),0_14px_34px_rgba(249,115,22,0.1)] ring-1 ring-inset ring-[rgba(59,130,246,0.28)] backdrop-blur-2xl md:px-8 md:py-[1.125rem]";
+    ? "mb-8 w-full max-w-full rounded-3xl border border-blue-500/25 bg-zinc-950/70 px-3 py-3 shadow-[0_20px_70px_rgba(2,6,23,0.65)] backdrop-blur-2xl sm:px-4 md:px-8 md:py-[1.125rem]"
+    : "mb-8 w-full max-w-full rounded-3xl border border-transparent bg-white/58 px-3 py-3 shadow-[0_22px_65px_rgba(37,99,235,0.12),0_14px_34px_rgba(249,115,22,0.1)] ring-1 ring-inset ring-[rgba(59,130,246,0.28)] backdrop-blur-2xl sm:px-4 md:px-8 md:py-[1.125rem]";
   const triggerButtonClass = isDark
-    ? "inline-flex h-12 items-center gap-2 rounded-2xl border border-zinc-700/80 bg-zinc-900/78 px-3 text-sm font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:scale-[1.03] hover:border-blue-400/60 hover:text-blue-300 md:h-14 md:px-5 md:text-base"
-    : "inline-flex h-12 items-center gap-2 rounded-2xl border border-blue-200/75 bg-white/82 px-3 text-sm font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:scale-[1.03] hover:border-orange-300/80 hover:text-blue-700 hover:shadow-[0_0_28px_rgba(59,130,246,0.16),0_0_24px_rgba(249,115,22,0.18)] md:h-14 md:px-5 md:text-base";
+    ? "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2.5 text-xs font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-blue-200/75 bg-white/82 px-2.5 text-xs font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const userTriggerButtonClass = isDark
-    ? "inline-flex h-12 items-center gap-2 rounded-2xl border border-zinc-700/80 bg-zinc-900/78 px-3 text-sm text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:scale-[1.03] hover:border-blue-400/60 hover:text-blue-300 md:h-14 md:px-4 md:text-base"
-    : "inline-flex h-12 items-center gap-2 rounded-2xl border border-blue-200/75 bg-white/82 px-3 text-sm text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:scale-[1.03] hover:border-orange-300/80 hover:text-blue-700 hover:shadow-[0_0_28px_rgba(59,130,246,0.16),0_0_24px_rgba(249,115,22,0.18)] md:h-14 md:px-4 md:text-base";
+    ? "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2.5 text-xs text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base"
+    : "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-blue-200/75 bg-white/82 px-2.5 text-xs text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base";
   const ctaButtonClass = isDark
-    ? "inline-flex h-12 items-center gap-2 rounded-2xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-3 text-sm font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:scale-[1.04] hover:brightness-110 hover:shadow-[0_0_36px_rgba(59,130,246,0.38),0_0_26px_rgba(249,115,22,0.28)] md:h-14 md:px-5 md:text-base"
-    : "inline-flex h-12 items-center gap-2 rounded-2xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-3 text-sm font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:scale-[1.04] hover:brightness-110 hover:shadow-[0_0_34px_rgba(59,130,246,0.24),0_0_24px_rgba(249,115,22,0.25)] md:h-14 md:px-5 md:text-base";
+    ? "inline-flex h-10 max-w-full items-center justify-center gap-1.5 rounded-xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-10 max-w-full items-center justify-center gap-1.5 rounded-xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const dropdownPanelClass = isDark
     ? "rounded-2xl border border-blue-500/25 bg-zinc-900/95 p-2 shadow-2xl shadow-blue-900/30 backdrop-blur-xl"
     : "rounded-2xl border border-blue-200/85 bg-white/90 p-2 shadow-2xl shadow-slate-300/40 ring-1 ring-orange-200/45 backdrop-blur-xl";
@@ -1188,7 +1188,7 @@ export default function Home() {
       <div className={pageMeshClass} />
       <div className={pageNoiseClass} />
       <div className={pagePatternClass} />
-      <main className="relative z-[1] mx-auto w-full max-w-7xl px-6 py-10">
+      <main className="relative z-[1] mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
         <section
           className={`relative overflow-hidden rounded-3xl border px-5 py-8 sm:px-7 sm:py-10 md:px-10 md:py-12 ${
             isDark
@@ -1209,7 +1209,7 @@ export default function Home() {
             ref={headerRef}
             className={headerShellClass}
           >
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <Image
                 src={
                   isDark
@@ -1220,10 +1220,10 @@ export default function Home() {
                 width={256}
                 height={96}
                 priority
-                className="mr-4 h-14 w-auto self-center object-contain md:mr-6 md:h-16"
+                className="h-10 w-auto max-w-[160px] self-start object-contain sm:h-12 sm:max-w-[190px] md:mr-6 md:h-16 md:max-w-[256px]"
               />
 
-              <div className="relative flex flex-wrap items-center gap-3 md:gap-4">
+              <div className="relative flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3 md:gap-4">
                 <div className="relative">
                   <button
                     type="button"
@@ -1241,7 +1241,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute right-0 top-[calc(100%+12px)] z-30 w-72 origin-top-right ${dropdownPanelClass} transition-all duration-200 ${
+                    className={`absolute left-0 top-[calc(100%+10px)] z-30 w-[min(92vw,360px)] max-w-[92vw] origin-top ${dropdownPanelClass} transition-all duration-200 sm:left-auto sm:right-0 sm:w-72 sm:max-w-none sm:origin-top-right ${
                       activeDropdown === "user"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1365,7 +1365,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute right-0 top-[calc(100%+12px)] z-30 w-56 origin-top-right ${dropdownPanelClass} transition-all duration-200 ${
+                    className={`absolute left-0 top-[calc(100%+10px)] z-30 w-[min(92vw,360px)] max-w-[92vw] origin-top ${dropdownPanelClass} transition-all duration-200 sm:left-auto sm:right-0 sm:w-56 sm:max-w-none sm:origin-top-right ${
                       activeDropdown === "lang"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1407,7 +1407,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute right-0 top-[calc(100%+12px)] z-30 w-52 origin-top-right ${dropdownPanelClass} transition-all duration-200 ${
+                    className={`absolute left-0 top-[calc(100%+10px)] z-30 w-[min(92vw,360px)] max-w-[92vw] origin-top ${dropdownPanelClass} transition-all duration-200 sm:left-auto sm:right-0 sm:w-52 sm:max-w-none sm:origin-top-right ${
                       activeDropdown === "theme"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1433,7 +1433,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <Link href="/dodaj-warsztat" className={ctaButtonClass}>
+                <Link href="/dodaj-warsztat" className={`${ctaButtonClass} w-full sm:w-auto`}>
                   <svg viewBox="0 0 24 24" className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" strokeWidth="1.8">
                     <path d="M14.7 6.3a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-7.9 7.9-3.3.7.7-3.3 7.5-7.9Z" />
                   </svg>
@@ -1452,23 +1452,23 @@ export default function Home() {
           >
             {t("hero.badge")}
           </span>
-          <h1 className="mt-4 max-w-3xl pb-1 text-4xl font-bold leading-[1.15] md:text-5xl md:leading-[1.12]">
+          <h1 className="mt-4 max-w-3xl pb-1 text-3xl font-bold leading-[1.15] [text-wrap:balance] break-words sm:text-4xl md:text-5xl md:leading-[1.12]">
             {t("hero.titlePrefix")}{" "}
-            <span className="inline-block pb-[0.08em] bg-gradient-to-r from-blue-500 to-blue-300 bg-clip-text text-transparent">
+            <span className="pb-[0.08em] bg-gradient-to-r from-blue-500 to-blue-300 bg-clip-text text-transparent break-words">
               {t("hero.titleHighlightOffers")}
             </span>{" "}
-            <span className="inline-block pb-[0.08em] bg-gradient-to-r from-orange-500 to-orange-300 bg-clip-text text-transparent">
+            <span className="pb-[0.08em] bg-gradient-to-r from-orange-500 to-orange-300 bg-clip-text text-transparent break-words">
               {t("hero.titleHighlightRepairs")}
             </span>,{" "}
-            <span className="inline-block pb-[0.08em] bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text text-transparent">
+            <span className="pb-[0.08em] bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text text-transparent break-words">
               {t("hero.titleHighlightReplacement")}
             </span>,{" "}
-            <span className="inline-block pb-[0.08em] bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text text-transparent">
+            <span className="pb-[0.08em] bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text text-transparent break-words">
               {t("hero.titleHighlightDiagnostics")}
             </span>
           </h1>
           <p
-            className={`mt-4 max-w-2xl text-base sm:text-lg ${
+            className={`mt-4 max-w-2xl text-sm [text-wrap:balance] break-words sm:text-base md:text-lg ${
               isDark ? "text-zinc-300" : "text-zinc-700"
             }`}
           >
@@ -1479,7 +1479,7 @@ export default function Home() {
             {heroChips.map((benefit) => (
                 <span
                   key={benefit}
-                  className={`rounded-full border px-3 py-1 text-sm transition-all duration-300 hover:-translate-y-0.5 ${
+                  className={`rounded-full border px-2.5 py-1 text-xs transition-all duration-300 hover:-translate-y-0.5 sm:px-3 sm:text-sm ${
                     isDark
                       ? "border-blue-500/25 bg-[#08172c]/75 text-zinc-100 hover:border-orange-400/50 hover:shadow-[0_0_18px_rgba(59,130,246,0.26)]"
                       : "border-orange-300/90 bg-gradient-to-r from-white/86 via-sky-50/85 to-orange-50/90 text-zinc-700 shadow-[0_0_0_1px_rgba(59,130,246,0.1),0_10px_24px_rgba(249,115,22,0.12)] hover:shadow-[0_0_0_1px_rgba(59,130,246,0.16),0_14px_26px_rgba(249,115,22,0.18)]"
@@ -2288,7 +2288,7 @@ export default function Home() {
         ) : null}
 
         {authModal ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
             <button
               type="button"
               onClick={closeAuthModal}
@@ -2296,7 +2296,7 @@ export default function Home() {
               aria-label={t("auth.closeModal")}
             />
             <div
-              className={`relative z-[1] w-full max-w-lg rounded-2xl border p-6 shadow-2xl backdrop-blur-2xl sm:p-7 ${
+              className={`relative z-[1] w-full max-w-[min(92vw,32rem)] rounded-2xl border p-4 shadow-2xl backdrop-blur-2xl sm:p-7 ${
                 isDark
                   ? "border-blue-500/25 bg-zinc-900/90 text-zinc-100"
                   : "border-blue-200/80 bg-white/90 text-zinc-900"

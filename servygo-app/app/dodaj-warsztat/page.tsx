@@ -252,7 +252,7 @@ export default function AddWorkshopPage() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-4 py-8 sm:px-6">
+      <main className="min-h-screen px-3 py-6 sm:px-6 sm:py-8">
       <div className="mx-auto w-full max-w-4xl">
         <div
           className={`rounded-3xl border p-5 shadow-2xl backdrop-blur-2xl sm:p-8 ${
@@ -261,7 +261,7 @@ export default function AddWorkshopPage() {
               : "border-blue-200/85 bg-white/90 shadow-[0_20px_60px_rgba(37,99,235,0.18)]"
           }`}
         >
-          <div className="mb-6 flex items-center justify-between gap-3">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
             <Link href="/" className="inline-flex items-center">
               <Image
                 src={isDark ? "/servygo-logo-dark-cropped.png" : "/servygo-logo-light-cropped.png"}
@@ -274,7 +274,7 @@ export default function AddWorkshopPage() {
             <button
               type="button"
               onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-              className="inline-flex rounded-xl border border-blue-300/60 px-4 py-2 text-sm font-semibold transition hover:border-orange-300"
+              className="inline-flex w-full justify-center rounded-xl border border-blue-300/60 px-3 py-2 text-sm font-semibold transition hover:border-orange-300 sm:w-auto sm:px-4"
             >
               {theme === "dark" ? "☀️" : "🌙"} {theme === "dark" ? t("header.themeLight") : t("header.themeDark")}
             </button>
@@ -470,17 +470,17 @@ export default function AddWorkshopPage() {
                   {info}
                 </p>
               ) : null}
-              <div className="sm:col-span-2 flex flex-wrap gap-3">
+              <div className="sm:col-span-2 grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {loading ? t("account.messages.saving") : t("workshop.actions.sendLead")}
                 </button>
                 <Link
                   href="/"
-                  className="inline-flex h-11 items-center justify-center rounded-xl border border-blue-300/60 px-5 font-semibold"
+                  className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-blue-300/60 px-5 font-semibold sm:w-auto"
                 >
                   {t("header.login")}
                 </Link>
