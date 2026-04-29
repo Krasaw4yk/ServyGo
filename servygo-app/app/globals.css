@@ -31,6 +31,13 @@ body {
   overflow-x: hidden;
 }
 
+#__next,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 *,
 *::before,
 *::after {

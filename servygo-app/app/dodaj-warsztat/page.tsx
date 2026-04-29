@@ -258,10 +258,10 @@ export default function AddWorkshopPage() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-3 py-6 sm:px-6 sm:py-8">
+      <main className="min-h-screen px-2 py-5 sm:px-6 sm:py-8">
       <div className="mx-auto w-full max-w-4xl">
         <div
-          className={`rounded-3xl border p-5 shadow-2xl backdrop-blur-2xl sm:p-8 ${
+          className={`rounded-3xl border p-4 shadow-2xl backdrop-blur-2xl sm:p-8 ${
             isDark
               ? "border-blue-500/25 bg-zinc-900/90"
               : "border-blue-200/85 bg-white/90 shadow-[0_20px_60px_rgba(37,99,235,0.18)]"

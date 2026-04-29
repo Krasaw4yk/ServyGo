@@ -1365,7 +1365,7 @@ export default function Home() {
       <div className={pageMeshClass} />
       <div className={pageNoiseClass} />
       <div className={pagePatternClass} />
-      <main className="relative z-[1] mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
+      <main className="relative z-[1] mx-auto w-full max-w-7xl px-2 py-6 sm:px-6 sm:py-10">
         <section
           className={`relative overflow-hidden rounded-3xl border px-5 py-8 sm:px-7 sm:py-10 md:px-10 md:py-12 ${
             isDark
@@ -1418,7 +1418,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute left-0 top-[calc(100%+10px)] z-30 w-[min(92vw,360px)] max-w-[92vw] origin-top ${dropdownPanelClass} transition-all duration-200 sm:left-auto sm:right-0 sm:w-72 sm:max-w-none sm:origin-top-right ${
+                    className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-72 sm:max-w-none ${
                       activeDropdown === "user"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1542,7 +1542,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute left-0 top-[calc(100%+10px)] z-30 w-[min(92vw,360px)] max-w-[92vw] origin-top ${dropdownPanelClass} transition-all duration-200 sm:left-auto sm:right-0 sm:w-56 sm:max-w-none sm:origin-top-right ${
+                    className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-56 sm:max-w-none ${
                       activeDropdown === "lang"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1584,7 +1584,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute left-0 top-[calc(100%+10px)] z-30 w-[min(92vw,360px)] max-w-[92vw] origin-top ${dropdownPanelClass} transition-all duration-200 sm:left-auto sm:right-0 sm:w-52 sm:max-w-none sm:origin-top-right ${
+                    className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-52 sm:max-w-none ${
                       activeDropdown === "theme"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -2144,7 +2144,7 @@ export default function Home() {
               aria-label={t("auth.closeModal")}
             />
             <div
-              className={`relative z-[1] max-h-[96vh] w-full max-w-5xl overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-2xl ${
+              className={`relative z-[1] max-h-[96vh] w-full max-w-[calc(100vw-16px)] overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-2xl sm:max-w-5xl ${
                 isDark
                   ? "border-blue-500/25 bg-zinc-900/92 text-zinc-100"
                   : "border-blue-200/85 bg-white/92 text-zinc-900"

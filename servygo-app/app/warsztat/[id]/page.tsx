@@ -423,7 +423,7 @@ export default function WorkshopDetailsPage() {
   if (!workshop && !loading) {
     return (
       <ServyGoPageShell isDark={isDark}>
-        <main className="min-h-screen px-4 py-8 sm:px-6">
+        <main className="min-h-screen px-3 py-6 sm:px-6">
           <div className="mx-auto max-w-4xl rounded-3xl border border-blue-300/25 bg-white/70 p-8 text-center shadow-xl backdrop-blur-xl dark:border-blue-500/25 dark:bg-zinc-900/70">
             <h1 className="text-2xl font-semibold">{t("workshopDetails.notFound")}</h1>
             {detailError ? (
@@ -444,7 +444,7 @@ export default function WorkshopDetailsPage() {
   if (!workshop) {
     return (
       <ServyGoPageShell isDark={isDark}>
-        <main className="min-h-screen px-4 py-8 sm:px-6">
+        <main className="min-h-screen px-3 py-6 sm:px-6">
           <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
             <div className={`h-[540px] animate-pulse rounded-3xl ${isDark ? "bg-zinc-800" : "bg-slate-200"}`} />
             <div className={`h-[540px] animate-pulse rounded-3xl ${isDark ? "bg-zinc-800" : "bg-slate-200"}`} />
@@ -456,8 +456,8 @@ export default function WorkshopDetailsPage() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-3 py-6 sm:px-6 sm:py-8">
-        <div className="mx-auto max-w-6xl space-y-4">
+      <main className="min-h-screen px-2 py-5 sm:px-6 sm:py-8">
+        <div className="mx-auto w-full max-w-6xl space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Link href="/" className="inline-flex items-center">
               <Image
@@ -695,7 +695,7 @@ export default function WorkshopDetailsPage() {
                       <span key={dayName}>{dayName}</span>
                     ))}
                   </div>
-                  <div className="grid grid-cols-7 gap-1.5">
+                  <div className="grid grid-cols-7 gap-1">
                     {calendarGrid.map((day) => {
                       const allowedWeekDays = workshop ? new Set(workshop.availability.workingDays) : new Set<number>();
                       const normalizedDay = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
@@ -758,7 +758,7 @@ export default function WorkshopDetailsPage() {
                         ))}
                       </select>
                     </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       {dynamicAvailableTimes.map((time) => {
                         const active = time === effectiveSelectedTime;
                         return (
@@ -840,9 +840,9 @@ export default function WorkshopDetailsPage() {
         </div>
 
         {isBookingModalOpen ? (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-3 sm:p-4">
             <div
-              className={`w-full max-w-lg rounded-3xl border p-5 backdrop-blur-xl sm:p-6 ${
+              className={`max-h-[90vh] w-full max-w-[calc(100vw-24px)] overflow-y-auto rounded-3xl border p-4 backdrop-blur-xl sm:max-w-lg sm:p-6 ${
                 isDark ? "border-zinc-700 bg-zinc-900/90 text-zinc-100" : "border-blue-200 bg-white/90 text-zinc-900"
               }`}
             >

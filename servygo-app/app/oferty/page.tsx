@@ -155,7 +155,7 @@ export default function OffersPage() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-3 py-6 sm:px-6 sm:py-8 xl:px-8">
+      <main className="min-h-screen px-2 py-5 sm:px-6 sm:py-8 xl:px-8">
       <div className="mx-auto w-full max-w-[1680px]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
           <Link href="/" className="inline-flex items-center">
@@ -230,7 +230,7 @@ export default function OffersPage() {
         ) : null}
 
         {loading ? (
-          <div className={`grid grid-cols-1 gap-4 md:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] ${resultsDesktopHeightClass}`}>
+          <div className={`grid grid-cols-1 gap-3 md:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] ${resultsDesktopHeightClass}`}>
             <div className={`h-[640px] animate-pulse rounded-2xl ${isDark ? "bg-zinc-800" : "bg-slate-200"} md:h-full`} />
             <div className={`h-[640px] animate-pulse rounded-2xl ${isDark ? "bg-zinc-800" : "bg-slate-200"} md:h-full`} />
           </div>
