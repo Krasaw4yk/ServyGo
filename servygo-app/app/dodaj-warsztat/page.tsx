@@ -9,6 +9,7 @@ import { polishCityOptions } from "@/lib/locationData";
 import { createTranslator, LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { createWorkshopLead, isValidWorkshopGoogleMapsUrl } from "@/lib/workshopApi";
+import { trackEvent } from "@/lib/analytics";
 
 const fieldClassName =
   "rounded-xl border border-zinc-600/70 bg-zinc-900/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-400 transition-all duration-200 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/40";
@@ -91,6 +92,11 @@ export default function AddWorkshopPage() {
     if (!mounted) return;
     window.localStorage.setItem("servygo-theme", theme);
   }, [mounted, theme]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    void trackEvent("page_view", { page: "/dodaj-warsztat" });
+  }, [mounted]);
 
   const isDark = mounted ? theme === "dark" : false;
   const t = useMemo(() => createTranslator(language), [language]);

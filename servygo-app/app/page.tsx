@@ -250,6 +250,11 @@ export default function Home() {
   }, [mounted]);
 
   useEffect(() => {
+    if (!mounted || !authModal) return;
+    void trackEvent("page_view", { page: "/auth", modal: authModal });
+  }, [mounted, authModal]);
+
+  useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
       if (!headerRef.current) return;
       if (!headerRef.current.contains(event.target as Node)) {

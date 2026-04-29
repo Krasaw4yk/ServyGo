@@ -29,6 +29,23 @@ export type AdminDashboardStats = {
   popularServices: NameCount[];
   popularCities: NameCount[];
   funnel: Array<{ label: string; value: number }>;
+  trafficTodayCount: number;
+  trafficMonthCount: number;
+  trafficTotalCount: number;
+  uniqueVisitorsCount: number;
+  uniqueSessionsCount: number;
+  topPages: NameCount[];
+  trafficSources: NameCount[];
+  devices: NameCount[];
+  browsers: NameCount[];
+  osList: NameCount[];
+  recentEvents: Array<{
+    createdAt: string;
+    eventName: string;
+    path: string;
+    source: string;
+    deviceType: string;
+  }>;
   hasAnalytics: boolean;
 };
 
@@ -53,6 +70,17 @@ const EMPTY_STATS: AdminDashboardStats = {
     { label: "Kliknięcia warsztatów", value: 0 },
     { label: "Rezerwacje", value: 0 },
   ],
+  trafficTodayCount: 0,
+  trafficMonthCount: 0,
+  trafficTotalCount: 0,
+  uniqueVisitorsCount: 0,
+  uniqueSessionsCount: 0,
+  topPages: [],
+  trafficSources: [],
+  devices: [],
+  browsers: [],
+  osList: [],
+  recentEvents: [],
   hasAnalytics: false,
 };
 
@@ -192,26 +220,85 @@ export async function getAdminDashboardStats(
 
   const analyticsRes = await supabase
     .from("analytics_events")
-    .select("event_name, created_at")
-    .in("event_name", ["page_view", "search_submit", "workshop_click", "booking_start", "booking_confirm"])
-    .gte("created_at", new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString());
+    .select("event_name, created_at, path, source, referrer, device_type, browser, os, visitor_id, session_id")
+    .gte("created_at", new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(5000);
+
+  let trafficTodayCount = 0;
+  let trafficMonthCount = 0;
+  let trafficTotalCount = 0;
+  const uniqueVisitors = new Set<string>();
+  const uniqueSessions = new Set<string>();
+  const topPagesMap = new Map<string, number>();
+  const trafficSourcesMap = new Map<string, number>();
+  const devicesMap = new Map<string, number>();
+  const browsersMap = new Map<string, number>();
+  const osMap = new Map<string, number>();
+  const recentEvents: AdminDashboardStats["recentEvents"] = [];
 
   if (!analyticsRes.error) {
     hasAnalytics = true;
-    const events = (analyticsRes.data as Array<{ event_name: string; created_at: string }> | null) ?? [];
+    const events = (analyticsRes.data as Array<{
+      event_name: string;
+      created_at: string;
+      path: string | null;
+      source: string | null;
+      referrer: string | null;
+      device_type: string | null;
+      browser: string | null;
+      os: string | null;
+      visitor_id: string | null;
+      session_id: string | null;
+    }> | null) ?? [];
     for (const event of events) {
       const name = event.event_name;
+      const path = (event.path ?? "").trim() || "(brak)";
+      const source =
+        (event.source ?? "").trim() ||
+        ((event.referrer ?? "").trim() ? "Inne" : "Bezpośrednio");
+      const deviceType = (event.device_type ?? "").trim() || "unknown";
+      const browser = (event.browser ?? "").trim() || "unknown";
+      const os = (event.os ?? "").trim() || "unknown";
+      const visitorId = (event.visitor_id ?? "").trim();
+      const sessionId = (event.session_id ?? "").trim();
+
       if (name === "page_view") pageViewsCount += 1;
       if (name === "search_submit") funnelSearchSubmit += 1;
       if (name === "workshop_click") funnelWorkshopClick += 1;
       if (name === "booking_start") bookingStartClicks += 1;
       if (name === "booking_confirm") funnelBookingConfirm += 1;
 
+      if (name === "page_view") {
+        trafficTotalCount += 1;
+        topPagesMap.set(path, (topPagesMap.get(path) ?? 0) + 1);
+        trafficSourcesMap.set(source, (trafficSourcesMap.get(source) ?? 0) + 1);
+        devicesMap.set(deviceType, (devicesMap.get(deviceType) ?? 0) + 1);
+        browsersMap.set(browser, (browsersMap.get(browser) ?? 0) + 1);
+        osMap.set(os, (osMap.get(os) ?? 0) + 1);
+        if (visitorId) uniqueVisitors.add(visitorId);
+        if (sessionId) uniqueSessions.add(sessionId);
+      }
+
+      if (recentEvents.length < 10) {
+        recentEvents.push({
+          createdAt: event.created_at,
+          eventName: name,
+          path,
+          source,
+          deviceType,
+        });
+      }
+
       const parsed = parseDateLike(event.created_at);
       if (!parsed) continue;
       const key = toDateKey(parsed);
-      if (name === "page_view" && visits7dMap.has(key)) {
-        visits7dMap.set(key, (visits7dMap.get(key) ?? 0) + 1);
+      if (name === "page_view") {
+        if (key === todayKey) trafficTodayCount += 1;
+        if (key.startsWith(monthPrefix)) trafficMonthCount += 1;
+        if (visits7dMap.has(key)) {
+          visits7dMap.set(key, (visits7dMap.get(key) ?? 0) + 1);
+        }
       }
     }
   } else if (!isMissingRelationError(toSafeErrorMessage(analyticsRes.error))) {
@@ -230,6 +317,26 @@ export async function getAdminDashboardStats(
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 6);
+  const topPages = Array.from(topPagesMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  const trafficSources = Array.from(trafficSourcesMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  const devices = Array.from(devicesMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  const browsers = Array.from(browsersMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  const osList = Array.from(osMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
 
   return {
     ...EMPTY_STATS,
@@ -253,6 +360,17 @@ export async function getAdminDashboardStats(
       { label: "Kliknięcia warsztatów", value: funnelWorkshopClick },
       { label: "Rezerwacje", value: funnelBookingConfirm },
     ],
+    trafficTodayCount,
+    trafficMonthCount,
+    trafficTotalCount,
+    uniqueVisitorsCount: uniqueVisitors.size,
+    uniqueSessionsCount: uniqueSessions.size,
+    topPages,
+    trafficSources,
+    devices,
+    browsers,
+    osList,
+    recentEvents,
     hasAnalytics,
   };
 }

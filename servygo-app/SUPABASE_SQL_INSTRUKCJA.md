@@ -42,6 +42,7 @@ Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, 
 19. `supabase/sql/supabase-19-workshop-services-price-to.sql` — dodaje kolumnę `price_to` (cena "do") do `workshop_services` i constraint spójności zakresu (`price_to >= price_from`). Uruchom po pliku 18.
 20. `supabase/sql/supabase-20-cars-vin-multiple.sql` — rozszerza `cars` o `vin` i `city`, dodaje indeks VIN per użytkownik, gwarantuje maksymalnie jedno auto główne (`is_primary = true`) oraz usuwa ewentualny legacy-constraint wymuszający jedno auto na `user_id`. Uruchom po pliku 19.
 21. `supabase/sql/supabase-21-analytics-events.sql` — tabela `analytics_events` (zdarzenia frontendu), indeksy pod dashboard admina i RLS: insert dla `anon`/`authenticated`, select tylko dla admina (na podstawie `admin_users`). Uruchom po pliku 20.
+22. `supabase/sql/supabase-22-analytics-device-source.sql` — rozszerza `analytics_events` o: `visitor_id`, `session_id`, `device_type`, `browser`, `os`, `user_agent`, `source` (+ fallback `referrer`) i indeksy pod raporty ruchu. Uruchom po pliku 21.
 
 ### Opcjonalne / testowe
 

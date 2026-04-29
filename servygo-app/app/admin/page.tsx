@@ -649,7 +649,6 @@ export default function AdminPage() {
   }, [currentUser, isAdmin, refreshDashboardStats]);
 
   const isDark = mounted ? theme === "dark" : false;
-  const pendingLeads = rows.filter((row) => normalizeWorkshopStatus(row.status) === "pending");
   const unreadSidebarBadges = useMemo<SidebarBadgeState>(() => {
     const next = { ...EMPTY_SIDEBAR_BADGES };
     for (const item of SIDEBAR_ITEMS) {
@@ -680,6 +679,12 @@ export default function AdminPage() {
   const bookingsByStatusMock = stats?.bookingsByStatus ?? [];
   const popularServicesMock = stats?.popularServices ?? [];
   const popularCitiesMock = stats?.popularCities ?? [];
+  const topPages = stats?.topPages ?? [];
+  const trafficSources = stats?.trafficSources ?? [];
+  const trafficDevices = stats?.devices ?? [];
+  const trafficBrowsers = stats?.browsers ?? [];
+  const trafficOs = stats?.osList ?? [];
+  const recentEvents = stats?.recentEvents ?? [];
   const conversionFunnelMock = stats?.funnel ?? [];
   const analyticsSnapshot = {
     visits: stats?.pageViewsCount ?? 0,
@@ -692,6 +697,9 @@ export default function AdminPage() {
   const maxBookingStatusCount = Math.max(...bookingsByStatusMock.map((b) => b.count), 1);
   const maxPopularServiceCount = Math.max(...popularServicesMock.map((b) => b.count), 1);
   const maxPopularCityCount = Math.max(...popularCitiesMock.map((b) => b.count), 1);
+  const maxTopPagesCount = Math.max(...topPages.map((b) => b.count), 1);
+  const maxTrafficSourcesCount = Math.max(...trafficSources.map((b) => b.count), 1);
+  const maxDeviceCount = Math.max(...trafficDevices.map((b) => b.count), 1);
   const maxVisit7d = Math.max(...analyticsSnapshot.visits7d, 1);
   const funnelBase = conversionFunnelMock[0]?.value ?? 1;
   const usersOverview = [
@@ -950,34 +958,54 @@ export default function AdminPage() {
                     {dashboardStatsError}
                   </p>
                 ) : null}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
                   {dashboardStats.map((stat) => (
                     <article
                       key={stat.label}
-                      className={`rounded-2xl border p-4 shadow-sm ${
+                      className={`rounded-xl border px-3 py-2 shadow-sm ${
                         isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"
                       }`}
                     >
-                      <div className={`inline-flex rounded-xl bg-gradient-to-r px-2 py-1 text-xs font-semibold text-white ${stat.tone}`}>
+                      <div className={`inline-flex rounded-lg bg-gradient-to-r px-1.5 py-0.5 text-[10px] font-semibold text-white ${stat.tone}`}>
                         {stat.icon}
                       </div>
-                      <p className={`mt-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{stat.label}</p>
-                      <p className="mt-1 text-2xl font-bold">{stat.value}</p>
+                      <p className={`mt-1 text-[11px] leading-tight ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{stat.label}</p>
+                      <p className="mt-0.5 text-lg font-bold">{stat.value}</p>
                     </article>
                   ))}
                 </div>
 
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-stretch xl:gap-5">
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
                   <section
-                    className={`shrink-0 rounded-2xl border p-4 xl:w-[min(100%,34%)] xl:max-w-[34%] ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}
+                    className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}
                   >
-                    <h2 className="text-base font-semibold leading-tight">Statystyki strony</h2>
+                    <h2 className="text-sm font-semibold leading-tight">Ruch na stronie</h2>
                     {stats && !stats.hasAnalytics ? (
                       <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
                         Brak tabeli analytics_events lub brak danych - pokazano wartości 0.
                       </p>
                     ) : null}
-                    <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-xs leading-snug sm:gap-x-3">
+                    <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] leading-snug">
+                      <p className="min-w-0">
+                        <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Dzisiaj:</span>{" "}
+                        {(stats?.trafficTodayCount ?? 0).toLocaleString("pl-PL")}
+                      </p>
+                      <p className="min-w-0">
+                        <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Miesiąc:</span>{" "}
+                        {(stats?.trafficMonthCount ?? 0).toLocaleString("pl-PL")}
+                      </p>
+                      <p className="min-w-0">
+                        <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Łącznie:</span>{" "}
+                        {(stats?.trafficTotalCount ?? 0).toLocaleString("pl-PL")}
+                      </p>
+                      <p className="min-w-0">
+                        <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Unikalni:</span>{" "}
+                        {(stats?.uniqueVisitorsCount ?? 0).toLocaleString("pl-PL")}
+                      </p>
+                      <p className="col-span-2 min-w-0">
+                        <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Sesje unikalne:</span>{" "}
+                        {(stats?.uniqueSessionsCount ?? 0).toLocaleString("pl-PL")}
+                      </p>
                       <p className="min-w-0">
                         <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Wizyty:</span>{" "}
                         {analyticsSnapshot.visits.toLocaleString("pl-PL")}
@@ -995,16 +1023,16 @@ export default function AdminPage() {
                         {analyticsSnapshot.bookClicks.toLocaleString("pl-PL")}
                       </p>
                     </div>
-                    <div className={`mt-3 rounded-lg border px-2 py-2 ${isDark ? "border-zinc-600/60 bg-zinc-950/40" : "border-blue-200/80 bg-blue-50/50"}`}>
+                    <div className={`mt-2 rounded-lg border px-2 py-1.5 ${isDark ? "border-zinc-600/60 bg-zinc-950/40" : "border-blue-200/80 bg-blue-50/50"}`}>
                       <p className={`mb-2 text-[10px] font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
                         Wizyty / rezerw. 7 dni
                       </p>
-                      <div className="grid h-20 grid-cols-7 items-end gap-1">
+                      <div className="grid h-16 grid-cols-7 items-end gap-1">
                         {analyticsSnapshot.visits7d.map((value, idx) => (
                           <div key={`${value}-${idx}`} className="flex min-h-0 flex-col items-center justify-end gap-0.5">
                             <div
                               className="w-full rounded-sm bg-gradient-to-t from-blue-600 to-orange-400"
-                              style={{ height: `${Math.max(6, Math.round((value / maxVisit7d) * 56))}px` }}
+                              style={{ height: `${Math.max(5, Math.round((value / maxVisit7d) * 42))}px` }}
                             />
                             <span className="text-[9px] tabular-nums leading-none text-zinc-500">{analyticsSnapshot.bookings7d[idx]}</span>
                           </div>
@@ -1013,10 +1041,10 @@ export default function AdminPage() {
                     </div>
                   </section>
 
-                  <section className={`min-w-0 flex-1 rounded-2xl border p-4 sm:p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
-                    <h2 className="text-lg font-semibold">Ostatnie rezerwacje</h2>
-                    <div className="mt-3 w-full min-w-0">
-                      <table className="w-full table-fixed border-collapse text-sm">
+                  <section className={`min-w-0 rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <h2 className="text-sm font-semibold">Ostatnie rezerwacje</h2>
+                    <div className="mt-2 w-full min-w-0">
+                      <table className="w-full table-fixed border-collapse text-xs">
                         <colgroup>
                           <col style={{ width: "9%" }} />
                           <col style={{ width: "11%" }} />
@@ -1042,7 +1070,7 @@ export default function AdminPage() {
                         <tbody>
                           {recentBookings.length === 0 ? (
                             <tr>
-                              <td colSpan={8} className="px-3 py-6 text-center text-sm">Brak danych do wyświetlenia</td>
+                              <td colSpan={8} className="px-3 py-4 text-center text-xs">Brak danych do wyświetlenia</td>
                             </tr>
                           ) : recentBookings.map((booking, index) => (
                             <tr key={`${booking.workshop}-${booking.term}-${index}`} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
@@ -1070,7 +1098,7 @@ export default function AdminPage() {
                               <td className="whitespace-nowrap px-2 py-2 align-middle tabular-nums sm:px-3 sm:py-2.5">{booking.term}</td>
                               <td className="whitespace-nowrap px-2 py-2 align-middle sm:px-3 sm:py-2.5">{booking.status}</td>
                               <td className="whitespace-nowrap px-2 py-2 align-middle sm:px-3 sm:py-2.5">
-                                <button type="button" className="rounded-lg border px-2 py-1 text-xs">
+                                <button type="button" className="rounded-lg border px-2 py-0.5 text-[11px]">
                                   Zobacz
                                 </button>
                               </td>
@@ -1082,10 +1110,10 @@ export default function AdminPage() {
                   </section>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
-                    <h3 className="text-sm font-semibold">Rezerwacje według statusu</h3>
-                    <ul className="mt-3 space-y-2.5">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <h3 className="text-sm font-semibold">Rezerwacje wg statusu</h3>
+                    <ul className="mt-2 space-y-2">
                       {bookingsByStatusMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {bookingsByStatusMock.map((row) => (
                         <li key={row.label}>
@@ -1104,9 +1132,9 @@ export default function AdminPage() {
                     </ul>
                   </section>
 
-                  <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                  <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h3 className="text-sm font-semibold">Najpopularniejsze usługi</h3>
-                    <ul className="mt-3 space-y-2.5">
+                    <ul className="mt-2 space-y-2">
                       {popularServicesMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {popularServicesMock.map((row) => (
                         <li key={row.label}>
@@ -1127,9 +1155,9 @@ export default function AdminPage() {
                     </ul>
                   </section>
 
-                  <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                  <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h3 className="text-sm font-semibold">Najpopularniejsze miasta</h3>
-                    <ul className="mt-3 space-y-2.5">
+                    <ul className="mt-2 space-y-2">
                       {popularCitiesMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {popularCitiesMock.map((row) => (
                         <li key={row.label}>
@@ -1150,9 +1178,9 @@ export default function AdminPage() {
                     </ul>
                   </section>
 
-                  <section className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                  <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h3 className="text-sm font-semibold">Konwersja (lejek)</h3>
-                    <ul className="mt-3 space-y-2">
+                    <ul className="mt-2 space-y-2">
                       {conversionFunnelMock.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
                       {conversionFunnelMock.map((step) => (
                         <li key={step.label}>
@@ -1171,6 +1199,120 @@ export default function AdminPage() {
                     </ul>
                   </section>
                 </div>
+
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                  <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <h3 className="text-sm font-semibold">Najczęściej odwiedzane strony</h3>
+                    <ul className="mt-2 space-y-2">
+                      {topPages.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
+                      {topPages.map((row) => (
+                        <li key={row.label}>
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="min-w-0 truncate text-zinc-400" title={row.label}>{row.label}</span>
+                            <span className="tabular-nums font-semibold">{row.count}</span>
+                          </div>
+                          <div className={`mt-1 h-1.5 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-blue-100"}`}>
+                            <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500" style={{ width: `${Math.round((row.count / maxTopPagesCount) * 100)}%` }} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+
+                  <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <h3 className="text-sm font-semibold">Źródła ruchu</h3>
+                    <ul className="mt-2 space-y-2">
+                      {trafficSources.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
+                      {trafficSources.map((row) => (
+                        <li key={row.label}>
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="min-w-0 truncate text-zinc-400" title={row.label}>{row.label}</span>
+                            <span className="tabular-nums font-semibold">{row.count}</span>
+                          </div>
+                          <div className={`mt-1 h-1.5 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-blue-100"}`}>
+                            <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-blue-500" style={{ width: `${Math.round((row.count / maxTrafficSourcesCount) * 100)}%` }} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+
+                  <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <h3 className="text-sm font-semibold">Urządzenia</h3>
+                    <ul className="mt-2 space-y-2">
+                      {trafficDevices.length === 0 ? <li className="text-xs text-zinc-500">Brak danych do wyświetlenia</li> : null}
+                      {trafficDevices.map((row) => (
+                        <li key={row.label}>
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="min-w-0 truncate text-zinc-400" title={row.label}>{row.label}</span>
+                            <span className="tabular-nums font-semibold">{row.count}</span>
+                          </div>
+                          <div className={`mt-1 h-1.5 overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-blue-100"}`}>
+                            <div className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-cyan-500" style={{ width: `${Math.round((row.count / maxDeviceCount) * 100)}%` }} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold text-zinc-400">Top przeglądarki</p>
+                        <ul className="mt-1 space-y-1">
+                          {trafficBrowsers.slice(0, 4).map((row) => (
+                            <li key={row.label} className="flex items-center justify-between text-[11px]">
+                              <span className="truncate text-zinc-400">{row.label}</span>
+                              <span className="tabular-nums font-semibold">{row.count}</span>
+                            </li>
+                          ))}
+                          {trafficBrowsers.length === 0 ? <li className="text-[11px] text-zinc-500">Brak danych</li> : null}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-zinc-400">Top systemy</p>
+                        <ul className="mt-1 space-y-1">
+                          {trafficOs.slice(0, 4).map((row) => (
+                            <li key={row.label} className="flex items-center justify-between text-[11px]">
+                              <span className="truncate text-zinc-400">{row.label}</span>
+                              <span className="tabular-nums font-semibold">{row.count}</span>
+                            </li>
+                          ))}
+                          {trafficOs.length === 0 ? <li className="text-[11px] text-zinc-500">Brak danych</li> : null}
+                        </ul>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+                <section className={`rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                  <h3 className="text-sm font-semibold">Ostatnie zdarzenia</h3>
+                  <div className="mt-2 min-w-0 overflow-x-auto">
+                    <table className="w-full min-w-[680px] text-xs">
+                      <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
+                        <tr>
+                          <th className="px-2 py-1.5 text-left">Czas</th>
+                          <th className="px-2 py-1.5 text-left">Event</th>
+                          <th className="px-2 py-1.5 text-left">Ścieżka</th>
+                          <th className="px-2 py-1.5 text-left">Źródło</th>
+                          <th className="px-2 py-1.5 text-left">Urządzenie</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentEvents.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-2 py-3 text-center text-xs text-zinc-500">Brak danych do wyświetlenia</td>
+                          </tr>
+                        ) : recentEvents.map((event, index) => (
+                          <tr key={`${event.createdAt}-${event.eventName}-${index}`} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                            <td className="px-2 py-1.5 tabular-nums">{formatDate(event.createdAt)}</td>
+                            <td className="px-2 py-1.5">{event.eventName}</td>
+                            <td className="max-w-[260px] truncate px-2 py-1.5" title={event.path}>{event.path}</td>
+                            <td className="px-2 py-1.5">{event.source}</td>
+                            <td className="px-2 py-1.5">{event.deviceType}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               </>
             ) : null}
 
