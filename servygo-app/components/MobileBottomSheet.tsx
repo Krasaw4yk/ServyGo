@@ -9,6 +9,7 @@ type MobileBottomSheetProps = {
   onClose: () => void;
   children: React.ReactNode;
   isDark?: boolean;
+  fixedHeight?: boolean;
 };
 
 export default function MobileBottomSheet({
@@ -17,6 +18,7 @@ export default function MobileBottomSheet({
   onClose,
   children,
   isDark = false,
+  fixedHeight = false,
 }: MobileBottomSheetProps) {
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isActive, setIsActive] = useState(false);
@@ -80,7 +82,10 @@ export default function MobileBottomSheet({
             ? "border-zinc-700 bg-zinc-900 text-zinc-100"
             : "border-blue-200 bg-white text-zinc-900"
         }`}
-        style={{ maxHeight: "min(70vh, 560px)" }}
+        style={{
+          maxHeight: "min(70dvh, 560px)",
+          height: fixedHeight ? "min(70dvh, 560px)" : undefined,
+        }}
       >
         <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-zinc-400/50" />
         <header className="mb-3 flex items-center justify-between gap-3">
@@ -95,7 +100,7 @@ export default function MobileBottomSheet({
             ✕
           </button>
         </header>
-        <div className="min-w-0 overflow-x-hidden">
+        <div className={`min-w-0 overflow-x-hidden ${fixedHeight ? "flex min-h-0 flex-1 flex-col" : ""}`}>
           {children}
         </div>
       </section>

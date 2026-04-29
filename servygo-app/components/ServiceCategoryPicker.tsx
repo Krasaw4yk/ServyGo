@@ -211,24 +211,26 @@ export default function ServiceCategoryPicker({
           }}
           title={placeholder}
           isDark={isDark}
+          fixedHeight
         >
-          <div className="space-y-3">
-            {!mobileCustomOpen ? (
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onPointerDown={(event) => event.stopPropagation()}
-                onMouseDown={(event) => event.stopPropagation()}
-                onTouchStart={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                placeholder={placeholder}
-                className={`w-full rounded-xl border px-3 py-2 text-sm ${
-                  isDark
-                    ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
-                    : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
-                }`}
-              />
-            ) : null}
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="space-y-3 pb-3">
+              {!mobileCustomOpen ? (
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onTouchStart={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                  placeholder={placeholder}
+                  className={`w-full rounded-xl border px-3 py-2 text-sm ${
+                    isDark
+                      ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
+                      : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
+                  }`}
+                />
+              ) : null}
             {mobileCustomOpen ? (
               <div className="space-y-3">
                 <button
@@ -309,7 +311,11 @@ export default function ServiceCategoryPicker({
                     Inna usługa / wpisz ręcznie
                   </button>
                 ) : null}
-                <div className="overflow-y-auto" style={{ maxHeight: "calc(70vh - 140px)" }}>
+              </>
+            )}
+            </div>
+            {!mobileCustomOpen ? (
+              <div className="min-h-0 flex-1 overflow-y-auto pb-1">
                   {normalizeSearchText(query) ? (
                     searchResults.length === 0 ? (
                       <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
@@ -412,9 +418,8 @@ export default function ServiceCategoryPicker({
                       </button>
                     ))
                   )}
-                </div>
-              </>
-            )}
+              </div>
+            ) : null}
           </div>
         </MobileBottomSheet>
       ) : null}

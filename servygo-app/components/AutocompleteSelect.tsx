@@ -157,22 +157,24 @@ export default function AutocompleteSelect({
           }}
           title={label ?? placeholder ?? "Wybierz"}
           isDark={isDark}
+          fixedHeight
         >
-          <div className="space-y-3">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onPointerDown={(event) => event.stopPropagation()}
-              onMouseDown={(event) => event.stopPropagation()}
-              onTouchStart={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-              placeholder={placeholder ?? "Szukaj..."}
-              className={`w-full rounded-xl border px-3 py-2 text-sm ${
-                isDark
-                  ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
-                  : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
-              }`}
-            />
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="space-y-3 pb-3">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onPointerDown={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+                onTouchStart={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                placeholder={placeholder ?? "Szukaj..."}
+                className={`w-full rounded-xl border px-3 py-2 text-sm ${
+                  isDark
+                    ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
+                    : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
+                }`}
+              />
             {selectedOption ? (
               <button
                 type="button"
@@ -188,7 +190,8 @@ export default function AutocompleteSelect({
                 Wyczyść
               </button>
             ) : null}
-            <div className="space-y-1 overflow-y-auto" style={{ maxHeight: "calc(70vh - 140px)" }}>
+            </div>
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-1">
               {filteredOptions.length === 0 ? (
                 <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
               ) : (
