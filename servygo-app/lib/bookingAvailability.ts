@@ -75,7 +75,10 @@ export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
     : await employeeQuery;
   if (employeeError) throw new Error(employeeError.message);
   const requiredRoles = (args.requiredRoles ?? []).map((r) => r.trim().toLowerCase()).filter(Boolean);
-  const candidateEmployees = ((employeeRows as { id: string; role: string; specializations?: unknown }[] | null) ?? [])
+  const allActiveEmployees = ((employeeRows as { id: string; role: string; specializations?: unknown }[] | null) ?? []).map(
+    (row) => row.id,
+  );
+  const filteredEmployees = ((employeeRows as { id: string; role: string; specializations?: unknown }[] | null) ?? [])
     .filter((row) => {
       if (requiredRoles.length === 0) return true;
       const roleSet = new Set<string>([
@@ -85,6 +88,8 @@ export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
       return requiredRoles.some((r) => roleSet.has(r));
     })
     .map((row) => row.id);
+  // Fallback: do not hide all slots when service role tags are stricter than configured employees.
+  const candidateEmployees = filteredEmployees.length > 0 ? filteredEmployees : allActiveEmployees;
   if (candidateEmployees.length === 0) return [];
 
   const { data: bookings, error: bookingsError } = await supabase

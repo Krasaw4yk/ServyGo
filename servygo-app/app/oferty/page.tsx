@@ -15,7 +15,7 @@ function formatPriceRange(priceFrom?: number | null, priceTo?: number | null) {
   if (priceFrom != null && priceTo != null && priceTo >= priceFrom) return `${priceFrom}-${priceTo} zł`;
   if (priceFrom != null) return `od ${priceFrom} zł`;
   if (priceTo != null) return `do ${priceTo} zł`;
-  return "Zapytaj o wycenę";
+  return "Cena po wycenie";
 }
 
 export default function OffersPage() {
@@ -348,12 +348,13 @@ export default function OffersPage() {
                     lastName: queryFilters.lastName || "",
                   });
                   const markerPrice = formatPriceRange(firstOffer.price_from, firstOffer.price_to);
+                  const markerDuration = firstOffer.duration_minutes ? `${firstOffer.duration_minutes} min` : "czas do ustalenia";
                   return (
                     <Link
                       key={workshop.id}
                       href={`/warsztat/${workshop.id}?${detailsParams.toString()}`}
                       onMouseEnter={() => setSelectedWorkshopId(workshop.id)}
-                      title={`${workshop.name} · ${markerPrice}`}
+                      title={`${workshop.name} · ${markerPrice} · ${markerDuration}`}
                       className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border px-2 py-1 text-xs font-semibold shadow-lg transition ${
                         isSelected
                           ? "border-orange-300 bg-orange-500 text-white"
@@ -361,7 +362,7 @@ export default function OffersPage() {
                       }`}
                       style={{ left: `${x}%`, top: `${y}%` }}
                     >
-                      ● {workshop.name} · {markerPrice}
+                      ● {workshop.name} · {markerPrice} · {markerDuration}
                     </Link>
                   );
                 })}

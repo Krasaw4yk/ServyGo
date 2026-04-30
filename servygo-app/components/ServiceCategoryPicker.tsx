@@ -315,7 +315,7 @@ export default function ServiceCategoryPicker({
             )}
             </div>
             {!mobileCustomOpen ? (
-              <div className="min-h-0 flex-1 overflow-y-auto pb-1">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 [touch-action:pan-y]">
                   {normalizeSearchText(query) ? (
                     searchResults.length === 0 ? (
                       <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
@@ -426,7 +426,7 @@ export default function ServiceCategoryPicker({
 
       {isOpen && !isMobile ? (
         <div
-          className={`absolute left-0 top-full z-30 mt-2 max-h-72 w-full max-w-[min(100%,92vw)] overflow-auto rounded-xl border p-1 backdrop-blur-xl sm:right-0 sm:max-w-none ${
+          className={`absolute left-0 top-full z-30 mt-2 max-h-72 w-full max-w-[min(100%,92vw)] overflow-y-auto overscroll-contain rounded-xl border p-1 backdrop-blur-xl sm:right-0 sm:max-w-none ${
             isDark
               ? "border-blue-400/25 bg-zinc-900/95 shadow-[0_14px_34px_rgba(2,6,23,0.72),0_0_24px_rgba(59,130,246,0.28)]"
               : "border-blue-200/70 bg-white/95 shadow-[0_18px_40px_rgba(37,99,235,0.2),0_0_22px_rgba(249,115,22,0.18)]"
