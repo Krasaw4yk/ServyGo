@@ -80,6 +80,27 @@ export type WorkshopServiceConfigRow = {
   updated_at: string | null;
 };
 
+export type WorkshopServiceVehiclePriceRow = {
+  id: string;
+  workshop_id: string;
+  service_id: string | null;
+  service_name: string;
+  vehicle_type: string;
+  brand: string | null;
+  model: string | null;
+  year_from: number | null;
+  year_to: number | null;
+  engine: string | null;
+  fuel: string | null;
+  transmission: string | null;
+  price_from: number | null;
+  price_to: number | null;
+  duration_minutes: number | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 const DAY_KEYS: WorkshopOpeningDayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 export function defaultOpeningSchedule(): WorkshopOpeningSchedule {
@@ -457,6 +478,75 @@ export async function deleteWorkshopServiceConfigsForOwner(workshopId: string, i
   if (targetIds.length === 0) return;
   const { error } = await supabase
     .from("workshop_services")
+    .delete()
+    .eq("workshop_id", workshopId)
+    .in("id", targetIds);
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function listWorkshopServiceVehiclePricesForOwner(workshopId: string): Promise<WorkshopServiceVehiclePriceRow[]> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { data, error } = await supabase
+    .from("workshop_service_vehicle_prices")
+    .select("id, workshop_id, service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, transmission, price_from, price_to, duration_minutes, is_active, created_at, updated_at")
+    .eq("workshop_id", workshopId)
+    .order("service_name", { ascending: true });
+  if (error) throw new Error(formatSupabaseError(error));
+  return (data as WorkshopServiceVehiclePriceRow[] | null) ?? [];
+}
+
+export async function upsertWorkshopServiceVehiclePricesForOwner(
+  workshopId: string,
+  rows: Array<{
+    id?: string;
+    service_id?: string | null;
+    service_name: string;
+    vehicle_type: string;
+    brand?: string | null;
+    model?: string | null;
+    year_from?: number | null;
+    year_to?: number | null;
+    engine?: string | null;
+    fuel?: string | null;
+    transmission?: string | null;
+    price_from?: number | null;
+    price_to?: number | null;
+    duration_minutes?: number | null;
+    is_active?: boolean;
+  }>,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const payload = rows.map((row) => ({
+    ...(row.id?.trim() ? { id: row.id.trim() } : {}),
+    workshop_id: workshopId,
+    service_id: row.service_id?.trim() || null,
+    service_name: row.service_name.trim(),
+    vehicle_type: row.vehicle_type.trim(),
+    brand: row.brand?.trim() || null,
+    model: row.model?.trim() || null,
+    year_from: row.year_from ?? null,
+    year_to: row.year_to ?? null,
+    engine: row.engine?.trim() || null,
+    fuel: row.fuel?.trim() || null,
+    transmission: row.transmission?.trim() || null,
+    price_from: row.price_from ?? null,
+    price_to: row.price_to ?? null,
+    duration_minutes: row.duration_minutes ?? null,
+    is_active: row.is_active ?? true,
+  }));
+  if (payload.length === 0) return;
+  const { error } = await supabase
+    .from("workshop_service_vehicle_prices")
+    .upsert(payload, { onConflict: "id", ignoreDuplicates: false });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function deleteWorkshopServiceVehiclePricesForOwner(workshopId: string, ids: string[]): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const targetIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+  if (targetIds.length === 0) return;
+  const { error } = await supabase
+    .from("workshop_service_vehicle_prices")
     .delete()
     .eq("workshop_id", workshopId)
     .in("id", targetIds);

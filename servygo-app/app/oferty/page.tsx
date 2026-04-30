@@ -349,20 +349,29 @@ export default function OffersPage() {
                   });
                   const markerPrice = formatPriceRange(firstOffer.price_from, firstOffer.price_to);
                   const markerDuration = firstOffer.duration_minutes ? `${firstOffer.duration_minutes} min` : "czas do ustalenia";
+                  const markerService = firstOffer.service_name || "Usługa";
                   return (
                     <Link
                       key={workshop.id}
                       href={`/warsztat/${workshop.id}?${detailsParams.toString()}`}
                       onMouseEnter={() => setSelectedWorkshopId(workshop.id)}
-                      title={`${workshop.name} · ${markerPrice} · ${markerDuration}`}
-                      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border px-2 py-1 text-xs font-semibold shadow-lg transition ${
+                      title={`${workshop.name} · ${markerPrice} · ${markerDuration} · ${markerService}`}
+                      className={`absolute -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-xl border px-3 py-2 text-left text-[11px] font-semibold leading-tight shadow-lg transition ${
                         isSelected
                           ? "border-orange-300 bg-orange-500 text-white"
                           : "border-blue-300 bg-blue-600 text-white"
                       }`}
                       style={{ left: `${x}%`, top: `${y}%` }}
                     >
-                      ● {workshop.name} · {markerPrice} · {markerDuration}
+                      <span className="block max-w-[220px] truncate">{workshop.name}</span>
+                      <span className="mt-1 block max-w-[220px] truncate">{markerPrice} • {markerDuration}</span>
+                      <span className="mt-1 block max-w-[220px] truncate opacity-90">{markerService}</span>
+                      <span
+                        aria-hidden
+                        className={`pointer-events-none absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-l-[8px] border-r-[8px] border-t-[9px] border-l-transparent border-r-transparent ${
+                          isSelected ? "border-t-orange-500" : "border-t-blue-600"
+                        }`}
+                      />
                     </Link>
                   );
                 })}

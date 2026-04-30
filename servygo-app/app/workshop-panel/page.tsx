@@ -11,16 +11,26 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { getUnreadMessagesCount, resolveMessageViewerContext, sendSystemMessage } from "@/lib/messagesApi";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
-import { getAllServiceOptions } from "@/lib/vehicleData";
+import {
+  getAllServiceOptions,
+  getVehicleBrands,
+  getVehicleFuels,
+  getVehicleModels,
+  getVehicleYears,
+  vehicleTypeOptions,
+  type VehicleTypeKey,
+} from "@/lib/vehicleData";
 import {
   defaultOpeningSchedule,
   deleteWorkshopServiceConfigsForOwner,
+  deleteWorkshopServiceVehiclePricesForOwner,
   deleteAvailabilityExceptionForOwner,
   getOwnedWorkshopForUser,
   googleReviewsHintUrl,
   listBookingsForWorkshopOwner,
   listAvailabilityExceptionsForOwner,
   listWorkshopServiceConfigsForOwner,
+  listWorkshopServiceVehiclePricesForOwner,
   parseOpeningSchedule,
   stringifyOpeningSchedule,
   type WorkshopAvailabilityExceptionRow,
@@ -33,6 +43,7 @@ import {
   upsertWorkshopEmployeeForOwner,
   upsertAvailabilityExceptionForOwner,
   upsertWorkshopServiceConfigsForOwner,
+  upsertWorkshopServiceVehiclePricesForOwner,
   cancelBookingAsWorkshopOwner,
   sendBookingQuoteAsWorkshopOwner,
   proposeBookingRescheduleAsWorkshopOwner,
@@ -64,6 +75,23 @@ type ServiceDraftRow = {
   duration_minutes: string;
   is_active: boolean;
   is_custom: boolean;
+};
+type ServiceVehiclePriceDraftRow = {
+  id?: string;
+  service_id: string;
+  service_name: string;
+  vehicle_type: VehicleTypeKey | "";
+  brand: string;
+  model: string;
+  year_from: string;
+  year_to: string;
+  engine: string;
+  fuel: string;
+  transmission: string;
+  price_from: string;
+  price_to: string;
+  duration_minutes: string;
+  is_active: boolean;
 };
 type DayOverride = { closed: boolean; open: string; close: string };
 type EmployeeDraft = {
@@ -334,9 +362,11 @@ function WorkshopPanelPageContent() {
   const [profileDraft, setProfileDraft] = useState<WorkshopOwnerProfilePatch | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [serviceDraftRows, setServiceDraftRows] = useState<ServiceDraftRow[]>([]);
+  const [serviceVehiclePriceDraftRows, setServiceVehiclePriceDraftRows] = useState<ServiceVehiclePriceDraftRow[]>([]);
   const [servicesCategoryFilter, setServicesCategoryFilter] = useState("Wszystkie");
   const [servicesActivityFilter, setServicesActivityFilter] = useState<"all" | "active" | "inactive">("all");
   const [savingServices, setSavingServices] = useState(false);
+  const [savingVehiclePrices, setSavingVehiclePrices] = useState(false);
   const [employeeDraftRows, setEmployeeDraftRows] = useState<EmployeeDraft[]>([]);
   const [savingEmployees, setSavingEmployees] = useState(false);
   const [employeeRoleOptions, setEmployeeRoleOptions] = useState<string[]>(() => [...EMPLOYEE_ROLE_OPTIONS]);
@@ -412,10 +442,11 @@ function WorkshopPanelPageContent() {
 
   const loadAll = useCallback(async (ws: Workshop) => {
     setError("");
-    const [b, exceptions, serviceRows, employeeRows] = await Promise.all([
+    const [b, exceptions, serviceRows, vehiclePriceRows, employeeRows] = await Promise.all([
       listBookingsForWorkshopOwner(ws.id),
       listAvailabilityExceptionsForOwner(ws.id),
       listWorkshopServiceConfigsForOwner(ws.id),
+      listWorkshopServiceVehiclePricesForOwner(ws.id),
       listWorkshopEmployeesForOwner(ws.id),
     ]);
     setBookings(b);
@@ -433,6 +464,25 @@ function WorkshopPanelPageContent() {
         duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
         is_active: row.is_active,
         is_custom: row.is_custom,
+      })),
+    );
+    setServiceVehiclePriceDraftRows(
+      vehiclePriceRows.map((row) => ({
+        id: row.id,
+        service_id: row.service_id ?? "",
+        service_name: row.service_name,
+        vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
+        brand: row.brand ?? "",
+        model: row.model ?? "",
+        year_from: row.year_from == null ? "" : String(row.year_from),
+        year_to: row.year_to == null ? "" : String(row.year_to),
+        engine: row.engine ?? "",
+        fuel: row.fuel ?? "",
+        transmission: row.transmission ?? "",
+        price_from: row.price_from == null ? "" : String(row.price_from),
+        price_to: row.price_to == null ? "" : String(row.price_to),
+        duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
+        is_active: row.is_active,
       })),
     );
     setEmployeeDraftRows(
@@ -552,9 +602,10 @@ function WorkshopPanelPageContent() {
               opening_hours: ws.opening_hours ?? "",
             });
           }
-          const [exceptions, serviceRows] = await Promise.all([
+          const [exceptions, serviceRows, vehiclePriceRows] = await Promise.all([
             listAvailabilityExceptionsForOwner(ws.id),
             listWorkshopServiceConfigsForOwner(ws.id),
+            listWorkshopServiceVehiclePricesForOwner(ws.id),
           ]);
           if (!cancelled) {
             setAvailabilityExceptions(exceptions);
@@ -570,6 +621,25 @@ function WorkshopPanelPageContent() {
                 duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
                 is_active: row.is_active,
                 is_custom: row.is_custom,
+              })),
+            );
+            setServiceVehiclePriceDraftRows(
+              vehiclePriceRows.map((row) => ({
+                id: row.id,
+                service_id: row.service_id ?? "",
+                service_name: row.service_name,
+                vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
+                brand: row.brand ?? "",
+                model: row.model ?? "",
+                year_from: row.year_from == null ? "" : String(row.year_from),
+                year_to: row.year_to == null ? "" : String(row.year_to),
+                engine: row.engine ?? "",
+                fuel: row.fuel ?? "",
+                transmission: row.transmission ?? "",
+                price_from: row.price_from == null ? "" : String(row.price_from),
+                price_to: row.price_to == null ? "" : String(row.price_to),
+                duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
+                is_active: row.is_active,
               })),
             );
           }
@@ -908,6 +978,17 @@ function WorkshopPanelPageContent() {
         return categoryOk && activityOk;
       }),
     [mergedServiceRows, servicesCategoryFilter, servicesActivityFilter],
+  );
+  const vehicleYearOptions = useMemo(() => getVehicleYears(), []);
+  const serviceNameOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...serviceCatalogRows.map((row) => row.name),
+          ...mergedServiceRows.map((row) => row.service_name).filter(Boolean),
+        ]),
+      ).sort((a, b) => a.localeCompare(b, "pl")),
+    [mergedServiceRows, serviceCatalogRows],
   );
 
   async function handleSaveProfile(e: React.FormEvent) {
@@ -1302,6 +1383,123 @@ function WorkshopPanelPageContent() {
       setError(e instanceof Error ? e.message : "Błąd zapisu usług.");
     } finally {
       setSavingServices(false);
+    }
+  }
+
+  function patchServiceVehiclePriceRow(target: ServiceVehiclePriceDraftRow, patch: Partial<ServiceVehiclePriceDraftRow>) {
+    const key = target.id ? `id:${target.id}` : `tmp:${target.service_name}:${target.brand}:${target.model}:${target.engine}`;
+    setServiceVehiclePriceDraftRows((prev) =>
+      prev.map((row) => {
+        const rowKey = row.id ? `id:${row.id}` : `tmp:${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
+        return rowKey === key ? { ...row, ...patch } : row;
+      }),
+    );
+  }
+
+  function addServiceVehiclePriceRow() {
+    setServiceVehiclePriceDraftRows((prev) => [
+      ...prev,
+      {
+        service_id: "",
+        service_name: "",
+        vehicle_type: "car",
+        brand: "",
+        model: "",
+        year_from: "",
+        year_to: "",
+        engine: "",
+        fuel: "",
+        transmission: "",
+        price_from: "",
+        price_to: "",
+        duration_minutes: "",
+        is_active: true,
+      },
+    ]);
+  }
+
+  function removeServiceVehiclePriceRow(target: ServiceVehiclePriceDraftRow) {
+    const key = target.id ? `id:${target.id}` : `tmp:${target.service_name}:${target.brand}:${target.model}:${target.engine}`;
+    setServiceVehiclePriceDraftRows((prev) =>
+      prev.filter((row) => {
+        const rowKey = row.id ? `id:${row.id}` : `tmp:${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
+        return rowKey !== key;
+      }),
+    );
+  }
+
+  async function saveServiceVehiclePrices() {
+    if (readOnly || !workshop) return;
+    setSavingVehiclePrices(true);
+    setError("");
+    setSuccess("");
+    try {
+      const idsToDelete = serviceVehiclePriceDraftRows
+        .filter(
+          (row) =>
+            Boolean(row.id) &&
+            !row.is_active &&
+            !row.service_name.trim() &&
+            !row.price_from.trim() &&
+            !row.price_to.trim() &&
+            !row.duration_minutes.trim(),
+        )
+        .map((row) => row.id as string);
+      const rows = serviceVehiclePriceDraftRows
+        .filter((row) => {
+          if (row.id) return !idsToDelete.includes(row.id);
+          return Boolean(row.service_name.trim());
+        })
+        .map((row) => {
+          const trimmedService = row.service_name.trim();
+          const linkedService = mergedServiceRows.find(
+            (item) => item.service_name.trim().toLowerCase() === trimmedService.toLowerCase(),
+          );
+          return {
+            id: row.id,
+            service_id: row.service_id || linkedService?.id || null,
+            service_name: trimmedService,
+            vehicle_type: row.vehicle_type || "car",
+            brand: row.brand.trim() || null,
+            model: row.model.trim() || null,
+            year_from: row.year_from.trim() ? Number(row.year_from) : null,
+            year_to: row.year_to.trim() ? Number(row.year_to) : null,
+            engine: row.engine.trim() || null,
+            fuel: row.fuel.trim() || null,
+            transmission: row.transmission.trim() || null,
+            price_from: row.price_from.trim() ? Number(row.price_from) : null,
+            price_to: row.price_to.trim() ? Number(row.price_to) : null,
+            duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
+            is_active: row.is_active,
+          };
+        });
+      await deleteWorkshopServiceVehiclePricesForOwner(workshop.id, idsToDelete);
+      await upsertWorkshopServiceVehiclePricesForOwner(workshop.id, rows);
+      const refreshed = await listWorkshopServiceVehiclePricesForOwner(workshop.id);
+      setServiceVehiclePriceDraftRows(
+        refreshed.map((row) => ({
+          id: row.id,
+          service_id: row.service_id ?? "",
+          service_name: row.service_name,
+          vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
+          brand: row.brand ?? "",
+          model: row.model ?? "",
+          year_from: row.year_from == null ? "" : String(row.year_from),
+          year_to: row.year_to == null ? "" : String(row.year_to),
+          engine: row.engine ?? "",
+          fuel: row.fuel ?? "",
+          transmission: row.transmission ?? "",
+          price_from: row.price_from == null ? "" : String(row.price_from),
+          price_to: row.price_to == null ? "" : String(row.price_to),
+          duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
+          is_active: row.is_active,
+        })),
+      );
+      setSuccess("Ceny usług pod konkretne auta zostały zapisane.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Błąd zapisu cen pod auta.");
+    } finally {
+      setSavingVehiclePrices(false);
     }
   }
 
@@ -2120,6 +2318,108 @@ function WorkshopPanelPageContent() {
                     <button type="button" disabled={readOnly || savingServices} onClick={() => void saveServices()} className="mt-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
                       {savingServices ? "Zapisywanie…" : "Zapisz usługi i ceny"}
                     </button>
+
+                    <div className={`mt-6 rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/40" : "border-blue-100 bg-blue-50/40"}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="text-base font-semibold">Ceny pod konkretne auto</h3>
+                          <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                            Ta sama baza pojazdów co w wyszukiwarce klienta. Gdy brak dopasowania, działa cena ogólna usługi.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={readOnly}
+                          onClick={addServiceVehiclePriceRow}
+                          className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                        >
+                          Dodaj wariant auta
+                        </button>
+                      </div>
+
+                      <div className="mt-3 space-y-3">
+                        {serviceVehiclePriceDraftRows.map((row, idx) => {
+                          const brands = row.vehicle_type ? getVehicleBrands(row.vehicle_type) : [];
+                          const models = row.vehicle_type && row.brand ? getVehicleModels(row.vehicle_type, row.brand) : [];
+                          const fuels = row.vehicle_type ? getVehicleFuels(row.vehicle_type) : [];
+                          return (
+                            <div key={row.id ?? `vehicle-row-${idx}`} className={`grid grid-cols-1 gap-2 rounded-xl border p-3 md:grid-cols-4 ${isDark ? "border-zinc-700" : "border-zinc-200"}`}>
+                              <input
+                                list={`service-name-options-${idx}`}
+                                disabled={readOnly}
+                                value={row.service_name}
+                                onChange={(e) => patchServiceVehiclePriceRow(row, { service_name: e.target.value })}
+                                placeholder="Nazwa usługi"
+                                className={formInputClassName}
+                              />
+                              <datalist id={`service-name-options-${idx}`}>
+                                {serviceNameOptions.map((name) => (
+                                  <option key={`${idx}-${name}`} value={name} />
+                                ))}
+                              </datalist>
+                              <select
+                                disabled={readOnly}
+                                value={row.vehicle_type}
+                                onChange={(e) =>
+                                  patchServiceVehiclePriceRow(row, {
+                                    vehicle_type: e.target.value as VehicleTypeKey,
+                                    brand: "",
+                                    model: "",
+                                    fuel: "",
+                                  })
+                                }
+                                className={formInputClassName}
+                              >
+                                {vehicleTypeOptions.map((option) => (
+                                  <option key={option.key} value={option.key}>{option.label}</option>
+                                ))}
+                              </select>
+                              <select disabled={readOnly} value={row.brand} onChange={(e) => patchServiceVehiclePriceRow(row, { brand: e.target.value, model: "" })} className={formInputClassName}>
+                                <option value="">Marka (dowolna)</option>
+                                {brands.map((brand) => <option key={`${row.id ?? idx}-${brand}`} value={brand}>{brand}</option>)}
+                              </select>
+                              <select disabled={readOnly || !row.brand} value={row.model} onChange={(e) => patchServiceVehiclePriceRow(row, { model: e.target.value })} className={formInputClassName}>
+                                <option value="">Model (dowolny)</option>
+                                {models.map((model) => <option key={`${row.id ?? idx}-${model}`} value={model}>{model}</option>)}
+                              </select>
+                              <select disabled={readOnly} value={row.year_from} onChange={(e) => patchServiceVehiclePriceRow(row, { year_from: e.target.value })} className={formInputClassName}>
+                                <option value="">Rok od</option>
+                                {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-from-${year}`} value={year}>{year}</option>)}
+                              </select>
+                              <select disabled={readOnly} value={row.year_to} onChange={(e) => patchServiceVehiclePriceRow(row, { year_to: e.target.value })} className={formInputClassName}>
+                                <option value="">Rok do</option>
+                                {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-to-${year}`} value={year}>{year}</option>)}
+                              </select>
+                              <input disabled={readOnly} value={row.engine} onChange={(e) => patchServiceVehiclePriceRow(row, { engine: e.target.value })} placeholder="Silnik (np. 1.9 Diesel)" className={formInputClassName} />
+                              <select disabled={readOnly} value={row.fuel} onChange={(e) => patchServiceVehiclePriceRow(row, { fuel: e.target.value })} className={formInputClassName}>
+                                <option value="">Paliwo (dowolne)</option>
+                                {fuels.map((fuel) => <option key={`${row.id ?? idx}-fuel-${fuel}`} value={fuel}>{fuel}</option>)}
+                              </select>
+                              <input disabled={readOnly} value={row.transmission} onChange={(e) => patchServiceVehiclePriceRow(row, { transmission: e.target.value })} placeholder="Skrzynia (opcjonalnie)" className={formInputClassName} />
+                              <input disabled={readOnly} value={row.price_from} onChange={(e) => patchServiceVehiclePriceRow(row, { price_from: e.target.value })} placeholder="Cena od" className={formInputClassName} />
+                              <input disabled={readOnly} value={row.price_to} onChange={(e) => patchServiceVehiclePriceRow(row, { price_to: e.target.value })} placeholder="Cena do" className={formInputClassName} />
+                              <input disabled={readOnly} value={row.duration_minutes} onChange={(e) => patchServiceVehiclePriceRow(row, { duration_minutes: e.target.value })} placeholder="Czas (min)" className={formInputClassName} />
+                              <label className="inline-flex items-center gap-2 text-xs">
+                                <input type="checkbox" disabled={readOnly} checked={row.is_active} onChange={(e) => patchServiceVehiclePriceRow(row, { is_active: e.target.checked })} />
+                                Aktywna pozycja
+                              </label>
+                              <button type="button" disabled={readOnly} onClick={() => removeServiceVehiclePriceRow(row)} className="rounded-lg border px-3 py-2 text-xs text-rose-500 disabled:opacity-50">
+                                Usuń
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={readOnly || savingVehiclePrices}
+                        onClick={() => void saveServiceVehiclePrices()}
+                        className="mt-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        {savingVehiclePrices ? "Zapisywanie…" : "Zapisz ceny dla konkretnych aut"}
+                      </button>
+                    </div>
                   </section>
                 ) : null}
 

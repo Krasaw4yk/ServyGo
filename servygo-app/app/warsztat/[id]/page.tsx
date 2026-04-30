@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
@@ -52,6 +52,10 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
 
+function normalizeServiceQuery(value: string) {
+  return normalizeText(value).replace(/[-_]+/g, " ");
+}
+
 function formatPriceRange(priceFrom?: number | null, priceTo?: number | null, fallback?: number) {
   if (priceFrom != null && priceTo != null && priceTo >= priceFrom) return `${priceFrom}-${priceTo} zł`;
   if (priceFrom != null) return `od ${priceFrom} zł`;
@@ -62,6 +66,7 @@ function formatPriceRange(priceFrom?: number | null, priceTo?: number | null, fa
 
 export default function WorkshopDetailsPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [mounted, setMounted] = useState(false);
@@ -203,7 +208,7 @@ export default function WorkshopDetailsPage() {
   const t = useMemo(() => createTranslator(language), [language]);
   const isDark = mounted ? theme === "dark" : false;
 
-  const requestedService = (searchParams.get("service") ?? "").trim().toLowerCase();
+  const requestedService = normalizeServiceQuery(searchParams.get("service") ?? "");
   const backToOffersHref = useMemo(() => {
     const query = searchParams.toString();
     return query ? `/oferty?${query}` : "/oferty";
@@ -230,7 +235,7 @@ export default function WorkshopDetailsPage() {
 
   const filteredServices = useMemo(() => {
     if (!workshop) return [];
-    return workshop.services.filter((service) => {
+    const vehicleMatched = workshop.services.filter((service) => {
       const brandMatch =
         !selectedVehicle.brand || normalizeText(service.brand) === selectedVehicle.brand;
       const modelMatch =
@@ -244,14 +249,20 @@ export default function WorkshopDetailsPage() {
         !selectedVehicle.fuel || normalizeText(service.fuelType ?? "").includes(selectedVehicle.fuel);
       return brandMatch && modelMatch && yearMatch && engineMatch && fuelMatch;
     });
-  }, [selectedVehicle.brand, selectedVehicle.engine, selectedVehicle.fuel, selectedVehicle.model, selectedVehicle.year, workshop]);
+    if (vehicleMatched.length > 0) return vehicleMatched;
+    if (!requestedService) return workshop.services;
+    const serviceMatched = workshop.services.filter((service) =>
+      normalizeServiceQuery(service.service_name).includes(requestedService),
+    );
+    return serviceMatched.length > 0 ? serviceMatched : workshop.services;
+  }, [requestedService, selectedVehicle.brand, selectedVehicle.engine, selectedVehicle.fuel, selectedVehicle.model, selectedVehicle.year, workshop]);
 
   const defaultService = useMemo(() => {
     if (!workshop) return null;
     if (!requestedService) return filteredServices[0] ?? null;
     return (
       filteredServices.find((service) =>
-        service.service_name.toLowerCase().includes(requestedService),
+        normalizeServiceQuery(service.service_name).includes(requestedService),
       ) ??
       filteredServices[0] ??
       null
@@ -518,7 +529,14 @@ export default function WorkshopDetailsPage() {
       <main className="min-h-screen px-2 py-5 sm:px-6 sm:py-8">
         <div className="mx-auto w-full max-w-6xl space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Link href="/" className="inline-flex items-center">
+            <Link
+              href="/"
+              onClick={(event) => {
+                event.preventDefault();
+                router.push("/");
+              }}
+              className="relative z-20 inline-flex items-center"
+            >
               <Image
                 src={isDark ? "/servygo-logo-dark-cropped.png" : "/servygo-logo-light-cropped.png"}
                 alt="ServyGo"
@@ -530,6 +548,10 @@ export default function WorkshopDetailsPage() {
             <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
               <Link
                 href={backToOffersHref}
+                onClick={(event) => {
+                  event.preventDefault();
+                  router.push(backToOffersHref);
+                }}
                 className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold transition sm:w-auto ${
                   isDark
                     ? "border-blue-400/50 bg-zinc-900/70 text-zinc-200 hover:border-orange-300"
@@ -691,7 +713,7 @@ export default function WorkshopDetailsPage() {
                       </button>
                     );
                   })}
-                  {filteredServices.length === 0 ? (
+                  {filteredServices.length === 0 && workshop.services.length === 0 ? (
                     <p
                       className={`rounded-xl border px-3 py-2 text-sm ${
                         isDark

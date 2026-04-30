@@ -158,6 +158,73 @@ type WorkshopWithNestedServices = {
   }[] | null;
 };
 
+type WorkshopVehiclePriceRow = {
+  id: string;
+  workshop_id: string;
+  service_id: string | null;
+  service_name: string;
+  vehicle_type: string;
+  brand: string | null;
+  model: string | null;
+  year_from: number | null;
+  year_to: number | null;
+  engine: string | null;
+  fuel: string | null;
+  price_from: number | null;
+  price_to: number | null;
+  duration_minutes: number | null;
+  is_active: boolean;
+};
+
+function inferFuelType(engine: string | null | undefined, fuel: string | null | undefined) {
+  const explicit = (fuel ?? "").trim();
+  if (explicit) return explicit;
+  const e = (engine ?? "").toLowerCase();
+  if (e.includes("diesel")) return "Diesel";
+  if (e.includes("benz")) return "Benzyna";
+  if (e.includes("lpg")) return "LPG";
+  return "Nie określono";
+}
+
+function buildVehicleSpecificOffers(rows: WorkshopVehiclePriceRow[]): WorkshopServiceOffer[] {
+  return rows
+    .filter((row) => row.is_active !== false && row.service_name.trim())
+    .map((row) => ({
+      id: row.service_id ?? row.id,
+      service_name: row.service_name.trim(),
+      service_key: null,
+      vehicle_type: (row.vehicle_type ?? "").trim() || "Osobowy",
+      brand: (row.brand ?? "").trim() || "—",
+      model: (row.model ?? "").trim() || "—",
+      year_from: row.year_from ?? 1955,
+      year_to: row.year_to ?? new Date().getFullYear() + 1,
+      engine: (row.engine ?? "").trim() || "—",
+      fuelType: inferFuelType(row.engine, row.fuel),
+      price: row.price_from ?? 0,
+      price_from: row.price_from ?? null,
+      price_to: row.price_to ?? null,
+      duration_minutes: row.duration_minutes ?? 60,
+      next_available: "—",
+      required_roles: [],
+    }));
+}
+
+function mergeOffers(vehicleSpecific: WorkshopServiceOffer[], genericOffers: WorkshopServiceOffer[]): WorkshopServiceOffer[] {
+  if (vehicleSpecific.length === 0) return genericOffers;
+  const out: WorkshopServiceOffer[] = [...vehicleSpecific];
+  for (const generic of genericOffers) {
+    const exists = vehicleSpecific.some(
+      (row) => normalizeServiceName(row.service_name) === normalizeServiceName(generic.service_name),
+    );
+    if (!exists) out.push(generic);
+  }
+  return out;
+}
+
+function normalizeServiceName(name: string) {
+  return name.trim().toLowerCase().replace(/[-_]+/g, " ");
+}
+
 function buildGoogleSearchUrl(name: string, address: string | null, city: string | null) {
   const q = [name, address, city].filter((p) => p && String(p).trim()).join(", ").trim();
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q || name)}`;
@@ -214,7 +281,27 @@ export async function fetchPublicWorkshopsAsMock(): Promise<MockWorkshop[]> {
   const { data, error } = await supabase.from("workshops").select(PUBLIC_WORKSHOP_SELECT).order("name", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
   const rows = (data as WorkshopWithNestedServices[] | null) ?? [];
-  return rows.filter((w) => isPubliclyListedWorkshopStatus(w.status)).map((w) => buildMockWorkshopFromDbRow(w));
+  const visibleRows = rows.filter((w) => isPubliclyListedWorkshopStatus(w.status));
+  const workshopIds = visibleRows.map((w) => w.id);
+  const { data: vehiclePricesRaw, error: vehiclePricesError } = workshopIds.length
+    ? await supabase
+        .from("workshop_service_vehicle_prices")
+        .select("id, workshop_id, service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
+        .in("workshop_id", workshopIds)
+    : { data: [], error: null };
+  if (vehiclePricesError) throw new Error(formatSupabaseError(vehiclePricesError));
+  const vehiclePrices = (vehiclePricesRaw as WorkshopVehiclePriceRow[] | null) ?? [];
+  const pricesByWorkshop = new Map<string, WorkshopVehiclePriceRow[]>();
+  for (const row of vehiclePrices) {
+    const list = pricesByWorkshop.get(row.workshop_id) ?? [];
+    list.push(row);
+    pricesByWorkshop.set(row.workshop_id, list);
+  }
+  return visibleRows.map((w) => {
+    const base = buildMockWorkshopFromDbRow(w);
+    const specific = buildVehicleSpecificOffers(pricesByWorkshop.get(w.id) ?? []);
+    return { ...base, services: mergeOffers(specific, base.services).map((s) => ({ ...s, workshopId: w.id })) };
+  });
 }
 
 /** Pojedynczy warsztat (UUID) dla strony szczegółów — null gdy brak lub niewidoczny. */
@@ -224,5 +311,12 @@ export async function fetchPublicWorkshopByIdAsMock(id: string): Promise<MockWor
   if (error) throw new Error(formatSupabaseError(error));
   const row = data as WorkshopWithNestedServices | null;
   if (!row || !isPubliclyListedWorkshopStatus(row.status)) return null;
-  return buildMockWorkshopFromDbRow(row);
+  const base = buildMockWorkshopFromDbRow(row);
+  const { data: vehiclePricesRaw, error: vehiclePricesError } = await supabase
+    .from("workshop_service_vehicle_prices")
+    .select("id, workshop_id, service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
+    .eq("workshop_id", id.trim());
+  if (vehiclePricesError) throw new Error(formatSupabaseError(vehiclePricesError));
+  const specific = buildVehicleSpecificOffers((vehiclePricesRaw as WorkshopVehiclePriceRow[] | null) ?? []);
+  return { ...base, services: mergeOffers(specific, base.services).map((s) => ({ ...s, workshopId: row.id })) };
 }
