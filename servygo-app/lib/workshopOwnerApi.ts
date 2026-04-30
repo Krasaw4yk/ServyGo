@@ -418,8 +418,8 @@ export async function upsertWorkshopServiceConfigsForOwner(
   }>,
 ): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
-  const payload = rows.map((r) => ({
-    ...(r.id ? { id: r.id } : {}),
+  const normalized = rows.map((r) => ({
+    id: r.id?.trim() || null,
     workshop_id: workshopId,
     service_key: r.service_key ?? null,
     service_name: r.service_name.trim(),
@@ -431,10 +431,24 @@ export async function upsertWorkshopServiceConfigsForOwner(
     is_active: r.is_active ?? true,
     is_custom: r.is_custom ?? false,
   }));
-  const { error } = await supabase
-    .from("workshop_services")
-    .upsert(payload, { onConflict: "id", ignoreDuplicates: false });
-  if (error) throw new Error(formatSupabaseError(error));
+  const rowsWithId = normalized.filter((r) => Boolean(r.id)).map((r) => ({ ...r, id: r.id as string }));
+  const rowsWithoutId = normalized
+    .filter((r) => !r.id)
+    .map(({ id: _id, ...rest }) => rest);
+
+  if (rowsWithId.length > 0) {
+    const { error } = await supabase
+      .from("workshop_services")
+      .upsert(rowsWithId, { onConflict: "id", ignoreDuplicates: false });
+    if (error) throw new Error(formatSupabaseError(error));
+  }
+
+  if (rowsWithoutId.length > 0) {
+    const { error } = await supabase
+      .from("workshop_services")
+      .insert(rowsWithoutId);
+    if (error) throw new Error(formatSupabaseError(error));
+  }
 }
 
 export async function deleteWorkshopServiceConfigsForOwner(workshopId: string, ids: string[]): Promise<void> {
