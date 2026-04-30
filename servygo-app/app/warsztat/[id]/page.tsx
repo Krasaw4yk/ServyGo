@@ -300,46 +300,68 @@ export default function WorkshopDetailsPage() {
     });
   }, [calendarMonthDate]);
 
+  const [calendarDaySlots, setCalendarDaySlots] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (!workshop || !selectedService) {
+      setCalendarDaySlots({});
+      return;
+    }
+    const days = calendarGrid.filter((day) => {
+      if (!day.isCurrentMonth) return false;
+      const normalized = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
+      return normalized >= todayStart;
+    });
+    let cancelled = false;
+    void (async () => {
+      const entries = await Promise.all(
+        days.map(async (day) => {
+          try {
+            const slots = await getAvailableSlots({
+              workshopId: workshop.supabaseId,
+              date: day.key,
+              serviceDurationMinutes: selectedService.duration_minutes,
+              employeeId: selectedEmployeeId === "any" ? null : selectedEmployeeId,
+              requiredRoles: selectedService.required_roles ?? [],
+            });
+            return [day.key, slots] as const;
+          } catch {
+            return [day.key, [] as string[]] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setCalendarDaySlots(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [calendarGrid, selectedEmployeeId, selectedService, todayStart, workshop]);
+
   const firstAvailableDateKey = useMemo(() => {
-    if (!workshop) return "";
-    const allowedWeekDays = new Set(workshop.availability.workingDays);
     const firstAvailable = calendarGrid.find((day) => {
       if (!day.isCurrentMonth) return false;
       const normalizedDay = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
       if (normalizedDay < todayStart) return false;
-      if (!allowedWeekDays.has(day.date.getDay())) return false;
-      if (workshop.availability.blockedDates.includes(day.key)) return false;
-      const customSlots = workshop.availability.customAvailability[day.key];
-      if (customSlots && customSlots.length === 0) return false;
-      const weekdaySlots = workshop.availability.availableTimeSlots[String(day.date.getDay())] ?? [];
-      return customSlots ? customSlots.length > 0 : weekdaySlots.length > 0;
+      return (calendarDaySlots[day.key] ?? []).length > 0;
     });
     return firstAvailable?.key ?? "";
-  }, [calendarGrid, todayStart, workshop]);
+  }, [calendarDaySlots, calendarGrid, todayStart]);
 
   const effectiveDateKey = selectedDateKey || firstAvailableDateKey;
   const selectedDayDate = useMemo(() => parseDateKey(effectiveDateKey), [effectiveDateKey]);
 
   const isSelectedDayClosed = useMemo(() => {
-    if (!workshop || !selectedDayDate || !effectiveDateKey) return false;
-    const allowedWeekDays = new Set(workshop.availability.workingDays);
-    const weekDayAllowed = allowedWeekDays.has(selectedDayDate.getDay());
-    const dateAllowed = !workshop.availability.blockedDates.includes(effectiveDateKey);
-    const customSlots = workshop.availability.customAvailability[effectiveDateKey];
-    const weekdaySlots = workshop.availability.availableTimeSlots[String(selectedDayDate.getDay())] ?? [];
-    const hasSlots = customSlots ? customSlots.length > 0 : weekdaySlots.length > 0;
+    if (!selectedDayDate || !effectiveDateKey) return false;
     const dateNotPast =
       new Date(
         selectedDayDate.getFullYear(),
         selectedDayDate.getMonth(),
         selectedDayDate.getDate(),
       ) >= todayStart;
-    return !(weekDayAllowed && dateAllowed && hasSlots && dateNotPast);
-  }, [effectiveDateKey, selectedDayDate, todayStart, workshop]);
-
-  const availableTimes = useMemo(() => {
-    return [] as string[];
-  }, []);
+    if (!dateNotPast) return true;
+    return (calendarDaySlots[effectiveDateKey] ?? []).length === 0;
+  }, [calendarDaySlots, effectiveDateKey, selectedDayDate, todayStart]);
 
   const [dynamicAvailableTimes, setDynamicAvailableTimes] = useState<string[]>([]);
 
@@ -348,25 +370,8 @@ export default function WorkshopDetailsPage() {
       setDynamicAvailableTimes([]);
       return;
     }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const slots = await getAvailableSlots({
-          workshopId: workshop.supabaseId,
-          date: effectiveDateKey,
-          serviceDurationMinutes: selectedService.duration_minutes,
-          employeeId: selectedEmployeeId === "any" ? null : selectedEmployeeId,
-          requiredRoles: selectedService.required_roles ?? [],
-        });
-        if (!cancelled) setDynamicAvailableTimes(slots);
-      } catch {
-        if (!cancelled) setDynamicAvailableTimes([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveDateKey, isSelectedDayClosed, selectedEmployeeId, selectedService, workshop]);
+    setDynamicAvailableTimes(calendarDaySlots[effectiveDateKey] ?? []);
+  }, [calendarDaySlots, effectiveDateKey, isSelectedDayClosed, selectedService, workshop]);
 
   const effectiveSelectedTime =
     selectedTime && dynamicAvailableTimes.includes(selectedTime) ? selectedTime : "";
@@ -751,14 +756,10 @@ export default function WorkshopDetailsPage() {
                   </div>
                   <div className="grid grid-cols-7 gap-1">
                     {calendarGrid.map((day) => {
-                      const allowedWeekDays = workshop ? new Set(workshop.availability.workingDays) : new Set<number>();
                       const normalizedDay = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
                       const isPast = normalizedDay < todayStart;
-                      const customSlots = workshop.availability.customAvailability[day.key];
-                      const weekdaySlots = workshop.availability.availableTimeSlots[String(day.date.getDay())] ?? [];
-                      const hasDaySlots = customSlots ? customSlots.length > 0 : weekdaySlots.length > 0;
-                      const isClosed =
-                        !allowedWeekDays.has(day.date.getDay()) || workshop.availability.blockedDates.includes(day.key) || isPast || !hasDaySlots;
+                      const hasDaySlots = (calendarDaySlots[day.key] ?? []).length > 0;
+                      const isClosed = isPast || !hasDaySlots;
                       const isActive = day.key === effectiveDateKey;
                       return (
                         <button

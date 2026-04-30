@@ -335,12 +335,25 @@ export default function OffersPage() {
                   const x = ((workshop.lng - lngMin) / Math.max(lngMax - lngMin, 0.01)) * 90 + 5;
                   const y = 95 - ((workshop.lat - latMin) / Math.max(latMax - latMin, 0.01)) * 90;
                   const isSelected = activeSelectedWorkshopId === workshop.id;
+                  const firstOffer = workshop.services[0];
+                  const detailsParams = new URLSearchParams({
+                    city: queryFilters.city || workshop.city,
+                    service: queryFilters.service || firstOffer.service_name,
+                    brand: queryFilters.brand || firstOffer.brand,
+                    model: queryFilters.model || firstOffer.model,
+                    year: queryFilters.year || String(firstOffer.year_from),
+                    engine: queryFilters.engine || firstOffer.engine,
+                    vin: queryFilters.vin || "",
+                    firstName: queryFilters.firstName || "",
+                    lastName: queryFilters.lastName || "",
+                  });
+                  const markerPrice = formatPriceRange(firstOffer.price_from, firstOffer.price_to);
                   return (
-                    <button
+                    <Link
                       key={workshop.id}
-                      type="button"
-                      onClick={() => setSelectedWorkshopId(workshop.id)}
-                      title={workshop.name}
+                      href={`/warsztat/${workshop.id}?${detailsParams.toString()}`}
+                      onMouseEnter={() => setSelectedWorkshopId(workshop.id)}
+                      title={`${workshop.name} · ${markerPrice}`}
                       className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border px-2 py-1 text-xs font-semibold shadow-lg transition ${
                         isSelected
                           ? "border-orange-300 bg-orange-500 text-white"
@@ -348,8 +361,8 @@ export default function OffersPage() {
                       }`}
                       style={{ left: `${x}%`, top: `${y}%` }}
                     >
-                      ● {workshop.name}
-                    </button>
+                      ● {workshop.name} · {markerPrice}
+                    </Link>
                   );
                 })}
               </div>
