@@ -368,6 +368,7 @@ function WorkshopPanelPageContent() {
   const [savingServices, setSavingServices] = useState(false);
   const [savingVehiclePrices, setSavingVehiclePrices] = useState(false);
   const [selectedServiceForVehiclePricing, setSelectedServiceForVehiclePricing] = useState<string>("");
+  const [isVehiclePricingModalOpen, setIsVehiclePricingModalOpen] = useState(false);
   const [employeeDraftRows, setEmployeeDraftRows] = useState<EmployeeDraft[]>([]);
   const [savingEmployees, setSavingEmployees] = useState(false);
   const [employeeRoleOptions, setEmployeeRoleOptions] = useState<string[]>(() => [...EMPLOYEE_ROLE_OPTIONS]);
@@ -1628,9 +1629,9 @@ function WorkshopPanelPageContent() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className={`min-h-screen w-full max-w-none px-6 py-4 sm:px-8 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
-        <div className="mx-auto flex w-full max-w-none gap-4 lg:gap-6">
-          <aside className="hidden md:block md:w-64 md:min-w-[16rem] md:max-w-[16rem] md:flex-shrink-0">
+      <main className={`min-h-screen w-full max-w-none px-3 py-3 sm:px-4 lg:px-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+        <div className="flex w-full gap-3 lg:gap-4">
+          <aside className="hidden md:block md:w-60 md:min-w-[15rem] md:max-w-[15rem] md:flex-shrink-0 xl:w-64 xl:min-w-[16rem] xl:max-w-[16rem]">
             <div className={`sticky top-4 rounded-3xl border p-4 backdrop-blur-xl ${isDark ? "border-blue-500/25 bg-zinc-900/92" : "border-blue-200/85 bg-white/85"}`}>
               <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-blue-400">ServyGo Workshop</p>
               <nav className="space-y-1.5">
@@ -2344,13 +2345,13 @@ function WorkshopPanelPageContent() {
                                   aria-checked={row.is_active}
                                   disabled={readOnly}
                                   onClick={() => patchServiceRow(row, { is_active: !row.is_active })}
-                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${row.is_active ? "bg-emerald-500" : "bg-zinc-400"} disabled:opacity-50`}
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${row.is_active ? "bg-blue-600" : "bg-zinc-400"} disabled:opacity-50`}
                                 >
                                   <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${row.is_active ? "translate-x-5" : "translate-x-1"}`} />
                                 </button>
                               </td>
                               <td className="px-2 py-2">
-                                <span className={`rounded-full px-2 py-1 text-xs ${row.is_active ? (isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700") : (isDark ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600")}`}>
+                                <span className={`rounded-full px-2 py-1 text-xs ${row.is_active ? (isDark ? "bg-blue-500/20 text-blue-200" : "bg-blue-100 text-blue-700") : (isDark ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600")}`}>
                                   {row.is_active ? "Aktywna" : "Nieaktywna"}
                                 </span>
                               </td>
@@ -2363,7 +2364,10 @@ function WorkshopPanelPageContent() {
                                 <div className="flex flex-wrap gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedServiceForVehiclePricing(row.service_name)}
+                                    onClick={() => {
+                                      setSelectedServiceForVehiclePricing(row.service_name);
+                                      setIsVehiclePricingModalOpen(true);
+                                    }}
                                     className="rounded-lg border px-2 py-1 text-xs font-semibold"
                                   >
                                     Ceny dla aut ({vehiclePriceCountByService.get(row.service_name.trim().toLowerCase()) ?? 0})
@@ -2387,115 +2391,10 @@ function WorkshopPanelPageContent() {
                       {savingServices ? "Zapisywanie…" : "Zapisz usługi i ceny"}
                     </button>
 
-                    <div className={`mt-6 rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/40" : "border-blue-100 bg-blue-50/40"}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h3 className="text-base font-semibold">
-                            {selectedServiceForVehiclePricing
-                              ? `${selectedServiceForVehiclePricing} — ceny dla konkretnych aut`
-                              : "Wybierz usługę, aby zarządzać cenami aut"}
-                          </h3>
-                          <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                            Tutaj ustawiasz ceny tylko dla wybranych aut. Jeśli brak ceny, klient zobaczy „Cena po wycenie” albo brak usługi (wg fallbacku).
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={readOnly || !selectedServiceForVehiclePricing}
-                          onClick={() => addServiceVehiclePriceRow(selectedServiceForVehiclePricing)}
-                          className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
-                        >
-                          Dodaj wariant auta
-                        </button>
-                      </div>
-
-                      <div className="mt-3 space-y-3">
-                        {selectedServiceVehicleRows.map((row, idx) => {
-                          const brands = row.vehicle_type ? getVehicleBrands(row.vehicle_type) : [];
-                          const models = row.vehicle_type && row.brand ? getVehicleModels(row.vehicle_type, row.brand) : [];
-                          const fuels = row.vehicle_type ? getVehicleFuels(row.vehicle_type) : [];
-                          return (
-                            <div key={row.id ?? `vehicle-row-${idx}`} className={`grid grid-cols-1 gap-2 rounded-xl border p-3 md:grid-cols-4 ${isDark ? "border-zinc-700" : "border-zinc-200"}`}>
-                              <input
-                                list={`service-name-options-${idx}`}
-                                disabled={readOnly}
-                                value={row.service_name}
-                                onChange={(e) => patchServiceVehiclePriceRow(row, { service_name: e.target.value })}
-                                placeholder="Nazwa usługi"
-                                className={formInputClassName}
-                              />
-                              <datalist id={`service-name-options-${idx}`}>
-                                {serviceNameOptions.map((name) => (
-                                  <option key={`${idx}-${name}`} value={name} />
-                                ))}
-                              </datalist>
-                              <select
-                                disabled={readOnly}
-                                value={row.vehicle_type}
-                                onChange={(e) =>
-                                  patchServiceVehiclePriceRow(row, {
-                                    vehicle_type: e.target.value as VehicleTypeKey,
-                                    brand: "",
-                                    model: "",
-                                    fuel: "",
-                                  })
-                                }
-                                className={formInputClassName}
-                              >
-                                {vehicleTypeOptions.map((option) => (
-                                  <option key={option.key} value={option.key}>{option.label}</option>
-                                ))}
-                              </select>
-                              <select disabled={readOnly} value={row.brand} onChange={(e) => patchServiceVehiclePriceRow(row, { brand: e.target.value, model: "" })} className={formInputClassName}>
-                                <option value="">Marka (dowolna)</option>
-                                {brands.map((brand) => <option key={`${row.id ?? idx}-${brand}`} value={brand}>{brand}</option>)}
-                              </select>
-                              <select disabled={readOnly || !row.brand} value={row.model} onChange={(e) => patchServiceVehiclePriceRow(row, { model: e.target.value })} className={formInputClassName}>
-                                <option value="">Model (dowolny)</option>
-                                {models.map((model) => <option key={`${row.id ?? idx}-${model}`} value={model}>{model}</option>)}
-                              </select>
-                              <select disabled={readOnly} value={row.year_from} onChange={(e) => patchServiceVehiclePriceRow(row, { year_from: e.target.value })} className={formInputClassName}>
-                                <option value="">Rok od</option>
-                                {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-from-${year}`} value={year}>{year}</option>)}
-                              </select>
-                              <select disabled={readOnly} value={row.year_to} onChange={(e) => patchServiceVehiclePriceRow(row, { year_to: e.target.value })} className={formInputClassName}>
-                                <option value="">Rok do</option>
-                                {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-to-${year}`} value={year}>{year}</option>)}
-                              </select>
-                              <input disabled={readOnly} value={row.engine} onChange={(e) => patchServiceVehiclePriceRow(row, { engine: e.target.value })} placeholder="Silnik (np. 1.9 Diesel)" className={formInputClassName} />
-                              <select disabled={readOnly} value={row.fuel} onChange={(e) => patchServiceVehiclePriceRow(row, { fuel: e.target.value })} className={formInputClassName}>
-                                <option value="">Paliwo (dowolne)</option>
-                                {fuels.map((fuel) => <option key={`${row.id ?? idx}-fuel-${fuel}`} value={fuel}>{fuel}</option>)}
-                              </select>
-                              <input disabled={readOnly} value={row.transmission} onChange={(e) => patchServiceVehiclePriceRow(row, { transmission: e.target.value })} placeholder="Skrzynia (opcjonalnie)" className={formInputClassName} />
-                              <input disabled={readOnly} value={row.price_from} onChange={(e) => patchServiceVehiclePriceRow(row, { price_from: e.target.value })} placeholder="Cena od" className={formInputClassName} />
-                              <input disabled={readOnly} value={row.price_to} onChange={(e) => patchServiceVehiclePriceRow(row, { price_to: e.target.value })} placeholder="Cena do" className={formInputClassName} />
-                              <input disabled={readOnly} value={row.duration_minutes} onChange={(e) => patchServiceVehiclePriceRow(row, { duration_minutes: e.target.value })} placeholder="Czas (min)" className={formInputClassName} />
-                              <label className="inline-flex items-center gap-2 text-xs">
-                                <input type="checkbox" disabled={readOnly} checked={row.is_active} onChange={(e) => patchServiceVehiclePriceRow(row, { is_active: e.target.checked })} />
-                                Aktywna pozycja
-                              </label>
-                              <button type="button" disabled={readOnly} onClick={() => removeServiceVehiclePriceRow(row)} className="rounded-lg border px-3 py-2 text-xs text-rose-500 disabled:opacity-50">
-                                Usuń
-                              </button>
-                            </div>
-                          );
-                        })}
-                        {selectedServiceForVehiclePricing && selectedServiceVehicleRows.length === 0 ? (
-                          <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                            Brak cen aut dla tej usługi. Dodaj pierwszy wariant.
-                          </p>
-                        ) : null}
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={readOnly || savingVehiclePrices}
-                        onClick={() => void saveServiceVehiclePrices()}
-                        className="mt-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                      >
-                        {savingVehiclePrices ? "Zapisywanie…" : "Zapisz ceny dla konkretnych aut"}
-                      </button>
+                    <div className={`mt-6 rounded-2xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/40" : "border-blue-100 bg-blue-50/40"}`}>
+                      <p className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                        Kliknij <strong>Ceny dla aut (X)</strong>, aby otworzyć panel cen dla konkretnej usługi.
+                      </p>
                     </div>
                   </section>
                 ) : null}
@@ -2730,6 +2629,149 @@ function WorkshopPanelPageContent() {
                 <div><dt className="text-xs text-zinc-500">Termin</dt><dd>{selectedBooking.date} {selectedBooking.time}</dd></div>
                 <div><dt className="text-xs text-zinc-500">Status</dt><dd>{formatBookingStatus(selectedBooking.status)}</dd></div>
               </dl>
+            </div>
+          </div>
+        ) : null}
+        {isVehiclePricingModalOpen ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-5">
+            <button
+              type="button"
+              className="absolute inset-0"
+              aria-label="Zamknij panel cen aut"
+              onClick={() => setIsVehiclePricingModalOpen(false)}
+            />
+            <div className={`relative z-[1] h-[94vh] w-full overflow-hidden border sm:h-auto sm:max-h-[90vh] sm:max-w-6xl sm:rounded-2xl ${
+              isDark ? "border-blue-500/35 bg-zinc-950 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
+            }`}>
+              <div className={`sticky top-0 z-10 border-b px-4 py-3 sm:px-5 ${isDark ? "border-zinc-800 bg-zinc-950" : "border-blue-100 bg-white"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {selectedServiceForVehiclePricing
+                        ? `${selectedServiceForVehiclePricing} — ceny dla konkretnych aut`
+                        : "Ceny dla konkretnych aut"}
+                    </h3>
+                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Ustawiasz tutaj ceny i czas tylko dla wybranego auta.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={readOnly || !selectedServiceForVehiclePricing}
+                      onClick={() => addServiceVehiclePriceRow(selectedServiceForVehiclePricing)}
+                      className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-600 disabled:opacity-50"
+                    >
+                      Dodaj cenę dla auta
+                    </button>
+                    <button type="button" onClick={() => setIsVehiclePricingModalOpen(false)} className="rounded-lg border px-3 py-2 text-xs font-semibold">
+                      Zamknij
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-h-[calc(94vh-116px)] overflow-auto p-4 sm:max-h-[calc(90vh-120px)] sm:p-5">
+                {selectedServiceVehicleRows.length === 0 ? (
+                  <p className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700 text-zinc-400" : "border-blue-100 text-zinc-600"}`}>
+                    Brak cen aut dla tej usługi. Dodaj pierwszy wariant.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[1080px] w-full text-sm">
+                      <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
+                        <tr>
+                          <th className="px-2 py-2 text-left">Pojazd</th>
+                          <th className="px-2 py-2 text-left">Szczegóły</th>
+                          <th className="px-2 py-2 text-left">Rok produkcji</th>
+                          <th className="px-2 py-2 text-left">Cena od</th>
+                          <th className="px-2 py-2 text-left">Cena do</th>
+                          <th className="px-2 py-2 text-left">Czas (min)</th>
+                          <th className="px-2 py-2 text-left">Aktywne</th>
+                          <th className="px-2 py-2 text-left">Akcje</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedServiceVehicleRows.map((row, idx) => {
+                          const brands = row.vehicle_type ? getVehicleBrands(row.vehicle_type) : [];
+                          const models = row.vehicle_type && row.brand ? getVehicleModels(row.vehicle_type, row.brand) : [];
+                          const fuels = row.vehicle_type ? getVehicleFuels(row.vehicle_type) : [];
+                          return (
+                            <tr key={row.id ?? `vehicle-row-modal-${idx}`} className={`border-t ${isDark ? "border-zinc-800" : "border-blue-100"}`}>
+                              <td className="px-2 py-2">
+                                <div className="space-y-1">
+                                  <select disabled={readOnly} value={row.vehicle_type} onChange={(e) => patchServiceVehiclePriceRow(row, { vehicle_type: e.target.value as VehicleTypeKey, brand: "", model: "", fuel: "" })} className={formInputClassName}>
+                                    {vehicleTypeOptions.map((option) => <option key={`${row.id ?? idx}-${option.key}`} value={option.key}>{option.label}</option>)}
+                                  </select>
+                                  <select disabled={readOnly} value={row.brand} onChange={(e) => patchServiceVehiclePriceRow(row, { brand: e.target.value, model: "" })} className={formInputClassName}>
+                                    <option value="">Marka</option>
+                                    {brands.map((brand) => <option key={`${row.id ?? idx}-brand-${brand}`} value={brand}>{brand}</option>)}
+                                  </select>
+                                  <select disabled={readOnly || !row.brand} value={row.model} onChange={(e) => patchServiceVehiclePriceRow(row, { model: e.target.value })} className={formInputClassName}>
+                                    <option value="">Model</option>
+                                    {models.map((model) => <option key={`${row.id ?? idx}-model-${model}`} value={model}>{model}</option>)}
+                                  </select>
+                                </div>
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="space-y-1">
+                                  <input disabled={readOnly} value={row.engine} onChange={(e) => patchServiceVehiclePriceRow(row, { engine: e.target.value })} placeholder="Silnik" className={formInputClassName} />
+                                  <select disabled={readOnly} value={row.fuel} onChange={(e) => patchServiceVehiclePriceRow(row, { fuel: e.target.value })} className={formInputClassName}>
+                                    <option value="">Paliwo</option>
+                                    {fuels.map((fuel) => <option key={`${row.id ?? idx}-fuel-${fuel}`} value={fuel}>{fuel}</option>)}
+                                  </select>
+                                  <input disabled={readOnly} value={row.transmission} onChange={(e) => patchServiceVehiclePriceRow(row, { transmission: e.target.value })} placeholder="Skrzynia (opcjonalnie)" className={formInputClassName} />
+                                </div>
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="grid grid-cols-2 gap-1">
+                                  <select disabled={readOnly} value={row.year_from} onChange={(e) => patchServiceVehiclePriceRow(row, { year_from: e.target.value })} className={formInputClassName}>
+                                    <option value="">Od</option>
+                                    {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-yf-${year}`} value={year}>{year}</option>)}
+                                  </select>
+                                  <select disabled={readOnly} value={row.year_to} onChange={(e) => patchServiceVehiclePriceRow(row, { year_to: e.target.value })} className={formInputClassName}>
+                                    <option value="">Do</option>
+                                    {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-yt-${year}`} value={year}>{year}</option>)}
+                                  </select>
+                                </div>
+                              </td>
+                              <td className="px-2 py-2"><input disabled={readOnly} value={row.price_from} onChange={(e) => patchServiceVehiclePriceRow(row, { price_from: e.target.value })} placeholder="Cena od" className={formInputClassName} /></td>
+                              <td className="px-2 py-2"><input disabled={readOnly} value={row.price_to} onChange={(e) => patchServiceVehiclePriceRow(row, { price_to: e.target.value })} placeholder="Cena do" className={formInputClassName} /></td>
+                              <td className="px-2 py-2"><input disabled={readOnly} value={row.duration_minutes} onChange={(e) => patchServiceVehiclePriceRow(row, { duration_minutes: e.target.value })} placeholder="Czas" className={formInputClassName} /></td>
+                              <td className="px-2 py-2">
+                                <label className="inline-flex items-center gap-2 text-xs">
+                                  <input className="accent-blue-600" type="checkbox" disabled={readOnly} checked={row.is_active} onChange={(e) => patchServiceVehiclePriceRow(row, { is_active: e.target.checked })} />
+                                  {row.is_active ? "Aktywna" : "Nieaktywna"}
+                                </label>
+                              </td>
+                              <td className="px-2 py-2">
+                                <button type="button" disabled={readOnly} onClick={() => removeServiceVehiclePriceRow(row)} className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-500 disabled:opacity-50">
+                                  Usuń
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className={`mt-4 rounded-xl border px-3 py-2 text-xs ${isDark ? "border-blue-500/40 bg-blue-950/30 text-blue-100" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+                  Ceny ustawione tutaj mają pierwszeństwo dla wybranego auta.
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={readOnly || savingVehiclePrices}
+                    onClick={() => void saveServiceVehiclePrices()}
+                    className="rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {savingVehiclePrices ? "Zapisywanie…" : "Zapisz ceny dla konkretnych aut"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         ) : null}
