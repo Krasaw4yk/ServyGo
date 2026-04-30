@@ -83,7 +83,7 @@ export type WorkshopServiceConfigRow = {
 export type WorkshopServiceVehiclePriceRow = {
   id: string;
   workshop_id: string;
-  service_id: string | null;
+  workshop_service_id: string | null;
   service_name: string;
   vehicle_type: string;
   brand: string | null;
@@ -488,7 +488,7 @@ export async function listWorkshopServiceVehiclePricesForOwner(workshopId: strin
   if (!supabase) throw new Error("Supabase client not available.");
   const { data, error } = await supabase
     .from("workshop_service_vehicle_prices")
-    .select("id, workshop_id, service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, transmission, price_from, price_to, duration_minutes, is_active, created_at, updated_at")
+    .select("id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, transmission, price_from, price_to, duration_minutes, is_active, created_at, updated_at")
     .eq("workshop_id", workshopId)
     .order("service_name", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
@@ -499,7 +499,7 @@ export async function upsertWorkshopServiceVehiclePricesForOwner(
   workshopId: string,
   rows: Array<{
     id?: string;
-    service_id?: string | null;
+    workshop_service_id?: string | null;
     service_name: string;
     vehicle_type: string;
     brand?: string | null;
@@ -519,7 +519,7 @@ export async function upsertWorkshopServiceVehiclePricesForOwner(
   const payload = rows.map((row) => ({
     ...(row.id?.trim() ? { id: row.id.trim() } : {}),
     workshop_id: workshopId,
-    service_id: row.service_id?.trim() || null,
+    workshop_service_id: row.workshop_service_id?.trim() || null,
     service_name: row.service_name.trim(),
     vehicle_type: row.vehicle_type.trim(),
     brand: row.brand?.trim() || null,

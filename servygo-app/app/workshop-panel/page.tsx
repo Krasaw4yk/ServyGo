@@ -78,7 +78,7 @@ type ServiceDraftRow = {
 };
 type ServiceVehiclePriceDraftRow = {
   id?: string;
-  service_id: string;
+  workshop_service_id: string;
   service_name: string;
   vehicle_type: VehicleTypeKey | "";
   brand: string;
@@ -367,6 +367,7 @@ function WorkshopPanelPageContent() {
   const [servicesActivityFilter, setServicesActivityFilter] = useState<"all" | "active" | "inactive">("all");
   const [savingServices, setSavingServices] = useState(false);
   const [savingVehiclePrices, setSavingVehiclePrices] = useState(false);
+  const [selectedServiceForVehiclePricing, setSelectedServiceForVehiclePricing] = useState<string>("");
   const [employeeDraftRows, setEmployeeDraftRows] = useState<EmployeeDraft[]>([]);
   const [savingEmployees, setSavingEmployees] = useState(false);
   const [employeeRoleOptions, setEmployeeRoleOptions] = useState<string[]>(() => [...EMPLOYEE_ROLE_OPTIONS]);
@@ -469,7 +470,7 @@ function WorkshopPanelPageContent() {
     setServiceVehiclePriceDraftRows(
       vehiclePriceRows.map((row) => ({
         id: row.id,
-        service_id: row.service_id ?? "",
+        workshop_service_id: row.workshop_service_id ?? "",
         service_name: row.service_name,
         vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
         brand: row.brand ?? "",
@@ -626,7 +627,7 @@ function WorkshopPanelPageContent() {
             setServiceVehiclePriceDraftRows(
               vehiclePriceRows.map((row) => ({
                 id: row.id,
-                service_id: row.service_id ?? "",
+                workshop_service_id: row.workshop_service_id ?? "",
                 service_name: row.service_name,
                 vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
                 brand: row.brand ?? "",
@@ -989,6 +990,24 @@ function WorkshopPanelPageContent() {
         ]),
       ).sort((a, b) => a.localeCompare(b, "pl")),
     [mergedServiceRows, serviceCatalogRows],
+  );
+  const vehiclePriceCountByService = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of serviceVehiclePriceDraftRows) {
+      const key = row.service_name.trim().toLowerCase();
+      if (!key) continue;
+      map.set(key, (map.get(key) ?? 0) + (row.is_active ? 1 : 0));
+    }
+    return map;
+  }, [serviceVehiclePriceDraftRows]);
+  const selectedServiceVehicleRows = useMemo(
+    () =>
+      selectedServiceForVehiclePricing
+        ? serviceVehiclePriceDraftRows.filter(
+            (row) => row.service_name.trim().toLowerCase() === selectedServiceForVehiclePricing.trim().toLowerCase(),
+          )
+        : [],
+    [selectedServiceForVehiclePricing, serviceVehiclePriceDraftRows],
   );
 
   async function handleSaveProfile(e: React.FormEvent) {
@@ -1386,6 +1405,35 @@ function WorkshopPanelPageContent() {
     }
   }
 
+  async function deleteServiceRow(row: ServiceDraftRow) {
+    if (readOnly || !workshop) return;
+    const confirmed = window.confirm(`Usunąć usługę "${row.service_name}" wraz z przypisanymi cenami aut?`);
+    if (!confirmed) return;
+    setError("");
+    setSuccess("");
+    try {
+      const linkedVehiclePriceIds = serviceVehiclePriceDraftRows
+        .filter((priceRow) => priceRow.service_name.trim().toLowerCase() === row.service_name.trim().toLowerCase() && priceRow.id)
+        .map((priceRow) => priceRow.id as string);
+      await deleteWorkshopServiceVehiclePricesForOwner(workshop.id, linkedVehiclePriceIds);
+      if (row.id) {
+        await deleteWorkshopServiceConfigsForOwner(workshop.id, [row.id]);
+      }
+      setServiceDraftRows((prev) =>
+        prev.filter((item) => (item.id ?? item.service_key ?? item.service_name) !== (row.id ?? row.service_key ?? row.service_name)),
+      );
+      setServiceVehiclePriceDraftRows((prev) =>
+        prev.filter((priceRow) => priceRow.service_name.trim().toLowerCase() !== row.service_name.trim().toLowerCase()),
+      );
+      if (selectedServiceForVehiclePricing.trim().toLowerCase() === row.service_name.trim().toLowerCase()) {
+        setSelectedServiceForVehiclePricing("");
+      }
+      setSuccess(`Usługa "${row.service_name}" została usunięta.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się usunąć usługi.");
+    }
+  }
+
   function patchServiceVehiclePriceRow(target: ServiceVehiclePriceDraftRow, patch: Partial<ServiceVehiclePriceDraftRow>) {
     const key = target.id ? `id:${target.id}` : `tmp:${target.service_name}:${target.brand}:${target.model}:${target.engine}`;
     setServiceVehiclePriceDraftRows((prev) =>
@@ -1396,12 +1444,12 @@ function WorkshopPanelPageContent() {
     );
   }
 
-  function addServiceVehiclePriceRow() {
+  function addServiceVehiclePriceRow(serviceName = "") {
     setServiceVehiclePriceDraftRows((prev) => [
       ...prev,
       {
-        service_id: "",
-        service_name: "",
+        workshop_service_id: "",
+        service_name: serviceName,
         vehicle_type: "car",
         brand: "",
         model: "",
@@ -1457,7 +1505,7 @@ function WorkshopPanelPageContent() {
           );
           return {
             id: row.id,
-            service_id: row.service_id || linkedService?.id || null,
+            workshop_service_id: row.workshop_service_id || linkedService?.id || null,
             service_name: trimmedService,
             vehicle_type: row.vehicle_type || "car",
             brand: row.brand.trim() || null,
@@ -1479,7 +1527,7 @@ function WorkshopPanelPageContent() {
       setServiceVehiclePriceDraftRows(
         refreshed.map((row) => ({
           id: row.id,
-          service_id: row.service_id ?? "",
+          workshop_service_id: row.workshop_service_id ?? "",
           service_name: row.service_name,
           vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
           brand: row.brand ?? "",
@@ -2277,10 +2325,9 @@ function WorkshopPanelPageContent() {
                           <tr>
                             <th className="px-2 py-2 text-left">Usługa</th>
                             <th className="px-2 py-2 text-left">Oferuję</th>
-                            <th className="px-2 py-2 text-left">Cena od</th>
-                            <th className="px-2 py-2 text-left">Cena do</th>
-                            <th className="px-2 py-2 text-left">Czas (min)</th>
                             <th className="px-2 py-2 text-left">Status</th>
+                            <th className="px-2 py-2 text-left">Auta z cenami</th>
+                            <th className="px-2 py-2 text-left">Akcje</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2302,13 +2349,34 @@ function WorkshopPanelPageContent() {
                                   <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${row.is_active ? "translate-x-5" : "translate-x-1"}`} />
                                 </button>
                               </td>
-                              <td className="px-2 py-2"><input disabled={readOnly} value={row.price_from} onChange={(e) => patchServiceRow(row, { price_from: e.target.value })} className="w-36 rounded border border-zinc-300 bg-transparent px-2 py-2 dark:border-zinc-600 disabled:opacity-50" placeholder="np. 150" /></td>
-                              <td className="px-2 py-2"><input disabled={readOnly} value={row.price_to} onChange={(e) => patchServiceRow(row, { price_to: e.target.value })} className="w-36 rounded border border-zinc-300 bg-transparent px-2 py-2 dark:border-zinc-600 disabled:opacity-50" placeholder="np. 220" /></td>
-                              <td className="px-2 py-2"><input disabled={readOnly} value={row.duration_minutes} onChange={(e) => patchServiceRow(row, { duration_minutes: e.target.value })} className="w-32 rounded border border-zinc-300 bg-transparent px-2 py-2 dark:border-zinc-600 disabled:opacity-50" placeholder="np. 60" /></td>
                               <td className="px-2 py-2">
                                 <span className={`rounded-full px-2 py-1 text-xs ${row.is_active ? (isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700") : (isDark ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600")}`}>
                                   {row.is_active ? "Aktywna" : "Nieaktywna"}
                                 </span>
+                              </td>
+                              <td className="px-2 py-2">
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs ${isDark ? "bg-zinc-800 text-zinc-200" : "bg-zinc-100 text-zinc-700"}`}>
+                                  🚗 {vehiclePriceCountByService.get(row.service_name.trim().toLowerCase()) ?? 0}
+                                </span>
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedServiceForVehiclePricing(row.service_name)}
+                                    className="rounded-lg border px-2 py-1 text-xs font-semibold"
+                                  >
+                                    Ceny dla aut ({vehiclePriceCountByService.get(row.service_name.trim().toLowerCase()) ?? 0})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={readOnly}
+                                    onClick={() => void deleteServiceRow(row)}
+                                    className="rounded-lg border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-500 disabled:opacity-50"
+                                  >
+                                    Usuń
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -2322,15 +2390,19 @@ function WorkshopPanelPageContent() {
                     <div className={`mt-6 rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/40" : "border-blue-100 bg-blue-50/40"}`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <h3 className="text-base font-semibold">Ceny pod konkretne auto</h3>
+                          <h3 className="text-base font-semibold">
+                            {selectedServiceForVehiclePricing
+                              ? `${selectedServiceForVehiclePricing} — ceny dla konkretnych aut`
+                              : "Wybierz usługę, aby zarządzać cenami aut"}
+                          </h3>
                           <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                            Ta sama baza pojazdów co w wyszukiwarce klienta. Gdy brak dopasowania, działa cena ogólna usługi.
+                            Tutaj ustawiasz ceny tylko dla wybranych aut. Jeśli brak ceny, klient zobaczy „Cena po wycenie” albo brak usługi (wg fallbacku).
                           </p>
                         </div>
                         <button
                           type="button"
-                          disabled={readOnly}
-                          onClick={addServiceVehiclePriceRow}
+                          disabled={readOnly || !selectedServiceForVehiclePricing}
+                          onClick={() => addServiceVehiclePriceRow(selectedServiceForVehiclePricing)}
                           className="rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                         >
                           Dodaj wariant auta
@@ -2338,7 +2410,7 @@ function WorkshopPanelPageContent() {
                       </div>
 
                       <div className="mt-3 space-y-3">
-                        {serviceVehiclePriceDraftRows.map((row, idx) => {
+                        {selectedServiceVehicleRows.map((row, idx) => {
                           const brands = row.vehicle_type ? getVehicleBrands(row.vehicle_type) : [];
                           const models = row.vehicle_type && row.brand ? getVehicleModels(row.vehicle_type, row.brand) : [];
                           const fuels = row.vehicle_type ? getVehicleFuels(row.vehicle_type) : [];
@@ -2409,6 +2481,11 @@ function WorkshopPanelPageContent() {
                             </div>
                           );
                         })}
+                        {selectedServiceForVehiclePricing && selectedServiceVehicleRows.length === 0 ? (
+                          <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                            Brak cen aut dla tej usługi. Dodaj pierwszy wariant.
+                          </p>
+                        ) : null}
                       </div>
 
                       <button

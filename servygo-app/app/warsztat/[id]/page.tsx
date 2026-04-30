@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
-import { fetchPublicWorkshopByIdAsMock } from "@/lib/publicWorkshopsFromDb";
+import { fetchPublicWorkshopByIdAsMock, matchWorkshopServicesForVehicle } from "@/lib/publicWorkshopsFromDb";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { sendSystemMessage } from "@/lib/messagesApi";
 import { createTranslator, LanguageCode } from "@/lib/translations";
@@ -235,26 +235,14 @@ export default function WorkshopDetailsPage() {
 
   const filteredServices = useMemo(() => {
     if (!workshop) return [];
-    const vehicleMatched = workshop.services.filter((service) => {
-      const brandMatch =
-        !selectedVehicle.brand || normalizeText(service.brand) === selectedVehicle.brand;
-      const modelMatch =
-        !selectedVehicle.model || normalizeText(service.model) === selectedVehicle.model;
-      const yearMatch =
-        !Number.isFinite(selectedVehicle.year) ||
-        (service.year_from <= selectedVehicle.year && service.year_to >= selectedVehicle.year);
-      const engineMatch =
-        !selectedVehicle.engine || normalizeText(service.engine).includes(selectedVehicle.engine);
-      const fuelMatch =
-        !selectedVehicle.fuel || normalizeText(service.fuelType ?? "").includes(selectedVehicle.fuel);
-      return brandMatch && modelMatch && yearMatch && engineMatch && fuelMatch;
+    return matchWorkshopServicesForVehicle(workshop.services, {
+      service: requestedService,
+      brand: selectedVehicle.brand,
+      model: selectedVehicle.model,
+      year: Number.isFinite(selectedVehicle.year) ? selectedVehicle.year : null,
+      engine: selectedVehicle.engine,
+      fuel: selectedVehicle.fuel,
     });
-    if (vehicleMatched.length > 0) return vehicleMatched;
-    if (!requestedService) return workshop.services;
-    const serviceMatched = workshop.services.filter((service) =>
-      normalizeServiceQuery(service.service_name).includes(requestedService),
-    );
-    return serviceMatched.length > 0 ? serviceMatched : workshop.services;
   }, [requestedService, selectedVehicle.brand, selectedVehicle.engine, selectedVehicle.fuel, selectedVehicle.model, selectedVehicle.year, workshop]);
 
   const defaultService = useMemo(() => {

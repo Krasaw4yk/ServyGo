@@ -161,7 +161,7 @@ type WorkshopWithNestedServices = {
 type WorkshopVehiclePriceRow = {
   id: string;
   workshop_id: string;
-  service_id: string | null;
+  workshop_service_id: string | null;
   service_name: string;
   vehicle_type: string;
   brand: string | null;
@@ -174,6 +174,16 @@ type WorkshopVehiclePriceRow = {
   price_to: number | null;
   duration_minutes: number | null;
   is_active: boolean;
+};
+
+export type VehicleSearchCriteria = {
+  service?: string;
+  vehicleType?: string;
+  brand?: string;
+  model?: string;
+  year?: number | null;
+  engine?: string;
+  fuel?: string;
 };
 
 function inferFuelType(engine: string | null | undefined, fuel: string | null | undefined) {
@@ -190,7 +200,7 @@ function buildVehicleSpecificOffers(rows: WorkshopVehiclePriceRow[]): WorkshopSe
   return rows
     .filter((row) => row.is_active !== false && row.service_name.trim())
     .map((row) => ({
-      id: row.service_id ?? row.id,
+      id: row.workshop_service_id ?? row.id,
       service_name: row.service_name.trim(),
       service_key: null,
       vehicle_type: (row.vehicle_type ?? "").trim() || "Osobowy",
@@ -223,6 +233,44 @@ function mergeOffers(vehicleSpecific: WorkshopServiceOffer[], genericOffers: Wor
 
 function normalizeServiceName(name: string) {
   return name.trim().toLowerCase().replace(/[-_]+/g, " ");
+}
+
+function normalizeText(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+export function matchWorkshopServicesForVehicle(
+  services: WorkshopServiceOffer[],
+  criteria: VehicleSearchCriteria,
+): WorkshopServiceOffer[] {
+  const requestedService = normalizeServiceName(criteria.service ?? "");
+  const vehicleType = normalizeText(criteria.vehicleType);
+  const brand = normalizeText(criteria.brand);
+  const model = normalizeText(criteria.model);
+  const engine = normalizeText(criteria.engine);
+  const fuel = normalizeText(criteria.fuel);
+  const year = typeof criteria.year === "number" && Number.isFinite(criteria.year) ? criteria.year : null;
+
+  const strictMatches = services.filter((service) => {
+    if (requestedService && !normalizeServiceName(service.service_name).includes(requestedService)) return false;
+    if (vehicleType && normalizeText(service.vehicle_type) !== vehicleType) return false;
+    if (brand && normalizeText(service.brand) !== brand) return false;
+    if (model && normalizeText(service.model) !== model) return false;
+    if (engine && !normalizeText(service.engine).includes(engine)) return false;
+    if (fuel && !normalizeText(service.fuelType).includes(fuel)) return false;
+    if (year != null && !(service.year_from <= year && service.year_to >= year)) return false;
+    return true;
+  });
+  if (strictMatches.length > 0) return strictMatches;
+
+  // Legacy fallback only when user did not select concrete vehicle details.
+  const hasConcreteVehicleData = Boolean(brand || model || engine || fuel || year != null);
+  if (hasConcreteVehicleData) return [];
+
+  if (requestedService) {
+    return services.filter((service) => normalizeServiceName(service.service_name).includes(requestedService));
+  }
+  return services;
 }
 
 function buildGoogleSearchUrl(name: string, address: string | null, city: string | null) {
@@ -286,7 +334,7 @@ export async function fetchPublicWorkshopsAsMock(): Promise<MockWorkshop[]> {
   const { data: vehiclePricesRaw, error: vehiclePricesError } = workshopIds.length
     ? await supabase
         .from("workshop_service_vehicle_prices")
-        .select("id, workshop_id, service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
+        .select("id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
         .in("workshop_id", workshopIds)
     : { data: [], error: null };
   if (vehiclePricesError) throw new Error(formatSupabaseError(vehiclePricesError));
@@ -314,7 +362,7 @@ export async function fetchPublicWorkshopByIdAsMock(id: string): Promise<MockWor
   const base = buildMockWorkshopFromDbRow(row);
   const { data: vehiclePricesRaw, error: vehiclePricesError } = await supabase
     .from("workshop_service_vehicle_prices")
-    .select("id, workshop_id, service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
+    .select("id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
     .eq("workshop_id", id.trim());
   if (vehiclePricesError) throw new Error(formatSupabaseError(vehiclePricesError));
   const specific = buildVehicleSpecificOffers((vehiclePricesRaw as WorkshopVehiclePriceRow[] | null) ?? []);

@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { createTranslator, LanguageCode } from "@/lib/translations";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
-import { fetchPublicWorkshopsAsMock } from "@/lib/publicWorkshopsFromDb";
+import { fetchPublicWorkshopsAsMock, matchWorkshopServicesForVehicle } from "@/lib/publicWorkshopsFromDb";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { trackEvent } from "@/lib/analytics";
 
@@ -112,22 +112,15 @@ export default function OffersPage() {
 
     return workshops
       .map((workshop) => {
-        const matchingServices = workshop.services.filter((service) => {
-          const cityMatch =
-            !queryFilters.city || workshop.city.toLowerCase().includes(queryFilters.city);
-          const serviceMatch =
-            !queryFilters.service ||
-            service.service_name.toLowerCase().includes(queryFilters.service);
-          const brandMatch =
-            !queryFilters.brand || service.brand.toLowerCase().includes(queryFilters.brand);
-          const modelMatch =
-            !queryFilters.model || service.model.toLowerCase().includes(queryFilters.model);
-          const yearMatch =
-            !yearFilter || (service.year_from <= yearFilter && service.year_to >= yearFilter);
-          const engineMatch =
-            !queryFilters.engine || service.engine.toLowerCase().includes(queryFilters.engine);
-
-          return cityMatch && serviceMatch && brandMatch && modelMatch && yearMatch && engineMatch;
+        const cityMatch =
+          !queryFilters.city || workshop.city.toLowerCase().includes(queryFilters.city);
+        if (!cityMatch) return { ...workshop, services: [] };
+        const matchingServices = matchWorkshopServicesForVehicle(workshop.services, {
+          service: queryFilters.service,
+          brand: queryFilters.brand,
+          model: queryFilters.model,
+          year: yearFilter,
+          engine: queryFilters.engine,
         });
         return { ...workshop, services: matchingServices };
       })
