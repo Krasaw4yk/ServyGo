@@ -354,6 +354,7 @@ function WorkshopPanelPageContent() {
   const [quoteDraftByBookingId, setQuoteDraftByBookingId] = useState<Record<string, string>>({});
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const isDark = mounted ? theme === "dark" : false;
   const formInputClassName = `rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-white text-black" : "border-zinc-300 bg-white text-black"}`;
@@ -379,6 +380,17 @@ function WorkshopPanelPageContent() {
     if (!mounted) return;
     window.localStorage.setItem("servygo-theme", theme);
   }, [mounted, theme]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    function handleResize() {
+      if (window.innerWidth >= 768) {
+        setIsSidebarOpen(false);
+      }
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [mounted]);
 
   useEffect(() => {
     if (!success) return;
@@ -1355,7 +1367,7 @@ function WorkshopPanelPageContent() {
     <ServyGoPageShell isDark={isDark}>
       <main className={`min-h-screen w-full max-w-none px-6 py-4 sm:px-8 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
         <div className="mx-auto flex w-full max-w-none gap-4 lg:gap-6">
-          <aside className="hidden lg:block lg:w-64 lg:min-w-[16rem] lg:max-w-[16rem] lg:flex-shrink-0">
+          <aside className="hidden md:block md:w-64 md:min-w-[16rem] md:max-w-[16rem] md:flex-shrink-0">
             <div className={`sticky top-4 rounded-3xl border p-4 backdrop-blur-xl ${isDark ? "border-blue-500/25 bg-zinc-900/92" : "border-blue-200/85 bg-white/85"}`}>
               <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-blue-400">ServyGo Workshop</p>
               <nav className="space-y-1.5">
@@ -1394,10 +1406,74 @@ function WorkshopPanelPageContent() {
             </div>
           </aside>
 
+          {isSidebarOpen ? (
+            <div className="fixed inset-0 z-40 md:hidden" aria-label="Mobile sidebar overlay">
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(false)}
+                className="absolute inset-0 bg-black/50"
+                aria-label="Zamknij menu"
+              />
+              <aside className="absolute inset-y-0 left-0 w-[80%] max-w-[20rem] overflow-y-auto border-r border-blue-200/70 bg-white p-4 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-sm font-semibold uppercase tracking-wider text-blue-500">ServyGo Workshop</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="rounded-lg border px-2 py-1 text-sm"
+                    aria-label="Zamknij menu"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <nav className="space-y-1.5">
+                  {WORKSHOP_SECTIONS.map((item) => (
+                    <button
+                      key={`mobile-${item}`}
+                      type="button"
+                      onClick={() => {
+                        setActiveSection(item);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
+                        activeSection === item
+                          ? "bg-gradient-to-r from-blue-600 to-orange-500 text-white"
+                          : "text-zinc-700 hover:bg-blue-50"
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        {item === "Wiadomości" ? (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <rect x="3" y="5" width="18" height="14" rx="2" />
+                            <path d="m4 7 8 6 8-6" />
+                          </svg>
+                        ) : null}
+                        <span>{item}</span>
+                        {item === "Wiadomości" && unreadMessages > 0 ? (
+                          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+                            {unreadMessages > 99 ? "99+" : unreadMessages}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </nav>
+              </aside>
+            </div>
+          ) : null}
+
           <section className="min-w-0 flex-1 space-y-4">
             <header className={`rounded-3xl border px-4 py-3 backdrop-blur-xl sm:px-5 ${isDark ? "border-blue-500/25 bg-zinc-900/88" : "border-blue-200/85 bg-white/86"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarOpen(true)}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-300/70 text-xl md:hidden"
+                    aria-label="Otwórz menu panelu"
+                  >
+                    ☰
+                  </button>
                   <Link href="/" className="inline-flex items-center">
                     <Image
                       src={isDark ? "/servygo-logo-dark-cropped.png" : "/servygo-logo-light-cropped.png"}
