@@ -18,7 +18,6 @@ import {
   AdminWorkshopStatus,
   WorkshopLeadRow,
   approveWorkshopLeadWithOwnerEmail,
-  bootstrapFirstAdmin,
   formatAdminWorkshopEntityStatusLabel,
   formatWorkshopLeadStatusLabel,
   getAdminSidebarNotificationCounts,
@@ -217,6 +216,13 @@ export default function AdminPage() {
     }
   }, [accessLoading, currentUser, mounted, router]);
 
+  useEffect(() => {
+    if (!mounted || accessLoading) return;
+    if (currentUser && !isAdmin) {
+      router.replace("/moje-konto");
+    }
+  }, [accessLoading, currentUser, isAdmin, mounted, router]);
+
   const refreshLeads = useCallback(async () => {
     if (!currentUser) return;
     setLoadingLeads(true);
@@ -377,14 +383,6 @@ export default function AdminPage() {
         setLoadingLeads(false);
         setLoadingWorkshops(false);
         return;
-      }
-
-      if (!adminRecord) {
-        try {
-          adminRecord = await bootstrapFirstAdmin();
-        } catch {
-          // Ignore bootstrap error, we will still deny access.
-        }
       }
 
       if (!adminRecord) {
@@ -829,7 +827,12 @@ export default function AdminPage() {
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-2">
-                        {item === "Wiadomości" ? <span>✉️</span> : null}
+                        {item === "Wiadomości" ? (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <rect x="3" y="5" width="18" height="14" rx="2" />
+                            <path d="m4 7 8 6 8-6" />
+                          </svg>
+                        ) : null}
                         <span>{item}</span>
                       </span>
                       {unreadSidebarBadges[item] > 0 ? (
@@ -1349,7 +1352,6 @@ export default function AdminPage() {
                 currentUserId={currentUser.id}
                 isDark={isDark}
                 viewerRole="admin"
-                includeAllForAdmin
                 onUnreadCountChange={(count) =>
                   setLiveSidebarBadges((prev) => ({ ...prev, Wiadomości: count }))
                 }

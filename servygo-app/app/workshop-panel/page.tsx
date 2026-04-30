@@ -6,9 +6,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import InternalInbox from "@/components/InternalInbox";
-import { getWorkshopDetailForAdmin, isAdmin } from "@/lib/adminApi";
+import { getWorkshopDetailForAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
-import { getUnreadMessagesCount, sendSystemMessage } from "@/lib/messagesApi";
+import { getUnreadMessagesCount, resolveMessageViewerContext, sendSystemMessage } from "@/lib/messagesApi";
+import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
 import { getAllServiceOptions } from "@/lib/vehicleData";
 import {
@@ -31,6 +32,9 @@ import {
   upsertWorkshopEmployeeForOwner,
   upsertAvailabilityExceptionForOwner,
   upsertWorkshopServiceConfigsForOwner,
+  cancelBookingAsWorkshopOwner,
+  sendBookingQuoteAsWorkshopOwner,
+  proposeBookingRescheduleAsWorkshopOwner,
   updateBookingStatusAsWorkshopOwner,
   updateOwnedWorkshopProfile,
 } from "@/lib/workshopOwnerApi";
@@ -211,9 +215,14 @@ function mapAdminPreviewBooking(
 
 function formatBookingStatus(status: string) {
   const x = status.toLowerCase();
+  if (x === "awaiting_quote") return "Oczekuje na wycenę";
+  if (x === "quote_sent") return "Wycena wysłana";
+  if (x === "quote_accepted") return "Wycena zaakceptowana";
+  if (x === "quote_rejected") return "Wycena odrzucona";
+  if (x === "awaiting_reschedule") return "Oczekuje na decyzję dot. zmiany terminu";
   if (x === "pending" || x === "new") return "Oczekuje";
   if (x === "confirmed") return "Potwierdzona";
-  if (x === "cancelled") return "Anulowana";
+  if (x === "cancelled" || x === "cancelled_by_client" || x === "cancelled_by_workshop" || x === "cancelled_by_system") return "Anulowana";
   if (x === "completed" || x === "done") return "Zakończona";
   if (x === "rejected") return "Odrzucona";
   return status;
@@ -221,10 +230,39 @@ function formatBookingStatus(status: string) {
 
 function statusPillClass(status: string, isDark: boolean) {
   const x = status.toLowerCase();
+  if (x === "awaiting_quote") return isDark ? "bg-amber-500/20 text-amber-200" : "bg-amber-100 text-amber-700";
+  if (x === "quote_sent") return isDark ? "bg-orange-500/20 text-orange-200" : "bg-orange-100 text-orange-700";
+  if (x === "awaiting_reschedule") return isDark ? "bg-purple-500/20 text-purple-200" : "bg-purple-100 text-purple-700";
   if (x === "confirmed") return isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700";
   if (x === "completed" || x === "done") return isDark ? "bg-blue-500/20 text-blue-200" : "bg-blue-100 text-blue-700";
-  if (x === "rejected" || x === "cancelled") return isDark ? "bg-rose-500/20 text-rose-200" : "bg-rose-100 text-rose-700";
+  if (x === "rejected" || x === "quote_rejected" || x === "cancelled" || x === "cancelled_by_client" || x === "cancelled_by_workshop" || x === "cancelled_by_system") return isDark ? "bg-rose-500/20 text-rose-200" : "bg-rose-100 text-rose-700";
   return isDark ? "bg-amber-500/20 text-amber-200" : "bg-amber-100 text-amber-700";
+}
+
+function hasWorkshopPanelAccess(workshop: Workshop, userId: string) {
+  const ownerOk = workshop.owner_id === userId;
+  const status = (workshop.status ?? "").toLowerCase().trim();
+  const statusOk = status === "active" || status === "approved" || status === "aktywny";
+  return ownerOk && statusOk;
+}
+
+function DashboardCardIcon({ type }: { type: "today" | "month" | "pending" | "done" | "rating" | "clicks" }) {
+  if (type === "today") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 3v3M17 3v3M4 9h16" /><rect x="4" y="5" width="16" height="15" rx="2" /></svg>;
+  }
+  if (type === "month") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M8 2v4M16 2v4M3 10h18" /></svg>;
+  }
+  if (type === "pending") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+  }
+  if (type === "done") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m5 12 4 4 10-10" /><rect x="3" y="3" width="18" height="18" rx="2" /></svg>;
+  }
+  if (type === "rating") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.6L12 18l-5.8 3 1.1-6.6-4.7-4.6 6.5-.9L12 3Z" /></svg>;
+  }
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 12h14M12 5l7 7-7 7" /><path d="M5 5h5" /></svg>;
 }
 
 function asDateKey(date: Date) {
@@ -313,6 +351,7 @@ function WorkshopPanelPageContent() {
     is_active: true,
   });
   const [bookingActionId, setBookingActionId] = useState<string | null>(null);
+  const [quoteDraftByBookingId, setQuoteDraftByBookingId] = useState<Record<string, string>>({});
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
@@ -443,9 +482,9 @@ function WorkshopPanelPageContent() {
       } catch {
         if (!cancelled) setUnreadMessages(0);
       }
-      const admin = await isAdmin(u.id, u.email);
+      const viewerContext = await resolveMessageViewerContext(u.id, u.email);
       if (isAdminPreview) {
-        if (!admin) {
+        if (viewerContext.role !== "admin") {
           if (!cancelled) {
             setWorkshop(null);
             setAccessDenied(true);
@@ -531,11 +570,21 @@ function WorkshopPanelPageContent() {
         }
         return;
       }
-      if (admin) {
+      if (viewerContext.role === "admin") {
         if (!cancelled) {
           setWorkshop(null);
           setLoading(false);
           router.replace("/admin");
+        }
+        return;
+      }
+      if (viewerContext.role !== "workshop") {
+        if (!cancelled) {
+          setWorkshop(null);
+          setAccessDenied(true);
+          setError("Panel warsztatu jest dostępny tylko dla właściciela aktywnego warsztatu.");
+          setLoading(false);
+          router.replace("/moje-konto");
         }
         return;
       }
@@ -546,19 +595,19 @@ function WorkshopPanelPageContent() {
           if (!cancelled) {
             setWorkshop(null);
             setAccessDenied(true);
-            setError("Nie masz dostępu do panelu warsztatu.");
+            setError("Panel warsztatu jest dostępny tylko dla zaakceptowanych warsztatów.");
             setLoading(false);
-            router.replace("/");
+            router.replace("/moje-konto");
           }
           return;
         }
-        if (!ws.owner_user_id || ws.owner_user_id !== u.id) {
+        if (!hasWorkshopPanelAccess(ws, u.id)) {
           if (!cancelled) {
             setWorkshop(null);
             setAccessDenied(true);
-            setError("Nie masz dostępu do panelu warsztatu.");
+            setError("Panel warsztatu jest dostępny tylko dla zaakceptowanych warsztatów.");
             setLoading(false);
-            router.replace("/");
+            router.replace("/moje-konto");
           }
           return;
         }
@@ -596,17 +645,70 @@ function WorkshopPanelPageContent() {
     const monthBookings = bookings.filter((b) => (b.date ?? "").startsWith(month)).length;
     const pendingBookings = bookings.filter((b) => {
       const st = b.status.toLowerCase();
-      return st === "pending" || st === "new";
+      return st === "pending" || st === "new" || st === "awaiting_quote" || st === "quote_sent";
     }).length;
-    const completedBookings = bookings.filter((b) => b.status.toLowerCase() === "completed").length;
+    const completedBookings = bookings.filter((b) => {
+      const st = b.status.toLowerCase();
+      return st === "completed" || st === "done";
+    }).length;
     return {
       todayBookings,
       monthBookings,
       pendingBookings,
       completedBookings,
       googleAvg: 4.7,
-      googleMapClicks: 126,
+      googleMapClicks: Math.max(0, monthBookings * 2),
     };
+  }, [bookings]);
+
+  const upcomingBookings = useMemo(() => {
+    const now = new Date();
+    const enriched = bookings
+      .map((booking) => {
+        const dateObj = parseDateKeyLocal(booking.date);
+        const [hh, mm] = (booking.start_time?.slice(0, 5) ?? booking.time ?? "00:00").split(":").map(Number);
+        dateObj.setHours(Number.isFinite(hh) ? hh : 0, Number.isFinite(mm) ? mm : 0, 0, 0);
+        return { booking, at: dateObj };
+      })
+      .filter((item) => Number.isFinite(item.at.getTime()) && item.at >= now)
+      .sort((a, b) => a.at.getTime() - b.at.getTime());
+    return enriched.slice(0, 8);
+  }, [bookings]);
+
+  const activityEntries = useMemo(() => {
+    return bookings
+      .slice()
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 10)
+      .map((booking) => {
+        const st = booking.status.toLowerCase();
+        const action =
+          st === "pending" || st === "new"
+            ? "Nowa rezerwacja"
+            : st === "cancelled" || st === "rejected"
+              ? "Anulowanie / odrzucenie"
+              : st === "confirmed"
+                ? "Potwierdzona wizyta"
+                : "Usługa zakończona";
+        return {
+          id: booking.id,
+          action,
+          details: `${booking.service_name} • ${booking.clientLabel}`,
+          createdAt: booking.created_at,
+        };
+      });
+  }, [bookings]);
+
+  const topServices = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const booking of bookings) {
+      const key = booking.service_name?.trim() || "Nieznana usługa";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
   }, [bookings]);
 
   const monthCalendarDays = useMemo(() => {
@@ -690,6 +792,27 @@ function WorkshopPanelPageContent() {
     const monthClosedDays = monthCalendarDays.filter((d) => d.inCurrentMonth && d.closed).length;
     return { todayBusy, todayAvailableSlots, monthClosedDays };
   }, [monthCalendarDays]);
+  const activeCalendarStatuses = new Set([
+    "awaiting_quote",
+    "quote_sent",
+    "quote_accepted",
+    "awaiting_reschedule",
+    "confirmed",
+  ]);
+  const dailySummary = useMemo(() => {
+    const today = asDateKey(new Date());
+    const todayRows = bookings.filter((b) => b.date === today);
+    const active = todayRows.filter((b) => activeCalendarStatuses.has((b.status ?? "").toLowerCase())).length;
+    const cancelled = todayRows.filter((b) => (b.status ?? "").toLowerCase().startsWith("cancelled")).length;
+    return { all: todayRows.length, active, cancelled };
+  }, [bookings]);
+  const weeklySummary = useMemo(() => {
+    const weekKeys = new Set(weekDates.map((d) => asDateKey(d)));
+    const weekRows = bookings.filter((b) => weekKeys.has(b.date));
+    const active = weekRows.filter((b) => activeCalendarStatuses.has((b.status ?? "").toLowerCase())).length;
+    const cancelled = weekRows.filter((b) => (b.status ?? "").toLowerCase().startsWith("cancelled")).length;
+    return { all: weekRows.length, active, cancelled };
+  }, [bookings, weekDates]);
   const selectedDaySlots = useMemo(() => {
     if (dayDraft.closed) return [] as string[];
     const [openH, openM] = dayDraft.open.split(":").map(Number);
@@ -813,7 +936,7 @@ function WorkshopPanelPageContent() {
     }
   }
 
-  async function setBookingStatus(id: string, status: "confirmed" | "rejected" | "completed") {
+  async function setBookingStatus(id: string, status: "completed") {
     if (readOnly) return;
     const booking = bookings.find((item) => item.id === id);
     setBookingActionId(id);
@@ -822,7 +945,7 @@ function WorkshopPanelPageContent() {
       await updateBookingStatusAsWorkshopOwner(id, status);
       setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)));
       if (booking && workshop) {
-        const statusLabel = status === "confirmed" ? "Potwierdzona" : status === "rejected" ? "Odrzucona" : "Zakończona";
+        const statusLabel = "Zakończona";
         await sendSystemMessage({
           recipientId: booking.user_id,
           recipientRole: "client",
@@ -833,11 +956,7 @@ function WorkshopPanelPageContent() {
             `Termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
             `Status: ${statusLabel}`,
             "",
-            status === "confirmed"
-              ? "Warsztat potwierdził Twoją wizytę."
-              : status === "rejected"
-                ? "Warsztat odrzucił wizytę."
-                : "Wizyta została oznaczona jako zakończona.",
+            "Wizyta została oznaczona jako zakończona.",
           ].join("\n"),
           relatedBookingId: booking.id,
           relatedWorkshopId: workshop.id,
@@ -846,6 +965,160 @@ function WorkshopPanelPageContent() {
       setSuccess("Status rezerwacji został zaktualizowany.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Błąd aktualizacji rezerwacji.");
+    } finally {
+      setBookingActionId(null);
+    }
+  }
+
+  async function sendQuoteForBooking(id: string) {
+    if (readOnly || !workshop) return;
+    const booking = bookings.find((item) => item.id === id);
+    if (!booking) return;
+    const raw = (quoteDraftByBookingId[id] ?? "").trim().replace(",", ".");
+    const finalPrice = Number(raw);
+    if (!Number.isFinite(finalPrice) || finalPrice < 0) {
+      setError("Podaj prawidłową cenę końcową.");
+      return;
+    }
+    setBookingActionId(id);
+    setError("");
+    try {
+      await sendBookingQuoteAsWorkshopOwner(id, finalPrice);
+      const now = new Date().toISOString();
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === id
+            ? { ...b, status: "quote_sent", final_price: finalPrice, quote_sent_at: now }
+            : b,
+        ),
+      );
+      await sendSystemMessage({
+        recipientId: booking.user_id,
+        recipientRole: "client",
+        subject: `Wycena: ${booking.service_name}`,
+        body: [
+          `Warsztat: ${workshop.name}`,
+          `Usługa: ${booking.service_name}`,
+          `Termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
+          `Cena końcowa: ${finalPrice.toFixed(2)} zł`,
+          "",
+          "To jest aktywna wycena. Możesz ją zaakceptować lub odrzucić w skrzynce wiadomości.",
+        ].join("\n"),
+        relatedBookingId: booking.id,
+        relatedWorkshopId: workshop.id,
+      });
+      await sendBookingEmailNotification({
+        bookingId: booking.id,
+        workshopId: workshop.id,
+        recipientId: booking.user_id,
+        subject: `ServyGo: ${booking.service_name} - nowa wycena`,
+        message: `Warsztat ${workshop.name} wysłał wycenę: ${finalPrice.toFixed(2)} zł. Sprawdź skrzynkę wiadomości w ServyGo.`,
+      });
+      setSuccess("Wycena została wysłana do klienta.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się wysłać wyceny.");
+    } finally {
+      setBookingActionId(null);
+    }
+  }
+
+  async function cancelBookingByWorkshop(id: string) {
+    if (readOnly || !workshop) return;
+    const booking = bookings.find((item) => item.id === id);
+    if (!booking) return;
+    const reason = window.prompt("Podaj krótki powód anulowania:");
+    if (!reason) return;
+    setBookingActionId(id);
+    setError("");
+    try {
+      await cancelBookingAsWorkshopOwner(id, reason);
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === id
+            ? { ...b, status: "cancelled_by_workshop", cancel_reason: reason.trim() }
+            : b,
+        ),
+      );
+      await sendSystemMessage({
+        recipientId: booking.user_id,
+        recipientRole: "client",
+        subject: `Anulowanie rezerwacji: ${booking.service_name}`,
+        body: [
+          `Warsztat: ${workshop.name}`,
+          `Usługa: ${booking.service_name}`,
+          `Termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
+          `Powód anulowania: ${reason.trim()}`,
+        ].join("\n"),
+        relatedBookingId: booking.id,
+        relatedWorkshopId: workshop.id,
+      });
+      await sendBookingEmailNotification({
+        bookingId: booking.id,
+        workshopId: workshop.id,
+        recipientId: booking.user_id,
+        subject: `ServyGo: anulowanie rezerwacji ${booking.service_name}`,
+        message: `Warsztat ${workshop.name} anulował rezerwację. Powód: ${reason.trim()}`,
+      });
+      setSuccess("Rezerwacja została anulowana.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się anulować rezerwacji.");
+    } finally {
+      setBookingActionId(null);
+    }
+  }
+
+  async function proposeRescheduleByWorkshop(id: string) {
+    if (readOnly || !workshop) return;
+    const booking = bookings.find((item) => item.id === id);
+    if (!booking) return;
+    const newDate = window.prompt("Podaj nową datę (YYYY-MM-DD):", booking.date);
+    if (!newDate?.trim()) return;
+    const newTime = window.prompt("Podaj nową godzinę (HH:MM):", booking.start_time?.slice(0, 5) ?? booking.time ?? "");
+    if (!newTime?.trim()) return;
+    const reason = window.prompt("Podaj krótki powód zmiany terminu:");
+    if (!reason?.trim()) return;
+    setBookingActionId(id);
+    setError("");
+    try {
+      await proposeBookingRescheduleAsWorkshopOwner(id, newDate.trim(), newTime.trim(), reason.trim());
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === id
+            ? {
+                ...b,
+                status: "awaiting_reschedule",
+                proposed_booking_date: newDate.trim(),
+                proposed_start_time: newTime.trim(),
+                reschedule_reason: reason.trim(),
+              }
+            : b,
+        ),
+      );
+      await sendSystemMessage({
+        recipientId: booking.user_id,
+        recipientRole: "client",
+        subject: `Propozycja nowego terminu: ${booking.service_name}`,
+        body: [
+          `Warsztat: ${workshop.name}`,
+          `Aktualny termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
+          `Proponowany termin: ${newDate.trim()} ${newTime.trim()}`,
+          `Powód: ${reason.trim()}`,
+          "",
+          "W skrzynce możesz zaakceptować lub odrzucić propozycję.",
+        ].join("\n"),
+        relatedBookingId: booking.id,
+        relatedWorkshopId: workshop.id,
+      });
+      await sendBookingEmailNotification({
+        bookingId: booking.id,
+        workshopId: workshop.id,
+        recipientId: booking.user_id,
+        subject: `ServyGo: propozycja nowego terminu (${booking.service_name})`,
+        message: `Warsztat zaproponował nowy termin: ${newDate.trim()} ${newTime.trim()}. Powód: ${reason.trim()}`,
+      });
+      setSuccess("Wysłano propozycję zmiany terminu.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się zaproponować nowego terminu.");
     } finally {
       setBookingActionId(null);
     }
@@ -1102,7 +1375,12 @@ function WorkshopPanelPageContent() {
                     }`}
                   >
                     <span className="inline-flex items-center gap-2">
-                      {item === "Wiadomości" ? <span>✉️</span> : null}
+                      {item === "Wiadomości" ? (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <rect x="3" y="5" width="18" height="14" rx="2" />
+                          <path d="m4 7 8 6 8-6" />
+                        </svg>
+                      ) : null}
                       <span>{item}</span>
                       {item === "Wiadomości" && unreadMessages > 0 ? (
                         <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
@@ -1189,35 +1467,33 @@ function WorkshopPanelPageContent() {
               <>
                 {activeSection === "Dashboard" ? (
                   <section className="space-y-4">
-                    <div className={`inline-flex max-w-full shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${isDark ? "border-amber-500/35 bg-amber-500/10 text-amber-200/90" : "border-amber-400/60 bg-amber-50 text-amber-900/80"}`}>
-                      Dane testowe — statystyki zostaną podłączone później
-                    </div>
-
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                       {[
-                        { label: "Rezerwacje dzisiaj", value: stats.todayBookings, icon: "📅" },
-                        { label: "Rezerwacje w tym miesiącu", value: stats.monthBookings, icon: "🗓️" },
+                        { label: "Rezerwacje dzisiaj", value: stats.todayBookings, icon: "today" as const, tone: "text-blue-500" },
+                        { label: "Rezerwacje w miesiącu", value: stats.monthBookings, icon: "month" as const, tone: "text-indigo-500" },
                         {
                           label: "Oczekujące rezerwacje",
                           value: stats.pendingBookings,
-                          icon: "⏳",
-                          tooltip: "Rezerwacje, które klient wysłał, ale warsztat jeszcze ich nie potwierdził.",
+                          icon: "pending" as const,
+                          tone: "text-amber-500",
                         },
-                        { label: "Zakończone usługi", value: stats.completedBookings, icon: "✅" },
-                        { label: "Średnia ocena Google", value: stats.googleAvg.toFixed(1), icon: "⭐" },
+                        { label: "Zakończone usługi", value: stats.completedBookings, icon: "done" as const, tone: "text-emerald-500" },
+                        { label: "Średnia ocena Google", value: stats.googleAvg.toFixed(1), icon: "rating" as const, tone: "text-yellow-500" },
                         {
-                          label: "Kliknięcia w Google Maps",
+                          label: "Kliknięcia mapy",
                           value: stats.googleMapClicks,
-                          icon: "🧭",
-                          tooltip: "Ile razy użytkownicy kliknęli przycisk prowadzący do Google Maps warsztatu.",
+                          icon: "clicks" as const,
+                          tone: "text-cyan-500",
                         },
                       ].map((card) => (
                         <article key={card.label} className={`rounded-2xl border p-4 shadow-sm ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
-                          <div className="inline-flex rounded-xl bg-gradient-to-r from-blue-600 to-orange-500 px-2 py-1 text-xs font-semibold text-white">{card.icon}</div>
-                          <p className={`mt-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`} title={card.tooltip ?? ""}>
+                          <div className={`inline-flex rounded-xl border px-2 py-1 ${card.tone}`}>
+                            <DashboardCardIcon type={card.icon} />
+                          </div>
+                          <p className={`mt-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                             {card.label}
                           </p>
-                          <p className="mt-1 text-2xl font-bold">{card.value}</p>
+                          <p className="mt-1 text-2xl font-bold">{bookings.length === 0 ? "Brak danych" : card.value}</p>
                         </article>
                       ))}
                     </div>
@@ -1225,54 +1501,115 @@ function WorkshopPanelPageContent() {
                     <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                       <h2 className="text-lg font-semibold">Najnowsze rezerwacje</h2>
                       <div className="mt-3 min-w-0 overflow-x-auto">
-                        <table className="w-full min-w-[1060px] table-auto text-sm">
+                        <table className="w-full min-w-[980px] table-auto text-sm">
                           <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
                             <tr>
-                              <th className="px-3 py-2 text-left">Data zgłoszenia</th>
+                              <th className="px-3 py-2 text-left">Data</th>
                               <th className="px-3 py-2 text-left">Klient</th>
-                              <th className="px-3 py-2 text-left">Telefon / email</th>
+                              <th className="px-3 py-2 text-left">Telefon/email</th>
                               <th className="px-3 py-2 text-left">Usługa</th>
                               <th className="px-3 py-2 text-left">Auto</th>
                               <th className="px-3 py-2 text-left">Termin</th>
-                              <th className="px-3 py-2 text-left">Czas</th>
                               <th className="px-3 py-2 text-left">Status</th>
                               <th className="px-3 py-2 text-left">Akcje</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {bookings.slice(0, 10).map((b) => {
-                              const busy = bookingActionId === b.id;
-                              const st = b.status.toLowerCase();
-                              return (
-                                <tr key={b.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
-                                  <td className="px-3 py-2">{b.created_at?.slice(0, 10) ?? "—"}</td>
-                                  <td className="px-3 py-2">{b.clientLabel}</td>
-                                  <td className="px-3 py-2 text-xs">
-                                    <div>{b.clientPhone}</div>
-                                    <div className={isDark ? "text-zinc-400" : "text-zinc-500"}>{b.clientEmail}</div>
-                                  </td>
-                                  <td className="px-3 py-2">{b.service_name}</td>
-                                  <td className="px-3 py-2 text-xs">{b.carLabel}</td>
-                                  <td className="whitespace-nowrap px-3 py-2">{b.date} {b.start_time?.slice(0, 5) ?? b.time} - {b.end_time?.slice(0, 5) ?? "—"}</td>
-                                  <td className="px-3 py-2">{b.duration_minutes} min</td>
-                                  <td className="px-3 py-2">
-                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>{formatBookingStatus(b.status)}</span>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex flex-wrap gap-1">
-                                      <button type="button" disabled={readOnly || busy || (st !== "pending" && st !== "new")} onClick={() => void setBookingStatus(b.id, "confirmed")} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Potwierdź</button>
-                                      <button type="button" disabled={readOnly || busy || (st !== "pending" && st !== "new")} onClick={() => void setBookingStatus(b.id, "rejected")} className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Odrzuć</button>
-                                      <button type="button" disabled={readOnly || busy || st === "completed" || st === "done" || st === "cancelled" || st === "rejected"} onClick={() => void setBookingStatus(b.id, "completed")} className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Zakończ</button>
-                                      <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Zobacz</button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                            {bookings.length === 0 ? (
+                              <tr>
+                                <td colSpan={8} className="px-3 py-8 text-center text-zinc-500">Brak rezerwacji</td>
+                              </tr>
+                            ) : (
+                              bookings.slice(0, 10).map((b) => {
+                                const busy = bookingActionId === b.id;
+                                const st = b.status.toLowerCase();
+                                return (
+                                  <tr key={b.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                                    <td className="px-3 py-2">{b.created_at?.slice(0, 10) ?? "—"}</td>
+                                    <td className="px-3 py-2">{b.clientLabel}</td>
+                                    <td className="px-3 py-2 text-xs"><div>{b.clientPhone}</div><div className={isDark ? "text-zinc-400" : "text-zinc-500"}>{b.clientEmail}</div></td>
+                                    <td className="px-3 py-2">{b.service_name}</td>
+                                    <td className="px-3 py-2 text-xs">{b.carLabel}</td>
+                                    <td className="whitespace-nowrap px-3 py-2">{b.date} {b.start_time?.slice(0, 5) ?? b.time}</td>
+                                    <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>{formatBookingStatus(b.status)}</span></td>
+                                    <td className="px-3 py-2">
+                                      <div className="flex flex-wrap gap-1">
+                                        <button type="button" disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")} onClick={() => void sendQuoteForBooking(b.id)} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Wyślij wycenę</button>
+                                        <button type="button" disabled={readOnly || busy || st === "completed" || st === "cancelled_by_client" || st === "cancelled_by_workshop" || st === "cancelled_by_system"} onClick={() => void cancelBookingByWorkshop(b.id)} className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Anuluj</button>
+                                        <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Szczegóły</button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
                           </tbody>
                         </table>
                       </div>
                     </section>
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_1fr_1fr]">
+                      <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                        <h3 className="text-base font-semibold">Kalendarz / najbliższe rezerwacje</h3>
+                        <div className="mt-3 space-y-2">
+                          {upcomingBookings.length === 0 ? (
+                            <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Brak danych</p>
+                          ) : (
+                            upcomingBookings.map(({ booking, at }) => (
+                              <div key={booking.id} className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700 bg-zinc-950/60" : "border-blue-100 bg-blue-50/40"}`}>
+                                <p className="font-semibold">{at.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })} — {booking.service_name}</p>
+                                <p className={isDark ? "text-zinc-400" : "text-zinc-600"}>{booking.clientLabel} · {booking.date}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </section>
+
+                      <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                        <h3 className="text-base font-semibold">Top usługi</h3>
+                        <div className="mt-3 space-y-2">
+                          {topServices.length === 0 ? (
+                            <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Brak danych o usługach</p>
+                          ) : (
+                            topServices.map((service, index) => {
+                              const max = topServices[0]?.total ?? 1;
+                              const pct = Math.max(6, Math.round((service.total / max) * 100));
+                              return (
+                                <div key={`${service.name}-${index}`} className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-700 bg-zinc-950/60" : "border-blue-100 bg-blue-50/40"}`}>
+                                  <div className="flex items-center justify-between gap-3 text-sm">
+                                    <p className="font-semibold">{index + 1}. {service.name}</p>
+                                    <p className={`text-xs font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{service.total}</p>
+                                  </div>
+                                  <div className={`mt-2 h-1.5 w-full overflow-hidden rounded-full ${isDark ? "bg-zinc-800" : "bg-blue-100"}`}>
+                                    <div
+                                      className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500"
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </section>
+
+                      <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                        <h3 className="text-base font-semibold">Aktywność</h3>
+                        <div className="mt-3 space-y-2">
+                          {activityEntries.length === 0 ? (
+                            <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Brak aktywności</p>
+                          ) : (
+                            activityEntries.map((entry) => (
+                              <div key={entry.id} className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700 bg-zinc-950/60" : "border-blue-100 bg-blue-50/40"}`}>
+                                <p className="font-semibold">{entry.action}</p>
+                                <p className={isDark ? "text-zinc-400" : "text-zinc-600"}>{entry.details}</p>
+                                <p className="text-xs text-zinc-500">{new Date(entry.createdAt).toLocaleString("pl-PL")}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </section>
+                    </div>
                   </section>
                 ) : null}
 
@@ -1315,10 +1652,42 @@ function WorkshopPanelPageContent() {
                                   <td className="px-3 py-2">{b.duration_minutes} min</td>
                                   <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>{formatBookingStatus(b.status)}</span></td>
                                   <td className="px-3 py-2">
-                                    <div className="flex flex-wrap gap-1">
-                                      <button type="button" disabled={readOnly || busy || (st !== "pending" && st !== "new")} onClick={() => void setBookingStatus(b.id, "confirmed")} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Potwierdź</button>
-                                      <button type="button" disabled={readOnly || busy || (st !== "pending" && st !== "new")} onClick={() => void setBookingStatus(b.id, "rejected")} className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Odrzuć</button>
-                                      <button type="button" disabled={readOnly || busy || st === "completed" || st === "done" || st === "cancelled" || st === "rejected"} onClick={() => void setBookingStatus(b.id, "completed")} className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Oznacz jako zakończone</button>
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        value={quoteDraftByBookingId[b.id] ?? (typeof b.final_price === "number" ? String(b.final_price) : "")}
+                                        onChange={(e) => setQuoteDraftByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
+                                        placeholder="Cena"
+                                        className="w-24 rounded-lg border px-2 py-1 text-xs text-black"
+                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || st === "cancelled_by_client" || st === "cancelled_by_workshop" || st === "cancelled_by_system"}
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")}
+                                        onClick={() => void sendQuoteForBooking(b.id)}
+                                        className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                      >
+                                        Wyślij wycenę
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={readOnly || busy || st === "completed" || st === "done" || st === "cancelled_by_client" || st === "cancelled_by_workshop" || st === "cancelled_by_system"}
+                                        onClick={() => void cancelBookingByWorkshop(b.id)}
+                                        className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                      >
+                                        Anuluj
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={readOnly || busy || st === "completed" || st === "done" || st.startsWith("cancelled")}
+                                        onClick={() => void proposeRescheduleByWorkshop(b.id)}
+                                        className="rounded-lg border border-purple-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                      >
+                                        Zmień termin
+                                      </button>
+                                      <button type="button" disabled={readOnly || busy || st !== "confirmed"} onClick={() => void setBookingStatus(b.id, "completed")} className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Oznacz jako zakończone</button>
                                       <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Zobacz</button>
                                     </div>
                                   </td>
@@ -1427,6 +1796,14 @@ function WorkshopPanelPageContent() {
                           Zamknięte dni w tym miesiącu: <strong>{monthSummary.monthClosedDays}</strong>
                         </div>
                       </div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700" : "border-zinc-200"}`}>
+                          Dzisiaj: <strong>{dailySummary.active}</strong> aktywne / <strong>{dailySummary.cancelled}</strong> anulowane
+                        </div>
+                        <div className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700" : "border-zinc-200"}`}>
+                          Tydzień: <strong>{weeklySummary.active}</strong> aktywne / <strong>{weeklySummary.cancelled}</strong> anulowane
+                        </div>
+                      </div>
                     </article>
 
                     <article className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
@@ -1434,6 +1811,21 @@ function WorkshopPanelPageContent() {
                       <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                         {parseDateKeyLocal(selectedDateKey).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" })}
                       </p>
+                      <div className={`mt-3 rounded-xl border p-3 text-xs ${isDark ? "border-zinc-700" : "border-zinc-200"}`}>
+                        <p className="mb-2 font-semibold">Najbliższe rezerwacje</p>
+                        {upcomingBookings.length === 0 ? (
+                          <p className={isDark ? "text-zinc-400" : "text-zinc-600"}>Brak zaplanowanych wizyt.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {upcomingBookings.slice(0, 5).map(({ booking, at }) => (
+                              <div key={booking.id} className="flex items-center justify-between gap-2">
+                                <span>{at.toLocaleDateString("pl-PL")} {at.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}</span>
+                                <span className="truncate">{booking.clientLabel}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div className="mt-3 space-y-3">
                         <div className="grid grid-cols-2 gap-2">
                           <button type="button" disabled={readOnly} onClick={() => setDayDraft((d) => ({ ...d, closed: false }))} className={`rounded-lg border px-3 py-2 text-sm disabled:opacity-50 ${!dayDraft.closed ? "border-emerald-500" : ""}`}>Otwarty</button>

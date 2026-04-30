@@ -2,14 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  cancelBooking,
   getInboxMessages,
   getSentMessages,
   getUnreadMessagesCount,
   markMessageAsRead,
+  respondToBookingQuote,
+  respondToBookingReschedule,
   sendInternalMessage,
+  sendSystemMessage,
   type InternalMessage,
   type InternalMessageRole,
 } from "@/lib/messagesApi";
+import { supabase } from "@/lib/supabaseClient";
+import { sendBookingEmailNotification } from "@/lib/notificationApi";
 
 type InternalInboxProps = {
   currentUserId: string;
@@ -45,6 +51,9 @@ export default function InternalInbox({
   const [recipientRole, setRecipientRole] = useState<InternalMessageRole>("admin");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [relatedBookingId, setRelatedBookingId] = useState<string | null>(null);
+  const [relatedWorkshopId, setRelatedWorkshopId] = useState<string | null>(null);
+  const [serviceRequestId, setServiceRequestId] = useState<string | null>(null);
 
   const unreadCount = useMemo(
     () => inbox.filter((x) => !x.is_read && x.recipient_id === currentUserId).length,
@@ -52,7 +61,60 @@ export default function InternalInbox({
   );
 
   const activeList = tab === "inbox" ? inbox : sent;
-  const selectedMessage = activeList.find((x) => x.id === selectedId) ?? null;
+  const allMessages = useMemo(() => {
+    const map = new Map<string, InternalMessage>();
+    for (const message of [...inbox, ...sent]) map.set(message.id, message);
+    return Array.from(map.values());
+  }, [inbox, sent]);
+  const activeThreads = useMemo(() => {
+    const groups = new Map<
+      string,
+      { key: string; label: string; latest: InternalMessage; unreadCount: number; messages: InternalMessage[] }
+    >();
+    const sorted = [...activeList].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    for (const message of sorted) {
+      const key = message.related_booking_id
+        ? `booking:${message.related_booking_id}`
+        : message.service_request_id
+          ? `request:${message.service_request_id}`
+          : `single:${message.id}`;
+      const label = message.related_booking_id
+        ? `Rezerwacja #${message.related_booking_id.slice(0, 8)}`
+        : message.service_request_id
+          ? `Zapytanie #${message.service_request_id.slice(0, 8)}`
+          : "Wiadomość";
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          key,
+          label,
+          latest: message,
+          unreadCount: !message.is_read && message.recipient_id === currentUserId ? 1 : 0,
+          messages: [message],
+        });
+      } else {
+        existing.messages.push(message);
+        if (!message.is_read && message.recipient_id === currentUserId) existing.unreadCount += 1;
+      }
+    }
+    return Array.from(groups.values());
+  }, [activeList, currentUserId]);
+  const selectedThread = activeThreads.find((thread) => thread.key === selectedId) ?? null;
+  const selectedMessage = selectedThread?.latest ?? null;
+  const threadMessages = useMemo(() => {
+    if (!selectedMessage) return [] as InternalMessage[];
+    if (selectedMessage.related_booking_id) {
+      return allMessages
+        .filter((m) => m.related_booking_id === selectedMessage.related_booking_id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }
+    if (selectedMessage.service_request_id) {
+      return allMessages
+        .filter((m) => m.service_request_id === selectedMessage.service_request_id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }
+    return [selectedMessage];
+  }, [allMessages, selectedMessage]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -66,7 +128,10 @@ export default function InternalInbox({
       setInbox(inboxRows);
       setSent(sentRows);
       onUnreadCountChange?.(unread);
-      if (!selectedId && inboxRows.length > 0) setSelectedId(inboxRows[0].id);
+      if (!selectedId && inboxRows.length > 0) {
+        const first = inboxRows[0];
+        setSelectedId(first.related_booking_id ? `booking:${first.related_booking_id}` : first.service_request_id ? `request:${first.service_request_id}` : `single:${first.id}`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Nie udało się pobrać wiadomości.");
     } finally {
@@ -79,7 +144,13 @@ export default function InternalInbox({
   }, [reload]);
 
   async function openMessage(message: InternalMessage) {
-    setSelectedId(message.id);
+    setSelectedId(
+      message.related_booking_id
+        ? `booking:${message.related_booking_id}`
+        : message.service_request_id
+          ? `request:${message.service_request_id}`
+          : `single:${message.id}`,
+    );
     if (message.recipient_id !== currentUserId || message.is_read) return;
     try {
       await markMessageAsRead(message.id);
@@ -99,8 +170,12 @@ export default function InternalInbox({
       setError("Wpisz treść wiadomości.");
       return;
     }
-    if (!recipientId.trim() && recipientRole !== "admin") {
-      setError("Podaj odbiorcę (UUID) albo wybierz rolę administratora.");
+    if (!recipientId.trim()) {
+      setError("Brak odbiorcy dla tej rozmowy.");
+      return;
+    }
+    if (!relatedBookingId && !serviceRequestId) {
+      setError("Nowa wiadomość musi być powiązana z rezerwacją lub zapytaniem.");
       return;
     }
     setSending(true);
@@ -112,10 +187,16 @@ export default function InternalInbox({
         recipientRole,
         subject: subject.trim() || null,
         body: trimmedBody,
+        relatedBookingId,
+        relatedWorkshopId,
+        serviceRequestId,
       });
       setSubject("");
       setBody("");
       setRecipientId("");
+      setRelatedBookingId(null);
+      setRelatedWorkshopId(null);
+      setServiceRequestId(null);
       setComposeOpen(false);
       setInfo("Wiadomość wysłana.");
       await reload();
@@ -134,13 +215,166 @@ export default function InternalInbox({
     setBody(`\n\n---\n${message.body}`);
     setRecipientId(message.sender_id ?? "");
     setRecipientRole((message.sender_role as InternalMessageRole) ?? "client");
+    setRelatedBookingId(message.related_booking_id ?? null);
+    setRelatedWorkshopId(message.related_workshop_id ?? null);
+    setServiceRequestId(message.service_request_id ?? null);
+  }
+
+  const canRespondToQuote = useMemo(() => {
+    if (!selectedMessage) return false;
+    if (selectedMessage.recipient_id !== currentUserId) return false;
+    if (!selectedMessage.related_booking_id) return false;
+    if (selectedMessage.sender_role !== "system") return false;
+    const subject = (selectedMessage.subject ?? "").toLowerCase();
+    return subject.includes("wycena");
+  }, [currentUserId, selectedMessage]);
+
+  const canRespondToReschedule = useMemo(() => {
+    if (!selectedMessage) return false;
+    if (selectedMessage.recipient_id !== currentUserId) return false;
+    if (!selectedMessage.related_booking_id) return false;
+    const subject = (selectedMessage.subject ?? "").toLowerCase();
+    return subject.includes("propozycja nowego terminu");
+  }, [currentUserId, selectedMessage]);
+
+  async function notifyWorkshopAboutQuoteDecision(message: InternalMessage, accepted: boolean) {
+    if (!supabase) return;
+    if (!message.related_workshop_id || !message.related_booking_id) return;
+    const { data: workshopRow } = await supabase
+      .from("workshops")
+      .select("owner_id, name")
+      .eq("id", message.related_workshop_id)
+      .maybeSingle();
+    const ownerId = (workshopRow as { owner_id?: string | null } | null)?.owner_id ?? null;
+    const workshopName = (workshopRow as { name?: string | null } | null)?.name ?? "Warsztat";
+    await sendSystemMessage({
+      recipientId: ownerId,
+      recipientRole: "workshop",
+      subject: accepted ? "Klient zaakceptował wycenę" : "Klient odrzucił wycenę",
+      body: accepted
+        ? `Klient zaakceptował wycenę dla rezerwacji (${message.related_booking_id}) w warsztacie ${workshopName}.`
+        : `Klient odrzucił wycenę dla rezerwacji (${message.related_booking_id}) w warsztacie ${workshopName}.`,
+      relatedBookingId: message.related_booking_id,
+      relatedWorkshopId: message.related_workshop_id,
+    });
+    if (ownerId) {
+      await sendBookingEmailNotification({
+        bookingId: message.related_booking_id,
+        workshopId: message.related_workshop_id,
+        recipientId: ownerId,
+        subject: accepted ? "ServyGo: klient zaakceptował wycenę" : "ServyGo: klient odrzucił wycenę",
+        message: accepted
+          ? "Klient zaakceptował wycenę. Sprawdź szczegóły w panelu ServyGo."
+          : "Klient odrzucił wycenę. Sprawdź szczegóły w panelu ServyGo.",
+      });
+    }
+  }
+
+  async function handleQuoteDecision(accept: boolean) {
+    if (!selectedMessage?.related_booking_id) return;
+    setError("");
+    setInfo("");
+    try {
+      await respondToBookingQuote(selectedMessage.related_booking_id, accept);
+      await notifyWorkshopAboutQuoteDecision(selectedMessage, accept);
+      setInfo(accept ? "Wycena została zaakceptowana." : "Wycena została odrzucona.");
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji.");
+    }
+  }
+
+  async function handleCancelBooking() {
+    if (!supabase) return;
+    if (!selectedMessage?.related_booking_id) return;
+    const reason = window.prompt("Podaj krótki powód anulowania:");
+    if (!reason?.trim()) return;
+    setError("");
+    setInfo("");
+    try {
+      const status = await cancelBooking(selectedMessage.related_booking_id, reason.trim());
+      if (selectedMessage.related_workshop_id) {
+        const { data: workshopRow } = await supabase
+          .from("workshops")
+          .select("owner_id")
+          .eq("id", selectedMessage.related_workshop_id)
+          .maybeSingle();
+        const ownerId = (workshopRow as { owner_id?: string | null } | null)?.owner_id ?? null;
+        await sendSystemMessage({
+          recipientId: ownerId,
+          recipientRole: "workshop",
+          subject: "Klient anulował rezerwację",
+          body: `Powód anulowania: ${reason.trim()}`,
+          relatedBookingId: selectedMessage.related_booking_id,
+          relatedWorkshopId: selectedMessage.related_workshop_id,
+        });
+        if (ownerId) {
+          await sendBookingEmailNotification({
+            bookingId: selectedMessage.related_booking_id,
+            workshopId: selectedMessage.related_workshop_id,
+            recipientId: ownerId,
+            subject: "ServyGo: klient anulował rezerwację",
+            message: `Klient anulował rezerwację. Powód: ${reason.trim()}`,
+          });
+        }
+      }
+      setInfo(`Rezerwacja anulowana (${status}).`);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się anulować rezerwacji.");
+    }
+  }
+
+  async function handleRescheduleDecision(accept: boolean) {
+    if (!selectedMessage?.related_booking_id) return;
+    setError("");
+    setInfo("");
+    try {
+      await respondToBookingReschedule(selectedMessage.related_booking_id, accept);
+      if (selectedMessage.related_workshop_id && supabase) {
+        const { data: workshopRow } = await supabase
+          .from("workshops")
+          .select("owner_id")
+          .eq("id", selectedMessage.related_workshop_id)
+          .maybeSingle();
+        const ownerId = (workshopRow as { owner_id?: string | null } | null)?.owner_id ?? null;
+        if (ownerId) {
+          await sendSystemMessage({
+            recipientId: ownerId,
+            recipientRole: "workshop",
+            subject: accept ? "Klient zaakceptował zmianę terminu" : "Klient odrzucił zmianę terminu",
+            body: accept
+              ? "Klient zaakceptował nowy termin rezerwacji."
+              : "Klient odrzucił proponowaną zmianę terminu.",
+            relatedBookingId: selectedMessage.related_booking_id,
+            relatedWorkshopId: selectedMessage.related_workshop_id,
+          });
+          await sendBookingEmailNotification({
+            bookingId: selectedMessage.related_booking_id,
+            workshopId: selectedMessage.related_workshop_id,
+            recipientId: ownerId,
+            subject: accept ? "ServyGo: klient zaakceptował nowy termin" : "ServyGo: klient odrzucił nowy termin",
+            message: accept
+              ? "Klient zaakceptował propozycję zmiany terminu."
+              : "Klient odrzucił propozycję zmiany terminu.",
+          });
+        }
+      }
+      setInfo(accept ? "Zaakceptowano nowy termin." : "Odrzucono propozycję nowego terminu.");
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji.");
+    }
   }
 
   return (
     <div className={`rounded-2xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-lg">✉️</span>
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <path d="m4 7 8 6 8-6" />
+          </svg>
           <h3 className="text-lg font-semibold">Skrzynka wiadomości</h3>
           {unreadCount > 0 ? (
             <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
@@ -177,6 +411,16 @@ export default function InternalInbox({
               <input value={recipientId} onChange={(e) => setRecipientId(e.target.value)} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder="opcjonalnie przy wysyłce do admina" />
             </label>
           </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span>Powiązana rezerwacja (UUID)</span>
+              <input value={relatedBookingId ?? ""} onChange={(e) => setRelatedBookingId(e.target.value.trim() || null)} className="rounded-lg border px-3 py-2 text-sm text-black" />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span>Powiązane zapytanie (UUID)</span>
+              <input value={serviceRequestId ?? ""} onChange={(e) => setServiceRequestId(e.target.value.trim() || null)} className="rounded-lg border px-3 py-2 text-sm text-black" />
+            </label>
+          </div>
           <input value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder="Temat" />
           <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder="Treść wiadomości" />
           <div>
@@ -201,22 +445,22 @@ export default function InternalInbox({
       ) : (
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-[320px_minmax(0,1fr)]">
           <div className="max-h-[60vh] overflow-y-auto rounded-xl border">
-            {activeList.length === 0 ? (
+            {activeThreads.length === 0 ? (
               <p className="px-3 py-4 text-sm text-zinc-500">Brak wiadomości.</p>
             ) : (
-              activeList.map((msg) => (
+              activeThreads.map((thread) => (
                 <button
-                  key={msg.id}
+                  key={thread.key}
                   type="button"
-                  onClick={() => void openMessage(msg)}
-                  className={`w-full border-b px-3 py-2 text-left last:border-b-0 ${selectedId === msg.id ? (isDark ? "bg-zinc-800" : "bg-blue-50") : ""}`}
+                  onClick={() => void openMessage(thread.latest)}
+                  className={`w-full border-b px-3 py-2 text-left last:border-b-0 ${selectedId === thread.key ? (isDark ? "bg-zinc-800" : "bg-blue-50") : ""}`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className={`truncate text-sm font-medium ${!msg.is_read && msg.recipient_id === currentUserId ? "text-blue-500" : ""}`}>{msg.subject || "(bez tematu)"}</p>
-                    {!msg.is_read && msg.recipient_id === currentUserId ? <span className="h-2 w-2 rounded-full bg-rose-500" /> : null}
+                    <p className={`truncate text-sm font-medium ${thread.unreadCount > 0 ? "text-blue-500" : ""}`}>{thread.latest.subject || "(bez tematu)"}</p>
+                    {thread.unreadCount > 0 ? <span className="h-2 w-2 rounded-full bg-rose-500" /> : null}
                   </div>
-                  <p className="truncate text-xs text-zinc-500">{tab === "inbox" ? `Od: ${msg.sender_label}` : `Do: ${msg.recipient_label}`}</p>
-                  <p className="mt-1 text-[11px] text-zinc-500">{formatDate(msg.created_at)}</p>
+                  <p className="truncate text-xs text-zinc-500">{thread.label} · {tab === "inbox" ? `Od: ${thread.latest.sender_label}` : `Do: ${thread.latest.recipient_label}`}</p>
+                  <p className="mt-1 text-[11px] text-zinc-500">{formatDate(thread.latest.created_at)} · {thread.unreadCount > 0 ? "nieprzeczytane" : "przeczytane"}</p>
                 </button>
               ))
             )}
@@ -237,9 +481,41 @@ export default function InternalInbox({
                     </button>
                   ) : null}
                 </div>
-                <div className="max-h-[42vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border p-3 text-sm">
-                  {selectedMessage.body}
+                <div className="max-h-[42vh] space-y-2 overflow-y-auto rounded-lg border p-3 text-sm">
+                  {threadMessages.map((msg) => (
+                    <div key={msg.id} className={`rounded-lg border p-2 ${msg.sender_id === currentUserId ? (isDark ? "border-blue-500/40 bg-blue-950/30" : "border-blue-200 bg-blue-50") : (isDark ? "border-zinc-700 bg-zinc-900/60" : "border-zinc-200 bg-white")}`}>
+                      <p className="text-xs text-zinc-500">{msg.sender_label} · {formatDate(msg.created_at)}</p>
+                      <p className="mt-1 whitespace-pre-wrap break-words">{msg.body}</p>
+                    </div>
+                  ))}
                 </div>
+                {viewerRole === "client" && selectedMessage.related_booking_id ? (
+                  <div className="flex flex-wrap gap-2">
+                    {canRespondToQuote ? (
+                      <>
+                        <button type="button" onClick={() => void handleQuoteDecision(true)} className="rounded-lg border border-emerald-500/60 px-3 py-1 text-sm font-semibold">
+                          Akceptuję wycenę
+                        </button>
+                        <button type="button" onClick={() => void handleQuoteDecision(false)} className="rounded-lg border border-rose-500/60 px-3 py-1 text-sm font-semibold">
+                          Odrzucam wycenę
+                        </button>
+                      </>
+                    ) : null}
+                    {canRespondToReschedule ? (
+                      <>
+                        <button type="button" onClick={() => void handleRescheduleDecision(true)} className="rounded-lg border border-purple-500/60 px-3 py-1 text-sm font-semibold">
+                          Akceptuję nowy termin
+                        </button>
+                        <button type="button" onClick={() => void handleRescheduleDecision(false)} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm font-semibold">
+                          Odrzucam nowy termin
+                        </button>
+                      </>
+                    ) : null}
+                    <button type="button" onClick={() => void handleCancelBooking()} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm">
+                      Anuluj rezerwację
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="text-sm text-zinc-500">Wybierz wiadomość z listy.</p>

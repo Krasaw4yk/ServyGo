@@ -15,6 +15,14 @@ export type WorkshopOwnerBookingRow = {
   start_time?: string | null;
   end_time?: string | null;
   status: string;
+  final_price?: number | null;
+  quote_sent_at?: string | null;
+  quote_expires_at?: string | null;
+  cancel_reason?: string | null;
+  proposed_booking_date?: string | null;
+  proposed_start_time?: string | null;
+  proposed_end_time?: string | null;
+  reschedule_reason?: string | null;
   created_at: string;
   car_id: string | null;
   clientLabel: string;
@@ -157,7 +165,7 @@ export async function getOwnedWorkshopForUser(userId: string): Promise<Workshop 
   const { data, error } = await supabase
     .from("workshops")
     .select("*")
-    .or(`owner_user_id.eq.${userId},owner_id.eq.${userId}`)
+    .eq("owner_id", userId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -170,7 +178,7 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
   const { data: rows, error } = await supabase
     .from("bookings")
     .select(
-      "id, user_id, workshop_id, workshop_name, service_name, price, duration_minutes, date, time, booking_date, start_time, end_time, status, created_at, car_id",
+      "id, user_id, workshop_id, workshop_name, service_name, price, final_price, quote_sent_at, quote_expires_at, cancel_reason, proposed_booking_date, proposed_start_time, proposed_end_time, reschedule_reason, duration_minutes, date, time, booking_date, start_time, end_time, status, created_at, car_id",
     )
     .eq("workshop_id", workshopId)
     .order("created_at", { ascending: false })
@@ -286,12 +294,66 @@ export async function upsertWorkshopEmployeeForOwner(
   if (error) throw new Error(formatSupabaseError(error));
 }
 
-const OWNER_BOOKING_STATUSES = ["pending", "new", "confirmed", "cancelled", "completed", "done", "rejected"] as const;
+const OWNER_BOOKING_STATUSES = [
+  "awaiting_quote",
+  "quote_sent",
+  "quote_accepted",
+  "quote_rejected",
+  "confirmed",
+  "cancelled_by_client",
+  "cancelled_by_workshop",
+  "cancelled_by_system",
+  "completed",
+  "pending",
+  "new",
+  "cancelled",
+  "done",
+  "rejected",
+] as const;
 
 export async function updateBookingStatusAsWorkshopOwner(bookingId: string, status: (typeof OWNER_BOOKING_STATUSES)[number]): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
   if (!OWNER_BOOKING_STATUSES.includes(status)) throw new Error("Niedozwolony status rezerwacji.");
   const { error } = await supabase.from("bookings").update({ status }).eq("id", bookingId);
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function sendBookingQuoteAsWorkshopOwner(bookingId: string, finalPrice: number): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  if (!Number.isFinite(finalPrice) || finalPrice < 0) throw new Error("Nieprawidłowa cena.");
+  const { error } = await supabase.rpc("send_booking_quote", {
+    p_booking_id: bookingId,
+    p_final_price: finalPrice,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function cancelBookingAsWorkshopOwner(bookingId: string, reason: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) throw new Error("Powód anulowania jest wymagany.");
+  const { error } = await supabase.rpc("cancel_booking", {
+    p_booking_id: bookingId,
+    p_reason: trimmedReason,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function proposeBookingRescheduleAsWorkshopOwner(
+  bookingId: string,
+  newDate: string,
+  newStartTime: string,
+  reason: string,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) throw new Error("Powód zmiany terminu jest wymagany.");
+  const { error } = await supabase.rpc("propose_booking_reschedule", {
+    p_booking_id: bookingId,
+    p_new_booking_date: newDate,
+    p_new_start_time: newStartTime,
+    p_reason: trimmedReason,
+  });
   if (error) throw new Error(formatSupabaseError(error));
 }
 

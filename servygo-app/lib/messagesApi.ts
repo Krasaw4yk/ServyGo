@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import { formatSupabaseError } from "@/lib/workshopApi";
 import { isAdmin } from "@/lib/adminApi";
-import { getOwnedWorkshopForUser } from "@/lib/workshopOwnerApi";
+import { getUserActiveWorkshop } from "@/lib/workshopApi";
 
 export type InternalMessageRole = "client" | "workshop" | "admin" | "owner" | "system";
 
@@ -17,6 +17,7 @@ export type InternalMessage = {
   body: string;
   related_booking_id: string | null;
   related_workshop_id: string | null;
+  service_request_id: string | null;
   is_read: boolean;
   created_at: string;
   sender_label: string;
@@ -99,15 +100,18 @@ async function loadMessageRelations(rows: InternalMessageRow[]) {
 }
 
 export async function resolveMessageViewerContext(userId: string, email?: string | null) {
-  const [adminAccess, ownedWorkshop] = await Promise.all([
+  const [adminAccess, activeWorkshop] = await Promise.all([
     isAdmin(userId, email),
-    getOwnedWorkshopForUser(userId).catch(() => null),
+    getUserActiveWorkshop(userId).catch(() => null),
   ]);
+  const isAdminUser = Boolean(adminAccess);
+  const isWorkshopUser = Boolean(activeWorkshop);
   return {
-    isAdminOrOwner: adminAccess,
-    isWorkshopOwner: Boolean(ownedWorkshop),
-    workshopId: ownedWorkshop?.id ?? null,
-    role: adminAccess ? ("admin" as const) : ownedWorkshop ? ("workshop" as const) : ("client" as const),
+    isAdminOrOwner: isAdminUser,
+    isWorkshopOwner: isWorkshopUser,
+    hasActiveWorkshop: isWorkshopUser,
+    workshopId: activeWorkshop?.id ?? null,
+    role: isAdminUser ? ("admin" as const) : isWorkshopUser ? ("workshop" as const) : ("client" as const),
   };
 }
 
@@ -115,7 +119,7 @@ export async function getInboxMessages(userId: string, includeAllForAdmin = fals
   if (!supabase) throw new Error("Supabase client not available.");
   let query = supabase
     .from("internal_messages")
-    .select("id, sender_id, recipient_id, sender_role, recipient_role, subject, body, related_booking_id, related_workshop_id, is_read, created_at")
+    .select("id, sender_id, recipient_id, sender_role, recipient_role, subject, body, related_booking_id, related_workshop_id, service_request_id, is_read, created_at")
     .order("created_at", { ascending: false })
     .limit(300);
 
@@ -134,7 +138,7 @@ export async function getSentMessages(userId: string): Promise<InternalMessage[]
   if (!supabase) throw new Error("Supabase client not available.");
   const { data, error } = await supabase
     .from("internal_messages")
-    .select("id, sender_id, recipient_id, sender_role, recipient_role, subject, body, related_booking_id, related_workshop_id, is_read, created_at")
+    .select("id, sender_id, recipient_id, sender_role, recipient_role, subject, body, related_booking_id, related_workshop_id, service_request_id, is_read, created_at")
     .eq("sender_id", userId)
     .order("created_at", { ascending: false })
     .limit(300);
@@ -146,7 +150,7 @@ export async function getSentMessages(userId: string): Promise<InternalMessage[]
 
 export async function markMessageAsRead(messageId: string): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
-  const { error } = await supabase.from("internal_messages").update({ is_read: true }).eq("id", messageId);
+  const { error } = await supabase.rpc("mark_message_as_read", { p_message_id: messageId });
   if (error) throw new Error(formatSupabaseError(error));
 }
 
@@ -170,6 +174,7 @@ export async function sendInternalMessage(payload: {
   body: string;
   relatedBookingId?: string | null;
   relatedWorkshopId?: string | null;
+  serviceRequestId?: string | null;
 }): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
   const messageBody = payload.body.trim();
@@ -183,6 +188,7 @@ export async function sendInternalMessage(payload: {
     body: messageBody,
     related_booking_id: payload.relatedBookingId ?? null,
     related_workshop_id: payload.relatedWorkshopId ?? null,
+    service_request_id: payload.serviceRequestId ?? null,
   });
   if (error) throw new Error(formatSupabaseError(error));
 }
@@ -194,6 +200,7 @@ export async function sendSystemMessage(payload: {
   body: string;
   relatedBookingId?: string | null;
   relatedWorkshopId?: string | null;
+  serviceRequestId?: string | null;
 }): Promise<void> {
   await sendInternalMessage({
     senderId: null,
@@ -204,5 +211,38 @@ export async function sendSystemMessage(payload: {
     body: payload.body,
     relatedBookingId: payload.relatedBookingId,
     relatedWorkshopId: payload.relatedWorkshopId,
+    serviceRequestId: payload.serviceRequestId,
   });
+}
+
+export async function respondToBookingQuote(bookingId: string, accept: boolean): Promise<"confirmed" | "quote_rejected"> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { data, error } = await supabase.rpc("respond_booking_quote", {
+    p_booking_id: bookingId,
+    p_accept: accept,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+  return data === "confirmed" ? "confirmed" : "quote_rejected";
+}
+
+export async function cancelBooking(bookingId: string, reason: string): Promise<string> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) throw new Error("Powód anulowania jest wymagany.");
+  const { data, error } = await supabase.rpc("cancel_booking", {
+    p_booking_id: bookingId,
+    p_reason: trimmedReason,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+  return String(data ?? "");
+}
+
+export async function respondToBookingReschedule(bookingId: string, accept: boolean): Promise<"confirmed" | "rejected"> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { data, error } = await supabase.rpc("respond_booking_reschedule", {
+    p_booking_id: bookingId,
+    p_accept: accept,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+  return data === "confirmed" ? "confirmed" : "rejected";
 }

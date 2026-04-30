@@ -52,6 +52,14 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
 
+function formatPriceRange(priceFrom?: number | null, priceTo?: number | null, fallback?: number) {
+  if (priceFrom != null && priceTo != null && priceTo >= priceFrom) return `${priceFrom}-${priceTo} zł`;
+  if (priceFrom != null) return `od ${priceFrom} zł`;
+  if (priceTo != null) return `do ${priceTo} zł`;
+  if (typeof fallback === "number" && Number.isFinite(fallback) && fallback > 0) return `od ${fallback} zł`;
+  return "Zapytaj o widełki";
+}
+
 export default function WorkshopDetailsPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -390,7 +398,7 @@ export default function WorkshopDetailsPage() {
       if (!slots.includes(effectiveSelectedTime)) {
         throw new Error("SLOT_TAKEN");
       }
-      const { error } = await supabase.rpc("create_booking_safe", {
+      const { data: bookingId, error } = await supabase.rpc("create_booking_safe", {
         p_workshop_id: workshop.supabaseId,
         p_user_id: currentUserId,
         p_service_id: selectedService.id ?? null,
@@ -416,10 +424,10 @@ export default function WorkshopDetailsPage() {
       if (error) throw error;
       const { data: ownerRow } = await supabase
         .from("workshops")
-        .select("owner_user_id")
+        .select("owner_id")
         .eq("id", workshop.supabaseId)
         .maybeSingle();
-      const ownerUserId = ((ownerRow as { owner_user_id?: string | null } | null)?.owner_user_id ?? null) as string | null;
+      const ownerUserId = ((ownerRow as { owner_id?: string | null } | null)?.owner_id ?? null) as string | null;
       await sendSystemMessage({
         recipientId: ownerUserId,
         recipientRole: "workshop",
@@ -428,8 +436,9 @@ export default function WorkshopDetailsPage() {
           `Warsztat: ${workshop.name}`,
           `Usługa: ${selectedService.service_name}`,
           `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
-          `Status: Oczekująca`,
+          "Status: Oczekuje na wycenę",
         ].join("\n"),
+        relatedBookingId: typeof bookingId === "string" ? bookingId : null,
         relatedWorkshopId: workshop.supabaseId,
       });
       await sendSystemMessage({
@@ -440,8 +449,10 @@ export default function WorkshopDetailsPage() {
           `Warsztat: ${workshop.name}`,
           `Usługa: ${selectedService.service_name}`,
           `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
-          "Status: Oczekująca",
+          "Status: Oczekuje na wycenę",
+          "Warsztat prześle ostateczną wycenę w osobnej wiadomości.",
         ].join("\n"),
+        relatedBookingId: typeof bookingId === "string" ? bookingId : null,
         relatedWorkshopId: workshop.supabaseId,
       });
       void trackEvent("booking_confirm", {
@@ -659,7 +670,7 @@ export default function WorkshopDetailsPage() {
                                     : "border border-blue-300/60 bg-blue-50 text-blue-700"
                               }`}
                             >
-                              {service.price} zł
+                              {formatPriceRange(service.price_from, service.price_to, service.price)}
                             </span>
                           </div>
                         </div>
@@ -952,7 +963,7 @@ export default function WorkshopDetailsPage() {
               <div className="mt-4 space-y-2 text-sm">
                 <p><strong>{workshop.name}</strong></p>
                 <p>{selectedService?.service_name ?? "-"}</p>
-                <p>{t("workshopDetails.price")}: {selectedService?.price ?? "-"} zł</p>
+                <p>{t("workshopDetails.price")}: {formatPriceRange(selectedService?.price_from, selectedService?.price_to, selectedService?.price)}</p>
                 <p>{t("workshopDetails.serviceDuration")}: {selectedService?.duration_minutes ?? "-"} min</p>
                 <p>
                   {t("workshopDetails.selectSlot")}:{" "}

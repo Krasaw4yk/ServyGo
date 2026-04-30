@@ -92,7 +92,7 @@ export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
     .select("employee_id, start_time, end_time, time, duration_minutes, start_time, end_time")
     .eq("workshop_id", args.workshopId)
     .eq("booking_date", args.date)
-    .in("status", ["new", "confirmed"])
+    .in("status", ["awaiting_quote", "quote_sent", "quote_accepted", "awaiting_reschedule", "confirmed", "new"])
     .in("employee_id", candidateEmployees);
   if (bookingsError) throw new Error(bookingsError.message);
 

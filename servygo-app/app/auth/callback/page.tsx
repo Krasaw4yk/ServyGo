@@ -7,8 +7,8 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 function AuthCallbackInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextRaw = searchParams.get("next") ?? "/workshop-panel";
-  const next = nextRaw.startsWith("/") ? nextRaw : "/workshop-panel";
+  const nextRaw = searchParams.get("next") ?? "/moje-konto";
+  const next = nextRaw.startsWith("/") ? nextRaw : "/moje-konto";
   const [message, setMessage] = useState("Trwa logowanie…");
   const doneRef = useRef(false);
   const subscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);

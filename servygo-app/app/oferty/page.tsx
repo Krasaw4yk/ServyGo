@@ -11,6 +11,13 @@ import { trackEvent } from "@/lib/analytics";
 
 type ViewMode = "list" | "map";
 
+function formatPriceRange(priceFrom?: number | null, priceTo?: number | null) {
+  if (priceFrom != null && priceTo != null && priceTo >= priceFrom) return `${priceFrom}-${priceTo} zł`;
+  if (priceFrom != null) return `od ${priceFrom} zł`;
+  if (priceTo != null) return `do ${priceTo} zł`;
+  return "Zapytaj o wycenę";
+}
+
 export default function OffersPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -283,7 +290,7 @@ export default function OffersPage() {
                         {t("offers.reviews")})
                       </p>
                       <div className="mt-2 grid grid-cols-1 gap-1.5 text-xs leading-snug md:text-sm sm:grid-cols-2">
-                        <p><strong>{t("offers.price")}:</strong> {firstOffer.price} zł</p>
+                        <p><strong>{t("offers.price")}:</strong> {formatPriceRange(firstOffer.price_from, firstOffer.price_to)}</p>
                         <p><strong>{t("offers.duration")}:</strong> {firstOffer.duration_minutes} min</p>
                         <p><strong>{t("offers.service")}:</strong> {firstOffer.service_name}</p>
                         <p><strong>{t("offers.nearestSlot")}:</strong> {firstOffer.next_available}</p>

@@ -11,6 +11,8 @@ export type WorkshopServiceOffer = {
   engine: string;
   fuelType?: string;
   price: number;
+  price_from?: number | null;
+  price_to?: number | null;
   duration_minutes: number;
   next_available: string;
   required_roles?: string[];

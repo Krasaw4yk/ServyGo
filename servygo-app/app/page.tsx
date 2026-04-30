@@ -11,9 +11,7 @@ import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
-import { isAdmin } from "@/lib/adminApi";
 import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
-import { getUserActiveWorkshop } from "@/lib/workshopApi";
 import {
   createTranslator,
   getTranslationNode,
@@ -55,6 +53,11 @@ type StoredVehicle = {
   vin: string;
   city: string;
   isPrimary: boolean;
+};
+
+type SavedCarOption = {
+  id: string;
+  label: string;
 };
 
 function pickFirstNonEmpty(...values: Array<string | undefined>) {
@@ -154,6 +157,9 @@ export default function Home() {
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [editVehicleDraft, setEditVehicleDraft] = useState<StoredVehicle | null>(null);
   const [selectedSavedCarId, setSelectedSavedCarId] = useState("");
+  const [isManualMode, setIsManualMode] = useState(true);
+  const [carPickerQuery, setCarPickerQuery] = useState("");
+  const [carPickerOpen, setCarPickerOpen] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [securityPassword, setSecurityPassword] = useState("");
   const [securityPasswordRepeat, setSecurityPasswordRepeat] = useState("");
@@ -166,6 +172,7 @@ export default function Home() {
   const [authBlockedUntil, setAuthBlockedUntil] = useState<number | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
+  const [hasWorkshopPanelAccess, setHasWorkshopPanelAccess] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -176,6 +183,7 @@ export default function Home() {
   const [registerPassword, setRegisterPassword] = useState("");
   const [registerPasswordRepeat, setRegisterPasswordRepeat] = useState("");
   const headerRef = useRef<HTMLDivElement | null>(null);
+  const carPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -273,6 +281,17 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    function handleCarPickerOutside(event: MouseEvent) {
+      if (!carPickerRef.current) return;
+      if (!carPickerRef.current.contains(event.target as Node)) {
+        setCarPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleCarPickerOutside);
+    return () => document.removeEventListener("mousedown", handleCarPickerOutside);
+  }, []);
+
+  useEffect(() => {
     const darkLogo = new window.Image();
     darkLogo.src = "/servygo-logo-dark-cropped.png";
     const lightLogo = new window.Image();
@@ -310,21 +329,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    async function checkAdminAccess() {
+    async function checkAccess() {
       if (!supabase || !currentUser) {
         setIsCurrentUserAdmin(false);
+        setHasWorkshopPanelAccess(false);
         return;
       }
 
       try {
-        const hasAdminAccess = await isAdmin(currentUser.id, currentUser.email);
-        setIsCurrentUserAdmin(hasAdminAccess);
+        const context = await resolveMessageViewerContext(currentUser.id, currentUser.email);
+        setIsCurrentUserAdmin(context.role === "admin");
+        setHasWorkshopPanelAccess(Boolean(context.hasActiveWorkshop));
       } catch {
         setIsCurrentUserAdmin(false);
+        setHasWorkshopPanelAccess(false);
       }
     }
 
-    checkAdminAccess();
+    void checkAccess();
   }, [currentUser]);
 
   useEffect(() => {
@@ -353,6 +375,7 @@ export default function Home() {
   useEffect(() => {
     if (!supabase || !currentUser) {
       setSelectedSavedCarId("");
+      setIsManualMode(true);
       return;
     }
     let cancelled = false;
@@ -368,6 +391,7 @@ export default function Home() {
         if (!cancelled) {
           setVehicles([]);
           setSelectedSavedCarId("");
+          setIsManualMode(true);
         }
       }
     })();
@@ -380,6 +404,7 @@ export default function Home() {
     if (!selectedSavedCarId) return;
     const selected = vehicles.find((v) => v.id === selectedSavedCarId);
     if (!selected) return;
+    setIsManualMode(false);
     const nextType = selected.vehicleType as VehicleTypeKey | "";
     if (nextType) {
       setVehicleType(nextType);
@@ -399,7 +424,26 @@ export default function Home() {
     () => vehicles.find((v) => v.id === selectedSavedCarId) ?? null,
     [selectedSavedCarId, vehicles],
   );
-  const isManualMode = !hasSavedCars || selectedSavedCarId === "";
+  const savedCarOptions = useMemo<SavedCarOption[]>(
+    () =>
+      vehicles.map((vehicle) => ({
+        id: vehicle.id,
+        label: `${vehicle.brand} ${vehicle.model} (${vehicle.year || "—"})${vehicle.isPrimary ? " • domyślne" : ""}`,
+      })),
+    [vehicles],
+  );
+  const filteredSavedCarOptions = useMemo(() => {
+    const needle = carPickerQuery.trim().toLowerCase();
+    if (!needle) return savedCarOptions;
+    return savedCarOptions.filter((option) => option.label.toLowerCase().includes(needle));
+  }, [carPickerQuery, savedCarOptions]);
+
+  useEffect(() => {
+    if (!hasSavedCars) {
+      setIsManualMode(true);
+      setSelectedSavedCarId("");
+    }
+  }, [hasSavedCars]);
 
   const currentVehicleConfig = vehicleType ? vehicleData[vehicleType] : null;
   const brandsForVehicleType = getVehicleBrands(vehicleType);
@@ -1289,18 +1333,19 @@ export default function Home() {
     const { data } = await supabase.auth.getUser();
     if (data.user) {
       try {
-        const hasAdminAccess = await isAdmin(data.user.id, data.user.email);
-        if (hasAdminAccess) {
-          router.push("/admin");
+        const context = await resolveMessageViewerContext(data.user.id, data.user.email);
+        if (context.role === "admin") {
+          router.replace("/admin");
           return;
         }
-        const activeWorkshop = await getUserActiveWorkshop(data.user.id);
-        if (activeWorkshop) {
-          router.push("/workshop-panel");
+        if (context.hasActiveWorkshop) {
+          router.replace("/workshop-panel");
+          return;
         }
       } catch {
         // Keep default user flow when workshop check fails.
       }
+      router.replace("/moje-konto");
     }
   }
 
@@ -1386,7 +1431,12 @@ export default function Home() {
     setAuthAttemptCount(0);
     setAuthBlockedUntil(null);
     setAuthInfo(t("auth.info.accountCreated"));
-    setAuthModal("login");
+    if (data.user && data.session) {
+      setAuthModal(null);
+      router.replace("/moje-konto");
+    } else {
+      setAuthModal("login");
+    }
     setRegisterFirstName("");
     setRegisterLastName("");
     setRegisterEmail("");
@@ -1477,7 +1527,7 @@ export default function Home() {
                             <span className={dropdownSubtextClass}>{currentUser.email ?? t("auth.userFallback")}</span>
                           </span>
                         </button>
-                        {!isCurrentUserAdmin ? (
+                        {hasWorkshopPanelAccess ? (
                           <Link
                             href="/workshop-panel"
                             onClick={() => setActiveDropdown(null)}
@@ -1491,6 +1541,18 @@ export default function Home() {
                             </span>
                           </Link>
                         ) : null}
+                        <Link
+                          href="/ustawienia"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
+                        >
+                          <span className="mt-1 text-blue-400">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 4v3m0 10v3M4 12h3m10 0h3M6.3 6.3l2.1 2.1m7.2 7.2 2.1 2.1m0-11.4-2.1 2.1m-7.2 7.2-2.1 2.1" /><circle cx="12" cy="12" r="3.5" /></svg>
+                          </span>
+                          <span>
+                            <span className="block text-sm font-semibold">Ustawienia</span>
+                          </span>
+                        </Link>
                         {isCurrentUserAdmin ? (
                           <Link
                             href="/admin"
@@ -1672,11 +1734,14 @@ export default function Home() {
                       <button type="button" onClick={openAccountModal} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
                         {t("auth.account")} {currentUser.email ? `(${currentUser.email})` : ""}
                       </button>
-                      {!isCurrentUserAdmin ? (
+                      {hasWorkshopPanelAccess ? (
                         <Link href="/workshop-panel" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
                           {t("workshop.panelTitle")}
                         </Link>
                       ) : null}
+                      <Link href="/ustawienia" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                        Ustawienia
+                      </Link>
                       {isCurrentUserAdmin ? (
                         <Link href="/admin" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
                           Panel admina
@@ -1813,36 +1878,79 @@ export default function Home() {
                 <span className="ml-2 text-orange-400">•</span>
               </h2>
               {currentUser && vehicles.length > 0 ? (
-                <label className="flex w-full flex-col gap-1 sm:w-[320px]">
+                <div ref={carPickerRef} className="relative flex w-full flex-col gap-1 sm:w-[360px]">
                   <span className="text-xs font-semibold uppercase tracking-wide opacity-80">Wybierz auto</span>
-                  <AutocompleteSelect
-                    value={selectedSavedCarId}
-                    onChange={(nextId) => {
-                      setSelectedSavedCarId(nextId);
-                      if (!nextId) {
-                        setShowManualVehicle(false);
-                        setVehicleType("");
-                        setBrand("");
-                        setModel("");
-                        setYear("");
-                        setFuel("");
-                        setService("");
-                        setSearchCity("");
-                        setSearchVin("");
-                      }
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCarPickerOpen((prev) => !prev);
+                      setCarPickerQuery("");
                     }}
-                    options={[
-                      { value: "", label: "Wpisz dane ręcznie" },
-                      ...vehicles.map((vehicle) => ({
-                        value: vehicle.id,
-                        label: `${vehicle.brand} ${vehicle.model} (${vehicle.year || "—"})${vehicle.isPrimary ? " • domyślne" : ""}`,
-                      })),
-                    ]}
-                    placeholder="Wybierz auto"
-                    inputClassName={currentFieldClassName}
-                    isDark={isDark}
-                  />
-                </label>
+                    className={`${currentFieldClassName} flex items-center justify-between text-left`}
+                  >
+                    <span className="truncate">
+                      {selectedSavedCar
+                        ? savedCarOptions.find((x) => x.id === selectedSavedCar.id)?.label ?? "Wybierz auto"
+                        : isManualMode
+                          ? "Auto wpisywane ręcznie"
+                          : "Wybierz auto"}
+                    </span>
+                    <span>▾</span>
+                  </button>
+                  {carPickerOpen ? (
+                    <div className={`absolute left-0 right-0 top-[calc(100%+8px)] z-40 rounded-xl border p-2 ${isDark ? "border-zinc-700 bg-zinc-900" : "border-blue-200 bg-white"}`}>
+                      <input
+                        value={carPickerQuery}
+                        onChange={(event) => setCarPickerQuery(event.target.value)}
+                        placeholder="Szukaj auta..."
+                        className={`${currentFieldClassName} mb-2`}
+                      />
+                      <div className="max-h-56 overflow-y-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSavedCarId("");
+                            setIsManualMode(true);
+                            setCarPickerQuery("");
+                            setCarPickerOpen(false);
+                            setShowManualVehicle(true);
+                            setVehicleType("");
+                            setBrand("");
+                            setModel("");
+                            setYear("");
+                            setFuel("");
+                            setService("");
+                            setSearchCity("");
+                            setSearchVin("");
+                          }}
+                          className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm font-medium ${isDark ? "text-zinc-100 hover:bg-zinc-800" : "text-zinc-800 hover:bg-blue-50"}`}
+                        >
+                          Wpisz dane ręcznie
+                        </button>
+                        {filteredSavedCarOptions.length === 0 ? (
+                          <p className="px-3 py-2 text-sm text-zinc-500">Brak aut</p>
+                        ) : (
+                          filteredSavedCarOptions.map((option) => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedSavedCarId(option.id);
+                                setIsManualMode(false);
+                                setShowManualVehicle(false);
+                                setCarPickerQuery("");
+                                setCarPickerOpen(false);
+                              }}
+                              className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${selectedSavedCarId === option.id ? (isDark ? "bg-zinc-800 text-zinc-100" : "bg-blue-100 text-zinc-900") : (isDark ? "text-zinc-200 hover:bg-zinc-800" : "text-zinc-700 hover:bg-blue-50")}`}
+                            >
+                              {option.label}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </div>
             <p
@@ -2292,7 +2400,7 @@ export default function Home() {
                       { key: "profile", label: t("account.tabs.profile") },
                       { key: "vehicles", label: t("account.tabs.vehicles") },
                       { key: "security", label: t("account.tabs.security") },
-                      { key: "messages", label: `✉️ Skrzynka${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
+                      { key: "messages", label: `Skrzynka${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
                     ] as { key: AccountTab; label: string }[]).map((tab) => (
                       <button
                         key={tab.key}
@@ -2706,7 +2814,6 @@ export default function Home() {
                       currentUserId={currentUser.id}
                       isDark={isDark}
                       viewerRole={accountViewerRole}
-                      includeAllForAdmin={accountViewerRole === "admin"}
                       onUnreadCountChange={setAccountUnreadMessages}
                     />
                   ) : null}

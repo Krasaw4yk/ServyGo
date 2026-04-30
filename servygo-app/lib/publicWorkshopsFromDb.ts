@@ -107,6 +107,7 @@ function buildServiceOffers(
     service_name: string;
     service_key?: string | null;
     price_from?: number | null;
+    price_to?: number | null;
     duration_minutes?: number | null;
     required_roles?: unknown;
     is_active?: boolean;
@@ -126,6 +127,8 @@ function buildServiceOffers(
       id: row.id,
       service_key: row.service_key ?? null,
       price: row.price_from ?? 0,
+      price_from: row.price_from ?? null,
+      price_to: row.price_to ?? null,
       duration_minutes: row.duration_minutes ?? 60,
       required_roles: Array.isArray(row.required_roles)
         ? row.required_roles.map((x) => String(x))
@@ -148,6 +151,7 @@ type WorkshopWithNestedServices = {
     service_name: string;
     service_key: string | null;
     price_from: number | null;
+    price_to: number | null;
     duration_minutes: number | null;
     required_roles: unknown;
     is_active: boolean;
@@ -201,7 +205,7 @@ const PUBLIC_WORKSHOP_SELECT = `
   status,
   google_maps_url,
   services_summary,
-  workshop_services ( id, service_name, service_key, price_from, duration_minutes, required_roles, is_active )
+  workshop_services ( id, service_name, service_key, price_from, price_to, duration_minutes, required_roles, is_active )
 `;
 
 /** Lista warsztatów z Supabase do strony ofert (tylko statusy publiczne — dodatkowy filtr po stronie klienta). */
