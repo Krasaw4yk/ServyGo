@@ -14,6 +14,7 @@ import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
 import { getAllServiceOptions } from "@/lib/vehicleData";
 import {
   defaultOpeningSchedule,
+  deleteWorkshopServiceConfigsForOwner,
   deleteAvailabilityExceptionForOwner,
   getOwnedWorkshopForUser,
   googleReviewsHintUrl,
@@ -1250,8 +1251,23 @@ function WorkshopPanelPageContent() {
     setError("");
     setSuccess("");
     try {
+      const idsToDelete = mergedServiceRows
+        .filter((row) =>
+          Boolean(row.id) &&
+          row.is_custom &&
+          !row.is_active &&
+          !row.price_from.trim() &&
+          !row.price_to.trim() &&
+          !row.duration_minutes.trim() &&
+          !row.description.trim(),
+        )
+        .map((row) => row.id as string);
+
       const rows = mergedServiceRows
-        .filter((row) => row.is_custom || row.is_active || row.price_from.trim() || row.price_to.trim() || row.duration_minutes.trim())
+        .filter((row) => {
+          if (row.id) return !idsToDelete.includes(row.id);
+          return row.is_custom || row.is_active || row.price_from.trim() || row.price_to.trim() || row.duration_minutes.trim();
+        })
         .map((row) => ({
           id: row.id,
           service_key: row.service_key,
@@ -1264,6 +1280,7 @@ function WorkshopPanelPageContent() {
           is_active: row.is_active,
           is_custom: row.is_custom,
         }));
+      await deleteWorkshopServiceConfigsForOwner(workshop.id, idsToDelete);
       await upsertWorkshopServiceConfigsForOwner(workshop.id, rows);
       const refreshed = await listWorkshopServiceConfigsForOwner(workshop.id);
       setServiceDraftRows(

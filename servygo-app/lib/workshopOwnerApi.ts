@@ -437,6 +437,18 @@ export async function upsertWorkshopServiceConfigsForOwner(
   if (error) throw new Error(formatSupabaseError(error));
 }
 
+export async function deleteWorkshopServiceConfigsForOwner(workshopId: string, ids: string[]): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const targetIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+  if (targetIds.length === 0) return;
+  const { error } = await supabase
+    .from("workshop_services")
+    .delete()
+    .eq("workshop_id", workshopId)
+    .in("id", targetIds);
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
 export function googleReviewsHintUrl(workshop: Pick<Workshop, "google_maps_url" | "name" | "city">): string {
   const direct = workshop.google_maps_url?.trim();
   if (direct) return direct;
