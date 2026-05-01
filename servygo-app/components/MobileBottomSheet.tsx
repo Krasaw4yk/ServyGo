@@ -75,7 +75,7 @@ export default function MobileBottomSheet({
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
-        className={`absolute bottom-0 left-0 right-0 z-10 w-full max-w-[100vw] overflow-hidden rounded-t-3xl border-t px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-200 ease-out ${
+        className={`absolute bottom-0 left-0 right-0 z-10 flex max-w-[100vw] flex-col overflow-hidden rounded-t-3xl border-t px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-200 ease-out ${
           isActive ? "translate-y-0" : "translate-y-full"
         } ${
           isDark
@@ -87,8 +87,8 @@ export default function MobileBottomSheet({
           height: fixedHeight ? "min(70dvh, 560px)" : undefined,
         }}
       >
-        <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-zinc-400/50" />
-        <header className="mb-3 flex items-center justify-between gap-3">
+        <div className="mx-auto mb-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/50" />
+        <header className="mb-3 flex shrink-0 items-center justify-between gap-3">
           <h3 className="text-base font-semibold">{title}</h3>
           <button
             type="button"
@@ -100,7 +100,11 @@ export default function MobileBottomSheet({
             ✕
           </button>
         </header>
-        <div className={`min-w-0 overflow-x-hidden ${fixedHeight ? "flex min-h-0 flex-1 flex-col" : ""}`}>
+        <div
+          className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overscroll-contain [-webkit-overflow-scrolling:touch] ${
+            fixedHeight ? "flex flex-col" : ""
+          }`}
+        >
           {children}
         </div>
       </section>

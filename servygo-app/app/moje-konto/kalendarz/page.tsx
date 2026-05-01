@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { resolveMessageViewerContext } from "@/lib/messagesApi";
-
 type BookingRow = {
   id: string;
   service_name: string;
@@ -36,7 +33,6 @@ function statusLabel(status: string) {
 }
 
 export default function MojeKontoKalendarzPage() {
-  const router = useRouter();
   const [rows, setRows] = useState<BookingRow[]>([]);
   const [error, setError] = useState("");
 
@@ -45,15 +41,6 @@ export default function MojeKontoKalendarzPage() {
     void (async () => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
-      const context = await resolveMessageViewerContext(userData.user.id, userData.user.email);
-      if (context.role === "admin") {
-        router.replace("/admin");
-        return;
-      }
-      if (context.role === "workshop") {
-        router.replace("/workshop-panel");
-        return;
-      }
       const today = new Date();
       const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
       const { data, error: dbError } = await supabase
@@ -78,7 +65,7 @@ export default function MojeKontoKalendarzPage() {
       }
       setRows((data as BookingRow[] | null) ?? []);
     })();
-  }, [router]);
+  }, []);
 
   const grouped = useMemo(() => {
     const map = new Map<string, BookingRow[]>();

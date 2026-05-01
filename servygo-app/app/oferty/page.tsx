@@ -30,10 +30,12 @@ export default function OffersPage() {
   const [queryFilters, setQueryFilters] = useState({
     city: "",
     service: "",
+    vehicleType: "",
     brand: "",
     model: "",
     year: "",
     engine: "",
+    fuel: "",
     vin: "",
     firstName: "",
     lastName: "",
@@ -88,13 +90,16 @@ export default function OffersPage() {
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       const params = new URLSearchParams(window.location.search);
+      const cityNorm = (params.get("city") ?? "").trim().toLowerCase();
       setQueryFilters({
-        city: (params.get("city") ?? "").trim().toLowerCase(),
-        service: (params.get("service") ?? "").trim().toLowerCase(),
+        city: cityNorm,
+        service: (params.get("service") ?? "").trim(),
+        vehicleType: (params.get("vehicleType") ?? "").trim(),
         brand: (params.get("brand") ?? "").trim().toLowerCase(),
         model: (params.get("model") ?? "").trim().toLowerCase(),
         year: (params.get("year") ?? "").trim().toLowerCase(),
         engine: (params.get("engine") ?? "").trim().toLowerCase(),
+        fuel: (params.get("fuel") ?? params.get("engine") ?? "").trim().toLowerCase(),
         vin: (params.get("vin") ?? "").trim().toUpperCase().slice(0, 17),
         firstName: (params.get("firstName") ?? "").trim(),
         lastName: (params.get("lastName") ?? "").trim(),
@@ -117,10 +122,12 @@ export default function OffersPage() {
         if (!cityMatch) return { ...workshop, services: [] };
         const matchingServices = matchWorkshopServicesForVehicle(workshop.services, {
           service: queryFilters.service,
+          vehicleType: queryFilters.vehicleType,
           brand: queryFilters.brand,
           model: queryFilters.model,
           year: yearFilter,
           engine: queryFilters.engine,
+          fuel: queryFilters.fuel,
         });
         return { ...workshop, services: matchingServices };
       })

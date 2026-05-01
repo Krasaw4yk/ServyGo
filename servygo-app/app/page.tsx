@@ -10,6 +10,10 @@ import AutocompleteSelect from "@/components/AutocompleteSelect";
 import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
+import UserCenterCards from "@/components/home/UserCenterCards";
+import UserDetailsSection from "@/components/home/UserDetailsSection";
+import RecommendedWorkshopsSection from "@/components/home/RecommendedWorkshopsSection";
+import LandingCtaFooter from "@/components/home/LandingCtaFooter";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
 import { getServiceCatalogGroupedByMainCategory } from "@/lib/serviceCatalog";
 import {
@@ -101,6 +105,19 @@ const fieldClassName =
 const lightFieldClassName =
   "rounded-xl border border-blue-200/80 bg-slate-100/85 px-4 py-3 text-zinc-900 placeholder:text-zinc-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300/60 focus:shadow-[0_0_0_1px_rgba(249,115,22,0.35),0_0_20px_rgba(37,99,235,0.2)]";
 
+const searchFieldErrorRingClass =
+  "!border-[#ef4444] shadow-[0_0_0_2px_rgba(239,68,68,0.15)] focus:!border-[#ef4444] focus:shadow-[0_0_0_2px_rgba(239,68,68,0.2)]";
+const searchFieldErrorHintClass = "text-xs font-medium text-[#dc2626]";
+
+type SearchFieldKey = "vehicleType" | "brand" | "model" | "year" | "fuel" | "service" | "city";
+
+function toLocalDateKey(value: Date) {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, "0");
+  const d = String(value.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 const LOCAL_CLEANUP_VERSION_KEY = "servygo_local_cleanup_v1";
 
 export default function Home() {
@@ -118,6 +135,7 @@ export default function Home() {
   const [service, setService] = useState("");
   const [searchCity, setSearchCity] = useState("");
   const [searchVin, setSearchVin] = useState("");
+  const [searchFieldErrors, setSearchFieldErrors] = useState<Partial<Record<SearchFieldKey, string>>>({});
   const [showManualVehicle, setShowManualVehicle] = useState(false);
   const [manualType, setManualType] = useState("");
   const [manualBrand, setManualBrand] = useState("");
@@ -175,6 +193,15 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [hasWorkshopPanelAccess, setHasWorkshopPanelAccess] = useState(false);
+  const [dashboardBookingsCount, setDashboardBookingsCount] = useState(0);
+  const [dashboardUpcomingBooking, setDashboardUpcomingBooking] = useState<{
+    workshop: string;
+    service: string;
+    date: string;
+    time: string;
+    status: string;
+    address: string;
+  } | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -352,6 +379,58 @@ export default function Home() {
   }, [currentUser]);
 
   useEffect(() => {
+    if (!supabase || !currentUser) {
+      setDashboardBookingsCount(0);
+      setDashboardUpcomingBooking(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("id, workshop_name, service_name, booking_date, start_time, status")
+        .eq("user_id", currentUser.id)
+        .order("booking_date", { ascending: true })
+        .order("start_time", { ascending: true })
+        .limit(100);
+      if (cancelled) return;
+      if (error) {
+        setDashboardBookingsCount(0);
+        setDashboardUpcomingBooking(null);
+        return;
+      }
+      const rows = (data as {
+        workshop_name: string | null;
+        service_name: string | null;
+        booking_date: string | null;
+        start_time: string | null;
+        status: string | null;
+      }[] | null) ?? [];
+      setDashboardBookingsCount(rows.length);
+      const nowKey = toLocalDateKey(new Date());
+      const upcoming =
+        rows.find((row) => row.booking_date && row.booking_date >= nowKey) ??
+        rows[0] ??
+        null;
+      if (!upcoming) {
+        setDashboardUpcomingBooking(null);
+      } else {
+        setDashboardUpcomingBooking({
+          workshop: upcoming.workshop_name ?? "Warsztat ServyGo",
+          service: upcoming.service_name ?? "Usługa serwisowa",
+          date: upcoming.booking_date ?? "—",
+          time: (upcoming.start_time ?? "").slice(0, 5) || "—",
+          status: upcoming.status ?? "awaiting_quote",
+          address: "Adres warsztatu dostępny po otwarciu szczegółów",
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
     if (!currentUser) {
       setAccountUnreadMessages(0);
       setAccountViewerRole("client");
@@ -387,8 +466,17 @@ export default function Home() {
         if (cancelled) return;
         const mapped = cars.map(mapCarToStored);
         setVehicles(mapped);
-        const primary = mapped.find((x) => x.isPrimary) ?? mapped[0] ?? null;
-        setSelectedSavedCarId(primary?.id ?? "");
+        // Do not auto-fill from saved cars on page entry.
+        // User must explicitly pick a car from "Wybierz auto".
+        setSelectedSavedCarId("");
+        setIsManualMode(true);
+        setVehicleType("");
+        setBrand("");
+        setModel("");
+        setYear("");
+        setFuel("");
+        setSearchVin("");
+        setSearchCity("");
       } catch {
         if (!cancelled) {
           setVehicles([]);
@@ -538,8 +626,8 @@ export default function Home() {
   const sortedYears = useMemo(() => sortYearsDesc(years).map(String), [years]);
   const currentFieldClassName = isDark ? fieldClassName : lightFieldClassName;
   const headerShellClass = isDark
-    ? "mb-8 w-full max-w-full rounded-3xl border border-blue-500/25 bg-zinc-950/70 px-3 py-3 shadow-[0_20px_70px_rgba(2,6,23,0.65)] backdrop-blur-2xl sm:px-4 md:px-8 md:py-[1.125rem]"
-    : "mb-8 w-full max-w-full rounded-3xl border border-transparent bg-white/58 px-3 py-3 shadow-[0_22px_65px_rgba(37,99,235,0.12),0_14px_34px_rgba(249,115,22,0.1)] ring-1 ring-inset ring-[rgba(59,130,246,0.28)] backdrop-blur-2xl sm:px-4 md:px-8 md:py-[1.125rem]";
+    ? "sticky top-0 z-[1000] isolate mb-7 w-full max-w-full overflow-visible border-b border-blue-500/20 bg-zinc-950/78 px-2 py-3 backdrop-blur-xl sm:px-3 md:px-4"
+    : "sticky top-0 z-[1000] isolate mb-7 w-full max-w-full overflow-visible border-b border-blue-100/90 bg-white/92 px-2 py-3 backdrop-blur-xl sm:px-3 md:px-4";
   const triggerButtonClass = isDark
     ? "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2.5 text-xs font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
     : "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-blue-200/75 bg-white/82 px-2.5 text-xs font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
@@ -550,31 +638,31 @@ export default function Home() {
     ? "inline-flex h-10 max-w-full items-center justify-center gap-1.5 rounded-xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
     : "inline-flex h-10 max-w-full items-center justify-center gap-1.5 rounded-xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const dropdownPanelClass = isDark
-    ? "rounded-2xl border border-blue-500/25 bg-zinc-900/95 p-2 shadow-2xl shadow-blue-900/30 backdrop-blur-xl"
-    : "rounded-2xl border border-blue-200/85 bg-white/90 p-2 shadow-2xl shadow-slate-300/40 ring-1 ring-orange-200/45 backdrop-blur-xl";
+    ? "isolate rounded-2xl border border-blue-500/25 bg-zinc-900/98 p-2 shadow-[0_26px_60px_rgba(2,6,23,0.78)] backdrop-blur-xl"
+    : "isolate rounded-2xl border border-blue-200/85 bg-white p-2 shadow-[0_26px_60px_rgba(15,23,42,0.24)] ring-1 ring-orange-200/45 backdrop-blur-xl";
   const dropdownSectionLabelClass = isDark
     ? "my-1 border-t border-zinc-800 px-3 py-2 text-xs text-zinc-500"
     : "my-1 border-t border-slate-200 px-3 py-2 text-xs text-slate-500";
   const dropdownHintClass = isDark ? "px-3 py-2 text-sm text-zinc-400" : "px-3 py-2 text-sm text-slate-500";
   const dropdownSubtextClass = isDark ? "block text-xs text-zinc-400" : "block text-xs text-slate-500";
   const pageBaseClass = isDark
-    ? "relative overflow-hidden bg-gradient-to-br from-[#020617] via-[#06102a] to-[#020617] text-zinc-100"
-    : "relative overflow-hidden bg-gradient-to-br from-[#f2f7ff] via-[#fbfdff] to-[#fff4e8] text-zinc-900";
+    ? "relative overflow-hidden bg-gradient-to-br from-[#030712] via-[#08142b] to-[#030712] text-zinc-100"
+    : "relative overflow-hidden bg-[linear-gradient(135deg,#f8fbff_0%,#eef6ff_28%,#ffffff_48%,#fff7ed_76%,#fffdf5_100%)] text-zinc-900";
   const pageGlowClass = isDark
     ? "pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_520px_at_86%_-8%,rgba(59,130,246,0.34),transparent_62%),radial-gradient(980px_480px_at_-8%_102%,rgba(249,115,22,0.18),transparent_70%),radial-gradient(760px_360px_at_52%_45%,rgba(56,189,248,0.12),transparent_72%)]"
-    : "pointer-events-none absolute inset-0 bg-[radial-gradient(1220px_560px_at_88%_-8%,rgba(59,130,246,0.34),transparent_62%),radial-gradient(1040px_560px_at_-8%_102%,rgba(249,115,22,0.32),transparent_70%),radial-gradient(820px_390px_at_52%_44%,rgba(251,146,60,0.16),transparent_72%)]";
+    : "pointer-events-none absolute inset-0 bg-[radial-gradient(1220px_560px_at_88%_-8%,rgba(37,99,235,0.22),transparent_62%),radial-gradient(1040px_560px_at_-8%_102%,rgba(249,115,22,0.2),transparent_70%),radial-gradient(820px_390px_at_52%_44%,rgba(125,211,252,0.14),transparent_72%)]";
   const pageMeshClass = isDark
     ? "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_20%,rgba(59,130,246,0.1),transparent_42%),radial-gradient(circle_at_78%_74%,rgba(251,146,60,0.08),transparent_48%)] opacity-75 mix-blend-screen"
-    : "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(59,130,246,0.14),transparent_42%),radial-gradient(circle_at_78%_74%,rgba(251,146,60,0.16),transparent_50%)] opacity-90";
+    : "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(59,130,246,0.08),transparent_42%),radial-gradient(circle_at_78%_74%,rgba(251,146,60,0.06),transparent_50%)] opacity-70";
   const pageNoiseClass = isDark
     ? "pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px] opacity-20"
-    : "pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.022)_1px,transparent_1px)] bg-[size:48px_48px] opacity-35";
+    : "pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.016)_1px,transparent_1px)] bg-[size:48px_48px] opacity-25";
   const pagePatternClass = isDark
     ? "pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.055)_1px,transparent_1px)] bg-[size:22px_22px] opacity-10"
-    : "pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgba(37,99,235,0.08)_1px,transparent_1px)] bg-[size:22px_22px] opacity-45";
+    : "pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgba(37,99,235,0.065)_1px,transparent_1px)] bg-[size:22px_22px] opacity-30";
   const pageIllustrationClass = isDark
-    ? "pointer-events-none absolute inset-0 bg-[url('/servygo-flow-bg.png')] bg-no-repeat bg-[length:116%] bg-[position:56%_40%] opacity-[0.22] saturate-[0.78] contrast-[1.08] hue-rotate-[182deg] invert-[0.9]"
-    : "pointer-events-none absolute inset-0 bg-[url('/servygo-flow-bg.png')] bg-no-repeat bg-[length:116%] bg-[position:56%_40%] opacity-[0.29] saturate-[1.08] contrast-[1.04]";
+    ? "pointer-events-none absolute inset-0 opacity-0"
+    : "pointer-events-none absolute inset-0 opacity-0";
   const pageIllustrationMaskClass = isDark
     ? "pointer-events-none absolute inset-0 bg-[radial-gradient(280px_170px_at_49%_52%,rgba(2,6,23,0.95),transparent_72%)]"
     : "pointer-events-none absolute inset-0 bg-[radial-gradient(280px_170px_at_49%_52%,rgba(248,251,255,0.95),transparent_72%)]";
@@ -582,33 +670,40 @@ export default function Home() {
     ? "relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/90 p-7 shadow-[0_10px_30px_rgba(2,6,23,0.55)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(59,130,246,0.2),0_8px_22px_rgba(249,115,22,0.12)]"
     : "relative overflow-hidden rounded-2xl border border-blue-200/80 bg-gradient-to-br from-white/82 via-sky-50/75 to-orange-50/72 p-7 shadow-[0_18px_40px_rgba(37,99,235,0.12),0_10px_28px_rgba(249,115,22,0.12)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_48px_rgba(37,99,235,0.18),0_12px_30px_rgba(249,115,22,0.17)]";
 
+  function clearSearchFieldError(field: SearchFieldKey) {
+    setSearchFieldErrors((prev) => {
+      if (prev[field] == null) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
     setMessage("");
     setMessageType("");
+    setSearchFieldErrors({});
 
     const resolvedBrand = String(formData.get("brand") ?? "").trim();
     const resolvedModel = String(formData.get("model") ?? "").trim();
     const resolvedYear = String(formData.get("year") ?? "").trim();
     const resolvedFuel = String(formData.get("fuel") ?? "").trim();
-
-    const requiredFields = ["vehicleType", "service", "city"];
-    const missingField = requiredFields.find((field) => {
-      const value = String(formData.get(field) ?? "").trim();
-      return value === "";
-    });
-
-    if (missingField || !resolvedBrand || !resolvedModel || !resolvedYear || !resolvedFuel) {
-      setMessage(t("form.messages.requiredFields"));
-      setMessageType("error");
-      return;
-    }
-
     const selectedService = String(formData.get("service") ?? "").trim();
-    if (!resolvedFuel || !selectedService) {
-      setMessage(t("form.messages.fillFuelService"));
+
+    const errs: Partial<Record<SearchFieldKey, string>> = {};
+    if (!vehicleType) errs.vehicleType = "Wybierz typ pojazdu.";
+    if (!resolvedBrand) errs.brand = "Wybierz markę.";
+    if (!resolvedModel) errs.model = "Wybierz model.";
+    if (!resolvedYear) errs.year = "Wybierz rocznik.";
+    if (!resolvedFuel) errs.fuel = "Wybierz paliwo.";
+    if (!selectedService) errs.service = "Wybierz, czego potrzebujesz.";
+    if (!searchCity.trim()) errs.city = "Podaj miasto.";
+    if (Object.keys(errs).length > 0) {
+      setSearchFieldErrors(errs);
+      setMessage(t("form.messages.requiredFields"));
       setMessageType("error");
       return;
     }
@@ -1342,23 +1437,8 @@ export default function Home() {
     setLoginPassword("");
     setLoginIdentifier("");
 
-    const { data } = await supabase.auth.getUser();
-    if (data.user) {
-      try {
-        const context = await resolveMessageViewerContext(data.user.id, data.user.email);
-        if (context.role === "admin") {
-          router.replace("/admin");
-          return;
-        }
-        if (context.hasActiveWorkshop) {
-          router.replace("/workshop-panel");
-          return;
-        }
-      } catch {
-        // Keep default user flow when workshop check fails.
-      }
-      router.replace("/moje-konto");
-    }
+    await supabase.auth.getUser();
+    // Zamierzone: bez automatycznego przekierowania — użytkownik zostaje na stronie i wybiera panel z menu.
   }
 
   async function handleRegisterSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1445,7 +1525,6 @@ export default function Home() {
     setAuthInfo(t("auth.info.accountCreated"));
     if (data.user && data.session) {
       setAuthModal(null);
-      router.replace("/moje-konto");
     } else {
       setAuthModal("login");
     }
@@ -1459,34 +1538,24 @@ export default function Home() {
 
   return (
     <div className={`min-h-screen ${pageBaseClass}`}>
+      {!isDark ? (
+        <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+          <div className="absolute -top-40 right-[-120px] h-[420px] w-[420px] rounded-full bg-blue-300/30 blur-3xl" />
+          <div className="absolute left-[-140px] top-[35%] h-[360px] w-[360px] rounded-full bg-orange-300/25 blur-3xl" />
+          <div className="absolute right-[20%] top-[50%] h-[300px] w-[300px] rounded-full bg-sky-300/20 blur-3xl" />
+          <div className="absolute bottom-[-120px] right-[10%] h-[380px] w-[380px] rounded-full bg-yellow-200/25 blur-3xl" />
+        </div>
+      ) : null}
       <div className={pageIllustrationClass} />
       <div className={pageIllustrationMaskClass} />
       <div className={pageGlowClass} />
       <div className={pageMeshClass} />
       <div className={pageNoiseClass} />
       <div className={pagePatternClass} />
-      <main className="relative z-[1] mx-auto w-full max-w-7xl px-2 py-6 sm:px-6 sm:py-10">
+      <main className="relative z-0 mx-auto w-full max-w-[1700px] px-4 py-5 sm:px-8 sm:py-9 lg:px-10">
         <section
-          className={`relative isolate overflow-visible rounded-3xl border px-5 pb-10 pt-8 sm:px-7 sm:pb-11 sm:pt-10 md:px-10 md:pb-12 md:pt-12 ${
-            isDark
-              ? "border-blue-500/20 bg-gradient-to-b from-[#061225] via-[#050d1d] to-[#02050b]"
-              : "border-blue-200/80 bg-gradient-to-b from-white/60 via-[#f7fbff]/70 to-[#fff4e9]/78 shadow-[0_24px_65px_rgba(37,99,235,0.14),0_20px_46px_rgba(249,115,22,0.13)] backdrop-blur-[2px]"
-          }`}
+          className="relative isolate mx-auto max-w-[1400px] overflow-visible px-4 pb-8 pt-0 sm:max-w-[1400px] sm:px-6 sm:pb-10 xl:max-w-[1500px] lg:px-8"
         >
-          <div
-            className="pointer-events-none absolute inset-0 isolate overflow-hidden rounded-[inherit]"
-            aria-hidden
-          >
-            {isDark ? (
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(59,130,246,0.18),transparent_45%),radial-gradient(ellipse_at_bottom_left,rgba(249,115,22,0.1),transparent_45%)]" />
-            ) : null}
-            <div className="absolute -top-24 right-[-80px] h-72 w-72 rounded-full bg-blue-500/25 blur-3xl" />
-            <div className="absolute bottom-[-120px] left-[-120px] h-80 w-80 rounded-full bg-orange-500/20 blur-3xl" />
-            <div className="absolute left-1/3 top-1/3 h-56 w-56 rounded-full bg-blue-400/10 blur-3xl" />
-            <div className={`absolute right-8 top-24 h-24 w-24 rounded-full blur-2xl ${isDark ? "bg-blue-500/25" : "bg-blue-300/45"}`} />
-            <div className={`absolute bottom-10 left-10 h-28 w-28 rounded-full blur-3xl ${isDark ? "bg-orange-500/15" : "bg-orange-300/45"}`} />
-          </div>
-
           <div
             ref={headerRef}
             className={headerShellClass}
@@ -1505,8 +1574,22 @@ export default function Home() {
                 className="h-10 w-auto max-w-[160px] self-start object-contain sm:h-12 sm:max-w-[190px] md:mr-6 md:h-16 md:max-w-[256px]"
               />
 
-              <div className="relative flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3 md:gap-4">
-                <div className="relative">
+              <nav className="hidden flex-1 items-center justify-center gap-6 xl:flex">
+                {["Jak to działa", "Dla kierowców", "Dla warsztatów", "O nas", "Kontakt"].map((item) => (
+                  <a
+                    key={item}
+                    href="#"
+                    className={`text-sm font-medium transition ${
+                      isDark ? "text-zinc-200 hover:text-blue-300" : "text-zinc-700 hover:text-blue-600"
+                    }`}
+                  >
+                    {item}
+                  </a>
+                ))}
+              </nav>
+
+              <div className="relative z-[1001] flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3 md:gap-4">
+                <div className="relative z-[1002]">
                   <button
                     type="button"
                     onClick={() =>
@@ -1523,7 +1606,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-72 sm:max-w-none ${
+                    className={`absolute right-0 top-[calc(100%+10px)] z-[9999] w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-72 sm:max-w-none ${
                       activeDropdown === "user"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1558,6 +1641,18 @@ export default function Home() {
                             </span>
                           </Link>
                         ) : null}
+                        <Link
+                          href="/moje-rezerwacje"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
+                        >
+                          <span className="mt-1 text-blue-400">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 6.75A1.75 1.75 0 0 1 5.75 5h12.5A1.75 1.75 0 0 1 20 6.75v10.5A1.75 1.75 0 0 1 18.25 19H5.75A1.75 1.75 0 0 1 4 17.25V6.75Z" /><path d="M8 9h8M8 12h8M8 15h5" /></svg>
+                          </span>
+                          <span>
+                            <span className="block text-sm font-semibold">Moje rezerwacje</span>
+                          </span>
+                        </Link>
                         <Link
                           href="/ustawienia"
                           onClick={() => setActiveDropdown(null)}
@@ -1644,7 +1739,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="relative">
+                <div className="relative z-[1002]">
                   <button
                     type="button"
                     onClick={() =>
@@ -1659,7 +1754,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-56 sm:max-w-none ${
+                    className={`absolute right-0 top-[calc(100%+10px)] z-[9999] w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-56 sm:max-w-none ${
                       activeDropdown === "lang"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1687,7 +1782,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="relative">
+                <div className="relative z-[1002]">
                   <button
                     type="button"
                     onClick={() =>
@@ -1701,7 +1796,7 @@ export default function Home() {
                     </svg>
                   </button>
                   <div
-                    className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-52 sm:max-w-none ${
+                    className={`absolute right-0 top-[calc(100%+10px)] z-[9999] w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-52 sm:max-w-none ${
                       activeDropdown === "theme"
                         ? "pointer-events-auto translate-y-0 opacity-100"
                         : "pointer-events-none -translate-y-2 opacity-0"
@@ -1727,12 +1822,36 @@ export default function Home() {
                   </div>
                 </div>
 
-                <Link href="/dodaj-warsztat" className={`${ctaButtonClass} w-full sm:w-auto`}>
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M14.7 6.3a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-7.9 7.9-3.3.7.7-3.3 7.5-7.9Z" />
+                <button
+                  type="button"
+                  className={triggerButtonClass}
+                  aria-label="Powiadomienia"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M15 17h5l-1.4-1.6A2 2 0 0 1 18 14v-3a6 6 0 1 0-12 0v3a2 2 0 0 1-.6 1.4L4 17h5" />
+                    <path d="M10 17a2 2 0 0 0 4 0" />
                   </svg>
-                  {t("header.addWorkshop")}
-                </Link>
+                </button>
+
+                {!currentUser ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={openLoginModal}
+                      className={triggerButtonClass}
+                    >
+                      Zaloguj się
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openRegisterModal}
+                      className={ctaButtonClass}
+                    >
+                      Zarejestruj się
+                    </button>
+                  </>
+                ) : null}
+
               </div>
             </div>
           </div>
@@ -1756,6 +1875,9 @@ export default function Home() {
                           {t("workshop.panelTitle")}
                         </Link>
                       ) : null}
+                      <Link href="/moje-rezerwacje" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                        Moje rezerwacje
+                      </Link>
                       <Link href="/ustawienia" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
                         Ustawienia
                       </Link>
@@ -1829,65 +1951,87 @@ export default function Home() {
             </>
           ) : null}
 
-          <span
-            className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${
-              isDark
-                ? "border-blue-400/25 bg-zinc-900/80 text-blue-200"
-                : "border-blue-200/90 bg-white/82 text-blue-700 shadow-[0_6px_18px_rgba(59,130,246,0.12)]"
-            }`}
-          >
-            {t("hero.badge")}
-          </span>
-          <h1 className="mt-4 block max-w-3xl pb-4 text-3xl font-bold leading-[1.45] antialiased [-webkit-font-smoothing:antialiased] [text-rendering:optimizeLegibility] [text-wrap:balance] break-words sm:text-4xl md:text-5xl md:leading-[1.42]">
-            {t("hero.titlePrefix")}{" "}
-            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-blue-500 to-blue-300 bg-clip-text font-bold text-transparent">
-              {t("hero.titleHighlightOffers")}
-            </span>{" "}
-            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-orange-500 to-orange-300 bg-clip-text font-bold text-transparent">
-              {t("hero.titleHighlightRepairs")}
-            </span>,{" "}
-            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text font-bold text-transparent">
-              {t("hero.titleHighlightReplacement")}
-            </span>,{" "}
-            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text font-bold text-transparent">
-              {t("hero.titleHighlightDiagnostics")}
-            </span>
-          </h1>
-          <p
-            className={`mt-4 max-w-2xl text-sm [text-wrap:balance] break-words sm:text-base md:text-lg ${
-              isDark ? "text-zinc-300" : "text-zinc-700"
-            }`}
-          >
-            {t("hero.subtitle")}
-          </p>
-          <div className={`mt-4 h-px w-40 bg-gradient-to-r ${isDark ? "from-blue-500/70 via-orange-400/45 to-transparent" : "from-blue-500/60 via-orange-400/55 to-transparent"}`} />
-          <div className="mt-6 flex flex-wrap gap-2 sm:gap-3">
-            {heroChips.map((benefit) => (
-                <span
-                  key={benefit}
-                  className={`rounded-full border px-2.5 py-1 text-xs transition-all duration-300 hover:-translate-y-0.5 sm:px-3 sm:text-sm ${
-                    isDark
-                      ? "border-blue-500/25 bg-[#08172c]/75 text-zinc-100 hover:border-orange-400/50 hover:shadow-[0_0_18px_rgba(59,130,246,0.26)]"
-                      : "border-orange-300/90 bg-gradient-to-r from-white/86 via-sky-50/85 to-orange-50/90 text-zinc-700 shadow-[0_0_0_1px_rgba(59,130,246,0.1),0_10px_24px_rgba(249,115,22,0.12)] hover:shadow-[0_0_0_1px_rgba(59,130,246,0.16),0_14px_26px_rgba(249,115,22,0.18)]"
-                  }`}
-                >
-                  {benefit}
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
+            <div>
+              <span
+                className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${
+                  isDark
+                    ? "border-blue-400/25 bg-zinc-900/80 text-blue-200"
+                    : "border-blue-200/90 bg-white/82 text-blue-700 shadow-[0_6px_18px_rgba(59,130,246,0.12)]"
+                }`}
+              >
+                {t("hero.badge")}
+              </span>
+              <h1 className="mt-4 block max-w-3xl pb-4 text-3xl font-bold leading-[1.45] antialiased [-webkit-font-smoothing:antialiased] [text-rendering:optimizeLegibility] [text-wrap:balance] break-words sm:text-4xl md:text-5xl md:leading-[1.42]">
+                {t("hero.titlePrefix")}{" "}
+                <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-blue-500 to-blue-300 bg-clip-text font-bold text-transparent">
+                  {t("hero.titleHighlightOffers")}
+                </span>{" "}
+                <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-orange-500 to-orange-300 bg-clip-text font-bold text-transparent">
+                  {t("hero.titleHighlightRepairs")}
+                </span>,{" "}
+                <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text font-bold text-transparent">
+                  {t("hero.titleHighlightReplacement")}
+                </span>,{" "}
+                <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text font-bold text-transparent">
+                  {t("hero.titleHighlightDiagnostics")}
                 </span>
-              ))}
+              </h1>
+              <p
+                className={`mt-4 max-w-2xl text-sm [text-wrap:balance] break-words sm:text-base md:text-lg ${
+                  isDark ? "text-zinc-300" : "text-zinc-700"
+                }`}
+              >
+                {t("hero.subtitle")}
+              </p>
+              <div className={`mt-4 h-px w-40 bg-gradient-to-r ${isDark ? "from-blue-500/70 via-orange-400/45 to-transparent" : "from-blue-500/60 via-orange-400/55 to-transparent"}`} />
+              <div className="mt-6 flex flex-wrap gap-2 sm:gap-3">
+                {heroChips.map((benefit) => (
+                    <span
+                      key={benefit}
+                      className={`rounded-full border px-2.5 py-1 text-xs transition-all duration-300 hover:-translate-y-0.5 sm:px-3 sm:text-sm ${
+                        isDark
+                          ? "border-blue-500/25 bg-[#08172c]/75 text-zinc-100 hover:border-orange-400/50 hover:shadow-[0_0_18px_rgba(59,130,246,0.26)]"
+                          : "border-orange-300/90 bg-gradient-to-r from-white/86 via-sky-50/85 to-orange-50/90 text-zinc-700 shadow-[0_0_0_1px_rgba(59,130,246,0.1),0_10px_24px_rgba(249,115,22,0.12)] hover:shadow-[0_0_0_1px_rgba(59,130,246,0.16),0_14px_26px_rgba(249,115,22,0.18)]"
+                      }`}
+                    >
+                      {benefit}
+                    </span>
+                  ))}
+              </div>
+            </div>
+
+            <div className="mt-5 lg:mt-0">
+              <div className="relative flex h-[260px] w-full items-center justify-center sm:h-[320px] md:h-[380px] lg:h-[420px]">
+                <div className="absolute -z-10 h-[120%] w-[120%] rounded-full bg-gradient-to-r from-blue-200/30 via-cyan-200/20 via-yellow-200/15 to-orange-200/30 blur-3xl" />
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-50 via-white to-orange-50 opacity-80 blur-2xl" />
+                <div className="absolute right-20 top-10 h-40 w-40 rounded-full bg-blue-400/20 blur-3xl" />
+                <div className="absolute bottom-10 left-10 h-32 w-32 rounded-full bg-orange-400/20 blur-3xl" />
+                <img
+                  src="/hero-servygo-illustration.png"
+                  alt="ServyGo ilustracja"
+                  className="relative z-10 h-full w-full select-none object-contain opacity-95 mix-blend-multiply pointer-events-none"
+                  style={{
+                    maskImage: "radial-gradient(circle at center, black 60%, transparent 100%)",
+                    WebkitMaskImage: "radial-gradient(circle at center, black 60%, transparent 100%)",
+                  }}
+                />
+              </div>
+            </div>
           </div>
 
           <div
-            className={`mt-8 rounded-2xl border p-5 shadow-2xl backdrop-blur-xl sm:p-6 md:p-8 ${
+            className={`relative mt-8 overflow-hidden rounded-2xl border p-5 shadow-2xl backdrop-blur-xl sm:p-6 md:p-8 ${
               isDark
                 ? "border-blue-500/20 bg-gradient-to-br from-[#091427]/88 via-[#071224]/84 to-[#040a15]/80 text-zinc-100 shadow-blue-500/20"
-                : "relative border-transparent bg-[rgba(255,255,255,0.78)] text-zinc-900 shadow-[0_30px_80px_rgba(37,99,235,0.2),0_16px_52px_rgba(249,115,22,0.18)] ring-1 ring-inset ring-[rgba(59,130,246,0.34)]"
+                : "border border-blue-200/60 bg-white/85 text-zinc-900 shadow-[0_24px_70px_rgba(37,99,235,0.12),0_14px_40px_rgba(249,115,22,0.10)]"
             }`}
           >
             {!isDark ? (
-              <div
-                className="pointer-events-none absolute -bottom-16 left-1/2 h-44 w-[72%] -translate-x-1/2 rounded-full bg-orange-300/35 blur-3xl"
-                aria-hidden
-              />
+              <>
+                <div className="pointer-events-none absolute -left-16 -top-16 h-52 w-52 rounded-full bg-blue-200/40 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-16 -right-12 h-52 w-52 rounded-full bg-orange-200/40 blur-3xl" />
+              </>
             ) : null}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <h2 className="text-xl font-bold sm:text-2xl">
@@ -1922,7 +2066,7 @@ export default function Home() {
                         placeholder="Szukaj auta..."
                         className={`${currentFieldClassName} mb-2`}
                       />
-                      <div className="max-h-56 overflow-y-auto">
+                      <div className="max-h-[min(240px,60vh)] overflow-y-auto [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
                         <button
                           type="button"
                           onClick={() => {
@@ -1930,7 +2074,6 @@ export default function Home() {
                             setIsManualMode(true);
                             setCarPickerQuery("");
                             setCarPickerOpen(false);
-                            setShowManualVehicle(true);
                             setVehicleType("");
                             setBrand("");
                             setModel("");
@@ -1977,15 +2120,45 @@ export default function Home() {
             >
               {t("form.subtitle")}
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {vehicleTypeOptions.map((type) => {
+                const active = vehicleType === type.key;
+                return (
+                  <button
+                    key={type.key}
+                    type="button"
+                    onClick={() => {
+                      clearSearchFieldError("vehicleType");
+                      setVehicleType(type.key);
+                      setBrand("");
+                      setModel("");
+                      setYear("");
+                      setFuel("");
+                      setService("");
+                    }}
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                      active
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : isDark
+                          ? "border-zinc-700 bg-zinc-900/70 text-zinc-200 hover:border-blue-400/60"
+                          : "border-blue-200 bg-white text-zinc-700 hover:border-blue-400"
+                    }`}
+                  >
+                    {t(`form.vehicleTypes.${type.key}`)}
+                  </button>
+                );
+              })}
+            </div>
             <form
               onSubmit={handleSubmit}
-              className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2"
+              className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
             >
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{t("form.labels.vehicleType")}</span>
                 <AutocompleteSelect
                   value={vehicleType}
                   onChange={(nextValue) => {
+                    clearSearchFieldError("vehicleType");
                     const selectedType = nextValue as VehicleTypeKey | "";
                     setVehicleType(selectedType);
                     setBrand("");
@@ -2001,10 +2174,13 @@ export default function Home() {
                   placeholder={t("form.selects.vehicleType")}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={currentFieldClassName}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.vehicleType ? ` ${searchFieldErrorRingClass}` : ""}`}
                   isDark={isDark}
                 />
                 <input type="hidden" name="vehicleType" value={vehicleType} />
+                {searchFieldErrors.vehicleType ? (
+                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.vehicleType}</p>
+                ) : null}
               </label>
 
               <label className="flex flex-col gap-2">
@@ -2013,6 +2189,7 @@ export default function Home() {
                   name="brand"
                   value={brand}
                   onChange={(nextBrand) => {
+                    clearSearchFieldError("brand");
                     setBrand(nextBrand);
                     setModel("");
                   }}
@@ -2023,9 +2200,12 @@ export default function Home() {
                   disabled={!vehicleType}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={currentFieldClassName}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.brand ? ` ${searchFieldErrorRingClass}` : ""}`}
                   isDark={isDark}
                 />
+                {searchFieldErrors.brand ? (
+                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.brand}</p>
+                ) : null}
               </label>
 
               <label className="flex flex-col gap-2">
@@ -2033,15 +2213,21 @@ export default function Home() {
                 <AutocompleteSelect
                   name="model"
                   value={model}
-                  onChange={setModel}
+                  onChange={(nextModel) => {
+                    clearSearchFieldError("model");
+                    setModel(nextModel);
+                  }}
                   options={modelsForBrand}
                   placeholder={brand ? t("form.selects.model") : t("form.selects.chooseBrandFirst")}
                   disabled={!brand}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={currentFieldClassName}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.model ? ` ${searchFieldErrorRingClass}` : ""}`}
                   isDark={isDark}
                 />
+                {searchFieldErrors.model ? (
+                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.model}</p>
+                ) : null}
               </label>
 
               <label className="flex flex-col gap-2">
@@ -2049,14 +2235,20 @@ export default function Home() {
                 <AutocompleteSelect
                   name="year"
                   value={year}
-                  onChange={setYear}
+                  onChange={(nextYear) => {
+                    clearSearchFieldError("year");
+                    setYear(nextYear);
+                  }}
                   options={years}
                   placeholder={t("form.selects.year")}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={currentFieldClassName}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.year ? ` ${searchFieldErrorRingClass}` : ""}`}
                   isDark={isDark}
                 />
+                {searchFieldErrors.year ? (
+                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.year}</p>
+                ) : null}
               </label>
 
               <label className="flex flex-col gap-2">
@@ -2064,7 +2256,10 @@ export default function Home() {
                 <AutocompleteSelect
                   name="fuel"
                   value={fuel}
-                  onChange={setFuel}
+                  onChange={(nextFuel) => {
+                    clearSearchFieldError("fuel");
+                    setFuel(nextFuel);
+                  }}
                   options={fuelsForVehicleType}
                   placeholder={
                     vehicleType ? t("form.selects.fuel") : t("form.selects.chooseTypeFirst")
@@ -2072,29 +2267,38 @@ export default function Home() {
                   disabled={!vehicleType}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={currentFieldClassName}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.fuel ? ` ${searchFieldErrorRingClass}` : ""}`}
                   isDark={isDark}
                 />
+                {searchFieldErrors.fuel ? (
+                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.fuel}</p>
+                ) : null}
               </label>
 
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{translatedServiceLabel}</span>
                 <ServiceCategoryPicker
                   value={service}
-                  onChange={setService}
+                  onChange={(next) => {
+                    clearSearchFieldError("service");
+                    setService(next);
+                  }}
                   categories={serviceCatalogForVehicleType}
                   disabled={!vehicleType || serviceCatalogForVehicleType.length === 0}
                   isDark={isDark}
-                  inputClassName={currentFieldClassName}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.service ? ` ${searchFieldErrorRingClass}` : ""}`}
                   placeholder={
                     vehicleType ? t("form.selects.serviceCategory") : t("form.selects.chooseTypeFirst")
                   }
                   noResultsText={t("account.placeholders.noResults")}
                 />
                 <input type="hidden" name="service" value={service} />
+                {searchFieldErrors.service ? (
+                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.service}</p>
+                ) : null}
               </label>
 
-              <label className="flex flex-col gap-2 md:col-span-2">
+              <label className="flex flex-col gap-2 md:col-span-2 xl:col-span-3">
                 <span className="text-sm font-medium">{t("form.labels.problem")}</span>
                 <textarea
                   name="problem"
@@ -2104,7 +2308,7 @@ export default function Home() {
                 />
               </label>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:col-span-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:col-span-2 xl:col-span-3">
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium">{t("form.labels.city")}</span>
                   <input
@@ -2112,10 +2316,16 @@ export default function Home() {
                     name="city"
                     required
                     value={searchCity}
-                    onChange={(event) => setSearchCity(event.target.value)}
+                    onChange={(event) => {
+                      clearSearchFieldError("city");
+                      setSearchCity(event.target.value);
+                    }}
                     placeholder={t("form.placeholders.city")}
-                    className={currentFieldClassName}
+                    className={`${currentFieldClassName}${searchFieldErrors.city ? ` ${searchFieldErrorRingClass}` : ""}`}
                   />
+                  {searchFieldErrors.city ? (
+                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.city}</p>
+                  ) : null}
                 </label>
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium">VIN</span>
@@ -2128,22 +2338,36 @@ export default function Home() {
                     placeholder="np. WAUZZZ8V6JA000001"
                     className={currentFieldClassName}
                   />
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>lub</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSavedCarId("");
+                        setShowManualVehicle((prev) => !prev);
+                        setVehicleType("");
+                        setBrand("");
+                        setModel("");
+                        setYear("");
+                        setFuel("");
+                        setService("");
+                        setSearchCity("");
+                        setSearchVin("");
+                      }}
+                      className={`text-xs font-semibold ${isDark ? "text-blue-300 hover:text-orange-300" : "text-blue-700 hover:text-orange-600"}`}
+                    >
+                      Nie znalazłeś pojazdu? Dodaj ręcznie
+                    </button>
+                  </div>
                 </label>
               </div>
 
-              <div className="mt-1 grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-6 py-3 font-semibold text-white shadow-[0_10px_30px_rgba(59,130,246,0.28),0_8px_22px_rgba(249,115,22,0.24)] transition-all duration-300 hover:scale-[1.02] hover:from-blue-500 hover:to-orange-400 hover:shadow-[0_14px_36px_rgba(59,130,246,0.35),0_10px_28px_rgba(249,115,22,0.3)]"
-                >
-                  {isSubmitting ? t("form.buttons.submitting") : t("form.buttons.submit")}
-                </button>
+              <div className="mt-1 grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-3">
                 <button
                   type="button"
                   onClick={() => {
                     setSelectedSavedCarId("");
-                    setShowManualVehicle((prev) => !prev);
+                    setShowManualVehicle(false);
                     setVehicleType("");
                     setBrand("");
                     setModel("");
@@ -2152,14 +2376,24 @@ export default function Home() {
                     setService("");
                     setSearchCity("");
                     setSearchVin("");
+                    setSearchFieldErrors({});
+                    setMessage("");
+                    setMessageType("");
                   }}
                   className={`inline-flex h-12 w-full items-center justify-center rounded-xl border px-6 py-3 font-semibold transition-all duration-300 hover:scale-[1.02] ${
                     isDark
-                      ? "border-blue-400/40 bg-zinc-900/70 text-zinc-100 hover:border-orange-400/60 hover:text-orange-200"
-                      : "border-blue-300/80 bg-white/72 text-zinc-800 hover:border-orange-400/85 hover:text-orange-600 hover:shadow-[0_0_24px_rgba(59,130,246,0.16),0_0_18px_rgba(249,115,22,0.22)]"
+                      ? "border-zinc-600 bg-zinc-900/70 text-zinc-100 hover:border-blue-400/60"
+                      : "border-blue-200 bg-white text-zinc-800 hover:border-blue-500"
                   }`}
                 >
-                  {t("form.manual.toggleShow")}
+                  Wyczyść filtry
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-6 py-3 font-semibold text-white shadow-[0_10px_30px_rgba(59,130,246,0.28),0_8px_22px_rgba(249,115,22,0.24)] transition-all duration-300 hover:scale-[1.02] hover:from-blue-500 hover:to-orange-400 hover:shadow-[0_14px_36px_rgba(59,130,246,0.35),0_10px_28px_rgba(249,115,22,0.3)]"
+                >
+                  {isSubmitting ? t("form.buttons.submitting") : t("form.buttons.submit")}
                 </button>
               </div>
 
@@ -2261,126 +2495,26 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-16">
-          <h2 className="text-3xl font-semibold">
-            <span className={isDark ? "text-zinc-100" : "text-zinc-900"}>{t("sections.howItWorks")}</span>
-            {!isDark ? <span className="ml-2 text-orange-500">•</span> : null}
-          </h2>
-          <div className="mt-8 grid gap-5 md:grid-cols-3">
-            {steps.map((step, index) => (
-                <article key={step.title} className={sectionCardClass}>
-                  <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${isDark ? "from-blue-500/0 via-blue-400/60 to-orange-400/0" : "from-blue-500/0 via-blue-500/50 to-orange-400/0"}`} />
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
-                        isDark
-                          ? "bg-blue-500/20 text-blue-200"
-                          : "bg-gradient-to-br from-blue-500 to-orange-400 text-white shadow-[0_8px_18px_rgba(59,130,246,0.22),0_6px_14px_rgba(249,115,22,0.2)]"
-                      }`}
-                    >
-                      {index + 1}
-                    </span>
-                    <p className={`text-sm font-medium ${isDark ? "text-blue-300" : "text-orange-500"}`}>
-                      {t("sections.stepLabel")} {index + 1}
-                    </p>
-                  </div>
-                  <h3 className="mt-2 text-xl font-semibold">{step.title}</h3>
-                  <p className={`mt-1.5 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                    {step.desc}
-                  </p>
-                </article>
-              ),
-            )}
-          </div>
-        </section>
-
-        <section className="mt-16 grid gap-6 md:grid-cols-2">
-          <article
-            className={sectionCardClass}
-          >
-            <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${isDark ? "from-blue-500/0 via-blue-400/60 to-orange-400/0" : "from-blue-500/0 via-blue-500/50 to-orange-400/0"}`} />
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="text-2xl font-semibold">
-                {t("sections.forDrivers")}
-                {!isDark ? <span className="ml-2 text-orange-500">•</span> : null}
-              </h2>
-              <div className="relative">
-                <span
-                  className={`pointer-events-none absolute -right-8 top-1/2 h-16 w-16 -translate-y-1/2 rounded-full blur-xl ${
-                    isDark ? "bg-blue-400/35" : "bg-blue-500/30"
-                  }`}
-                />
-                <span
-                  className={`pointer-events-none absolute -left-6 top-4 h-10 w-10 rounded-full blur-lg ${
-                    isDark ? "bg-cyan-300/25" : "bg-sky-400/25"
-                  }`}
-                />
-                <Image
-                  src="/drivers-car-icon-v3.png"
-                  alt="Ikona kierowcy"
-                  width={400}
-                  height={200}
-                  className={`relative h-36 w-auto object-contain contrast-[1.14] saturate-[1.9] ${
-                    isDark
-                      ? "brightness-[1.06] drop-shadow-[0_0_16px_rgba(59,130,246,0.38)]"
-                      : "brightness-[1.02] drop-shadow-[0_0_12px_rgba(59,130,246,0.28)]"
-                  }`}
-                />
-              </div>
-            </div>
-            <ul className={`mt-5 space-y-3 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                {driverBenefits.map((item) => (
-                  <li key={item} className="flex items-center gap-2">
-                    <span className={`h-1.5 w-1.5 rounded-full ${isDark ? "bg-blue-400" : "bg-orange-400"}`} />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-          </article>
-
-          <article
-            className={sectionCardClass}
-          >
-            <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${isDark ? "from-blue-500/0 via-blue-400/60 to-orange-400/0" : "from-blue-500/0 via-blue-500/50 to-orange-400/0"}`} />
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="text-2xl font-semibold">
-                {t("sections.forWorkshops")}
-                {!isDark ? <span className="ml-2 text-orange-500">•</span> : null}
-              </h2>
-              <div className="relative">
-                <span
-                  className={`pointer-events-none absolute -right-8 top-1/2 h-16 w-16 -translate-y-1/2 rounded-full blur-xl ${
-                    isDark ? "bg-orange-400/35" : "bg-orange-500/30"
-                  }`}
-                />
-                <span
-                  className={`pointer-events-none absolute -left-6 top-4 h-10 w-10 rounded-full blur-lg ${
-                    isDark ? "bg-amber-300/25" : "bg-orange-400/25"
-                  }`}
-                />
-                <Image
-                  src="/workshop-garage-icon-v3.png"
-                  alt="Ikona warsztatu"
-                  width={300}
-                  height={225}
-                  className={`relative h-36 w-auto object-contain contrast-[1.16] saturate-[2.0] ${
-                    isDark
-                      ? "brightness-[1.06] drop-shadow-[0_0_16px_rgba(249,115,22,0.4)]"
-                      : "brightness-[1.02] drop-shadow-[0_0_12px_rgba(249,115,22,0.3)]"
-                  }`}
-                />
-              </div>
-            </div>
-            <ul className={`mt-5 space-y-3 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                {workshopBenefits.map((item) => (
-                  <li key={item} className="flex items-center gap-2">
-                    <span className={`h-1.5 w-1.5 rounded-full ${isDark ? "bg-orange-400" : "bg-blue-500"}`} />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-          </article>
-        </section>
+        <UserCenterCards
+          isDark={isDark}
+          isLoggedIn={Boolean(currentUser)}
+          vehiclesCount={vehicles.length}
+          dashboardBookingsCount={dashboardBookingsCount}
+          triggerButtonClass={triggerButtonClass}
+          ctaButtonClass={ctaButtonClass}
+          onLogin={openLoginModal}
+          onRegister={openRegisterModal}
+        />
+        <UserDetailsSection
+          isDark={isDark}
+          isLoggedIn={Boolean(currentUser)}
+          sortedVehicles={sortedVehicles}
+          dashboardUpcomingBooking={dashboardUpcomingBooking}
+          steps={steps}
+          onOpenAccountModal={openAccountModal}
+        />
+        <RecommendedWorkshopsSection isDark={isDark} city={searchCity} />
+        <LandingCtaFooter isDark={isDark} />
 
         {accountModalOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
 import type { MockWorkshop, WorkshopAvailabilityConfig, WorkshopServiceOffer } from "@/lib/mockWorkshops";
+import { normalizeServiceTextForMatch } from "@/lib/serviceCategoryClassifier";
 import { formatSupabaseError } from "@/lib/workshopApi";
 
 /** Statusy warsztatu widoczne publicznie (wyniki, oferty, strona warsztatu). */
@@ -239,36 +240,140 @@ function normalizeText(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
+/** Porównanie nazw usług: ten sam pipeline co klasyfikator (PL, bez diakrytyków). */
+function normalizeServiceForMatch(name: string) {
+  return normalizeServiceTextForMatch(name).replace(/\s+/g, " ");
+}
+
+function serviceNameMatchesClientQuery(requestedRaw: string, serviceName: string): boolean {
+  const requested = normalizeServiceForMatch(requestedRaw);
+  const offered = normalizeServiceForMatch(serviceName);
+  if (!requested) return true;
+  return offered.includes(requested) || requested.includes(offered);
+}
+
+/** Ujednolicenie typu pojazdu z URL (car) i etykiet z cennika („Osobowy”, „Samochód osobowy”). */
+function canonicalVehicleTypeSlug(raw: string): string {
+  const t = normalizeText(raw);
+  if (!t) return "";
+  if (t === "car" || t.includes("osobow") || t === "samochod" || t === "osobowy") return "car";
+  if (t === "motorcycle" || t.includes("motocykl")) return "motorcycle";
+  if (t === "van" || t.includes("dostawcz")) return "van";
+  return t;
+}
+
+function vehicleTypesCompatible(storedRaw: string, requestedRaw: string): boolean {
+  if (!normalizeText(requestedRaw)) return true;
+  const req = canonicalVehicleTypeSlug(requestedRaw);
+  const st = canonicalVehicleTypeSlug(storedRaw);
+  if (!st) return true;
+  return req === st;
+}
+
+const FUEL_SYNONYM_GROUPS: string[][] = [
+  ["diesel", "olej", "napedow", "napędow", "naft", "tdi", "hdi", "cdi", "dci", "jtd", "crdi", "edc", "bluetec"],
+  ["benzyn", "pb95", "pb98", "pb ", "gasoline", "petrol"],
+  ["lpg", "gaz", "autogaz"],
+  ["hybryd", "hybrid"],
+  ["elektr", "ev ", "electric"],
+];
+
+function fuelsAndEngineCompatible(
+  clientFuelOrEngineRaw: string,
+  serviceEngineRaw: string,
+  serviceFuelTypeRaw: string,
+): boolean {
+  const clientSlug = normalizeServiceTextForMatch(clientFuelOrEngineRaw);
+  if (!clientSlug.trim()) return true;
+
+  const engineNorm = serviceEngineRaw === "—" || serviceEngineRaw === "-" ? "" : serviceEngineRaw;
+  const fuelNorm =
+    serviceFuelTypeRaw === "Nie określono" || serviceFuelTypeRaw === "—" ? "" : serviceFuelTypeRaw;
+  const engineSlug = normalizeServiceTextForMatch(engineNorm);
+  const fuelSlug = normalizeServiceTextForMatch(fuelNorm);
+  const pool = normalizeServiceTextForMatch(`${serviceEngineRaw} ${serviceFuelTypeRaw}`);
+
+  if (pool.includes(clientSlug) || clientSlug.includes(pool)) return true;
+
+  const clientHay = normalizeText(clientFuelOrEngineRaw);
+  const poolHay = normalizeText(`${engineNorm} ${fuelNorm}`);
+
+  for (const group of FUEL_SYNONYM_GROUPS) {
+    let c = false;
+    let p = false;
+    for (const frag of group) {
+      if (clientHay.includes(frag)) c = true;
+      if (poolHay.includes(frag)) p = true;
+    }
+    if (c && p) return true;
+  }
+
+  return engineSlug.includes(clientSlug) || fuelSlug.includes(clientSlug) || clientSlug.includes(fuelSlug);
+}
+
 export function matchWorkshopServicesForVehicle(
   services: WorkshopServiceOffer[],
   criteria: VehicleSearchCriteria,
 ): WorkshopServiceOffer[] {
-  const requestedService = normalizeServiceName(criteria.service ?? "");
+  const serviceSearchRaw = (criteria.service ?? "").trim();
+  const legacyRequested = normalizeServiceName(serviceSearchRaw);
   const vehicleType = normalizeText(criteria.vehicleType);
   const brand = normalizeText(criteria.brand);
   const model = normalizeText(criteria.model);
-  const engine = normalizeText(criteria.engine);
-  const fuel = normalizeText(criteria.fuel);
+  const engine = normalizeText(criteria.engine ?? "");
+  const fuel = normalizeText(criteria.fuel ?? "");
+  const motorQueryRaw = [criteria.fuel, criteria.engine].filter(Boolean).join(" ").trim();
   const year = typeof criteria.year === "number" && Number.isFinite(criteria.year) ? criteria.year : null;
 
   const strictMatches = services.filter((service) => {
-    if (requestedService && !normalizeServiceName(service.service_name).includes(requestedService)) return false;
-    if (vehicleType && normalizeText(service.vehicle_type) !== vehicleType) return false;
+    if (
+      serviceSearchRaw &&
+      !serviceNameMatchesClientQuery(serviceSearchRaw, service.service_name) &&
+      !(legacyRequested && normalizeServiceName(service.service_name).includes(legacyRequested))
+    )
+      return false;
+    if (vehicleType && !vehicleTypesCompatible(service.vehicle_type, criteria.vehicleType ?? "")) return false;
     if (brand && normalizeText(service.brand) !== brand) return false;
     if (model && normalizeText(service.model) !== model) return false;
-    if (engine && !normalizeText(service.engine).includes(engine)) return false;
-    if (fuel && !normalizeText(service.fuelType).includes(fuel)) return false;
+    if (
+      normalizeText(motorQueryRaw) &&
+      !fuelsAndEngineCompatible(motorQueryRaw, service.engine, service.fuelType ?? "")
+    )
+      return false;
     if (year != null && !(service.year_from <= year && service.year_to >= year)) return false;
     return true;
   });
   if (strictMatches.length > 0) return strictMatches;
 
-  // Legacy fallback only when user did not select concrete vehicle details.
-  const hasConcreteVehicleData = Boolean(brand || model || engine || fuel || year != null);
+  // Bez pełnego dopasowania paliwa: pokaż tę samą usługę + auto (+ rocznik), żeby klient widział ofertę „do potwierdzenia”.
+  if (normalizeText(motorQueryRaw) && brand && model) {
+    const looseMotor = services.filter((service) => {
+      if (
+        serviceSearchRaw &&
+        !serviceNameMatchesClientQuery(serviceSearchRaw, service.service_name) &&
+        !(legacyRequested && normalizeServiceName(service.service_name).includes(legacyRequested))
+      )
+        return false;
+      if (vehicleType && !vehicleTypesCompatible(service.vehicle_type, criteria.vehicleType ?? "")) return false;
+      if (normalizeText(service.brand) !== brand) return false;
+      if (normalizeText(service.model) !== model) return false;
+      if (year != null && !(service.year_from <= year && service.year_to >= year)) return false;
+      return true;
+    });
+    if (looseMotor.length > 0) return looseMotor;
+  }
+
+  const hasConcreteVehicleData = Boolean(
+    brand || model || normalizeText(engine) || normalizeText(fuel) || year != null,
+  );
   if (hasConcreteVehicleData) return [];
 
-  if (requestedService) {
-    return services.filter((service) => normalizeServiceName(service.service_name).includes(requestedService));
+  if (legacyRequested) {
+    return services.filter(
+      (service) =>
+        serviceNameMatchesClientQuery(serviceSearchRaw, service.service_name) ||
+        normalizeServiceName(service.service_name).includes(legacyRequested),
+    );
   }
   return services;
 }

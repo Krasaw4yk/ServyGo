@@ -217,6 +217,7 @@ export default function WorkshopDetailsPage() {
   }, [searchParams]);
   const selectedVehicle = useMemo(
     () => ({
+      vehicleType: normalizeText(searchParams.get("vehicleType") ?? ""),
       brand: normalizeText(searchParams.get("brand") ?? ""),
       model: normalizeText(searchParams.get("model") ?? ""),
       year: Number.parseInt(searchParams.get("year") ?? "", 10),
@@ -239,13 +240,23 @@ export default function WorkshopDetailsPage() {
     if (!workshop) return [];
     return matchWorkshopServicesForVehicle(workshop.services, {
       service: requestedService,
+      vehicleType: selectedVehicle.vehicleType,
       brand: selectedVehicle.brand,
       model: selectedVehicle.model,
       year: Number.isFinite(selectedVehicle.year) ? selectedVehicle.year : null,
       engine: selectedVehicle.engine,
       fuel: selectedVehicle.fuel,
     });
-  }, [requestedService, selectedVehicle.brand, selectedVehicle.engine, selectedVehicle.fuel, selectedVehicle.model, selectedVehicle.year, workshop]);
+  }, [
+    requestedService,
+    selectedVehicle.brand,
+    selectedVehicle.engine,
+    selectedVehicle.fuel,
+    selectedVehicle.model,
+    selectedVehicle.vehicleType,
+    selectedVehicle.year,
+    workshop,
+  ]);
 
   const defaultService = useMemo(() => {
     if (!workshop) return null;
@@ -281,10 +292,12 @@ export default function WorkshopDetailsPage() {
       }).format(calendarMonthDate),
     [calendarMonthDate, locale],
   );
-  const todayStart = (() => {
+  // Stabilny timestamp (połówka dnia): nowy Date() przy każdym renderze zmieniałby tożsamość zależności
+  // useEffect (sloty kalendarza) i prowadził do „Maximum update depth exceeded”.
+  const todayStart = useMemo(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  })();
+  }, []);
 
   const calendarGrid = useMemo(() => {
     const firstDay = new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth(), 1);
@@ -321,7 +334,7 @@ export default function WorkshopDetailsPage() {
             const slots = await getAvailableSlots({
               workshopId: workshop.supabaseId,
               date: day.key,
-              serviceDurationMinutes: selectedService.duration_minutes,
+              serviceDurationMinutes: selectedService.duration_minutes ?? 60,
               employeeId: selectedEmployeeId === "any" ? null : selectedEmployeeId,
               requiredRoles: selectedService.required_roles ?? [],
             });
@@ -382,7 +395,7 @@ export default function WorkshopDetailsPage() {
     selectedService && effectiveSelectedTime
       ? inferEndTime(
           effectiveSelectedTime,
-          selectedService.duration_minutes + (workshop?.bufferMinutes ?? 0),
+          (selectedService.duration_minutes ?? 60) + (workshop?.bufferMinutes ?? 0),
         )
       : "";
 
@@ -397,7 +410,7 @@ export default function WorkshopDetailsPage() {
       const slots = await getAvailableSlots({
         workshopId: workshop.supabaseId,
         date: effectiveDateKey,
-        serviceDurationMinutes: selectedService.duration_minutes,
+        serviceDurationMinutes: selectedService.duration_minutes ?? 60,
         employeeId: selectedEmployeeId === "any" ? null : selectedEmployeeId,
         requiredRoles: selectedService.required_roles ?? [],
       });
@@ -420,7 +433,7 @@ export default function WorkshopDetailsPage() {
         },
         p_booking_date: effectiveDateKey,
         p_start_time: effectiveSelectedTime,
-        p_duration_minutes: selectedService.duration_minutes,
+        p_duration_minutes: selectedService.duration_minutes ?? 60,
         p_client_name: [selectedClient.firstName, selectedClient.lastName].filter(Boolean).join(" ").trim(),
         p_client_email: "",
         p_client_phone: "",
@@ -434,33 +447,37 @@ export default function WorkshopDetailsPage() {
         .eq("id", workshop.supabaseId)
         .maybeSingle();
       const ownerUserId = ((ownerRow as { owner_id?: string | null } | null)?.owner_id ?? null) as string | null;
-      await sendSystemMessage({
-        recipientId: ownerUserId,
-        recipientRole: "workshop",
-        subject: `Nowa rezerwacja: ${selectedService.service_name}`,
-        body: [
-          `Warsztat: ${workshop.name}`,
-          `Usługa: ${selectedService.service_name}`,
-          `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
-          "Status: Oczekuje na wycenę",
-        ].join("\n"),
-        relatedBookingId: typeof bookingId === "string" ? bookingId : null,
-        relatedWorkshopId: workshop.supabaseId,
-      });
-      await sendSystemMessage({
-        recipientId: currentUserId,
-        recipientRole: "client",
-        subject: `Potwierdzenie utworzenia rezerwacji: ${selectedService.service_name}`,
-        body: [
-          `Warsztat: ${workshop.name}`,
-          `Usługa: ${selectedService.service_name}`,
-          `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
-          "Status: Oczekuje na wycenę",
-          "Warsztat prześle ostateczną wycenę w osobnej wiadomości.",
-        ].join("\n"),
-        relatedBookingId: typeof bookingId === "string" ? bookingId : null,
-        relatedWorkshopId: workshop.supabaseId,
-      });
+      const bookingIdValue = typeof bookingId === "string" ? bookingId : null;
+      const notificationTasks = [
+        sendSystemMessage({
+          recipientId: ownerUserId,
+          recipientRole: "workshop",
+          subject: `Nowa rezerwacja: ${selectedService.service_name}`,
+          body: [
+            `Warsztat: ${workshop.name}`,
+            `Usługa: ${selectedService.service_name}`,
+            `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
+            "Status: Oczekuje na wycenę",
+          ].join("\n"),
+          relatedBookingId: bookingIdValue,
+          relatedWorkshopId: workshop.supabaseId,
+        }),
+        sendSystemMessage({
+          recipientId: currentUserId,
+          recipientRole: "client",
+          subject: `Potwierdzenie utworzenia rezerwacji: ${selectedService.service_name}`,
+          body: [
+            `Warsztat: ${workshop.name}`,
+            `Usługa: ${selectedService.service_name}`,
+            `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
+            "Status: Oczekuje na wycenę",
+            "Warsztat prześle ostateczną wycenę w osobnej wiadomości.",
+          ].join("\n"),
+          relatedBookingId: bookingIdValue,
+          relatedWorkshopId: workshop.supabaseId,
+        }),
+      ];
+      void Promise.allSettled(notificationTasks);
       void trackEvent("booking_confirm", {
         workshopId: workshop.supabaseId,
         workshopName: workshop.name,
@@ -472,8 +489,14 @@ export default function WorkshopDetailsPage() {
       const msg = e instanceof Error ? e.message : "";
       if (msg.includes("SLOT_CONFLICT") || msg.includes("SLOT_TAKEN")) {
         setBookingError("Ten termin został już zajęty. Wybierz inną godzinę.");
+      } else if (msg.includes("OUTSIDE_OPENING_HOURS")) {
+        setBookingError("Wybrana godzina jest poza godzinami pracy warsztatu.");
+      } else if (msg.includes("Not authenticated")) {
+        setBookingError("Zaloguj się ponownie i spróbuj jeszcze raz.");
+      } else if (msg.includes("Brak dostępnego pracownika")) {
+        setBookingError("Warsztat nie ma obecnie aktywnych pracowników do tego terminu.");
       } else {
-        setBookingError(t("workshopDetails.bookingSaveError"));
+        setBookingError(msg || t("workshopDetails.bookingSaveError"));
       }
     } finally {
       setBookingLoading(false);
@@ -1033,7 +1056,7 @@ export default function WorkshopDetailsPage() {
                     {bookingSuccess}
                   </p>
                   <Link
-                    href="#"
+                    href="/moje-rezerwacje"
                     className="inline-flex rounded-xl border border-blue-300/60 px-4 py-2 text-sm font-semibold transition hover:border-orange-300"
                   >
                     {t("workshopDetails.myBookings")}

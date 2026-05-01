@@ -7,8 +7,6 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
-import { resolveMessageViewerContext } from "@/lib/messagesApi";
-
 export default function MojeKontoPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -34,15 +32,6 @@ export default function MojeKontoPage() {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!alive) return;
       if (sessionData.session?.user) {
-        const context = await resolveMessageViewerContext(sessionData.session.user.id, sessionData.session.user.email);
-        if (context.role === "admin") {
-          router.replace("/admin");
-          return;
-        }
-        if (context.role === "workshop") {
-          router.replace("/workshop-panel");
-          return;
-        }
         setUser(sessionData.session.user);
         return;
       }
@@ -50,15 +39,6 @@ export default function MojeKontoPage() {
       if (!alive) return;
       if (!data.user) {
         router.replace("/?auth=login");
-        return;
-      }
-      const context = await resolveMessageViewerContext(data.user.id, data.user.email);
-      if (context.role === "admin") {
-        router.replace("/admin");
-        return;
-      }
-      if (context.role === "workshop") {
-        router.replace("/workshop-panel");
         return;
       }
       setUser(data.user);
