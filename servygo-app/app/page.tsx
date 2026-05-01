@@ -12,6 +12,8 @@ import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
 import UserCenterCards from "@/components/home/UserCenterCards";
 import UserDetailsSection from "@/components/home/UserDetailsSection";
+import ClientNotificationBell from "@/components/home/ClientNotificationBell";
+import { pickDashboardUpcomingBooking, resolveClientBookingBadge } from "@/lib/bookingStatusUi";
 import RecommendedWorkshopsSection from "@/components/home/RecommendedWorkshopsSection";
 import LandingCtaFooter from "@/components/home/LandingCtaFooter";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
@@ -34,7 +36,8 @@ import {
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
 import { trackEvent } from "@/lib/analytics";
-import { getUnreadMessagesCount, resolveMessageViewerContext } from "@/lib/messagesApi";
+import { resolveMessageViewerContext } from "@/lib/messagesApi";
+import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 type ActiveDropdown = "user" | "lang" | "theme" | null;
 type AuthModalType = "login" | "register" | null;
 type AccountTab = "profile" | "vehicles" | "security" | "messages";
@@ -195,12 +198,14 @@ export default function Home() {
   const [hasWorkshopPanelAccess, setHasWorkshopPanelAccess] = useState(false);
   const [dashboardBookingsCount, setDashboardBookingsCount] = useState(0);
   const [dashboardUpcomingBooking, setDashboardUpcomingBooking] = useState<{
+    id: string;
     workshop: string;
     service: string;
     date: string;
     time: string;
-    status: string;
     address: string;
+    badgeLabel: string;
+    badgeClassName: string;
   } | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loginIdentifier, setLoginIdentifier] = useState("");
@@ -388,7 +393,9 @@ export default function Home() {
     void (async () => {
       const { data, error } = await supabase
         .from("bookings")
-        .select("id, workshop_name, service_name, booking_date, start_time, status")
+        .select(
+          "id, workshop_name, service_name, booking_date, start_time, end_time, duration_minutes, status, quote_status, reschedule_status, proposed_by",
+        )
         .eq("user_id", currentUser.id)
         .order("booking_date", { ascending: true })
         .order("start_time", { ascending: true })
@@ -399,36 +406,49 @@ export default function Home() {
         setDashboardUpcomingBooking(null);
         return;
       }
-      const rows = (data as {
-        workshop_name: string | null;
-        service_name: string | null;
-        booking_date: string | null;
-        start_time: string | null;
-        status: string | null;
-      }[] | null) ?? [];
+      const rows =
+        (data as {
+          id: string;
+          workshop_name: string | null;
+          service_name: string | null;
+          booking_date: string | null;
+          start_time: string | null;
+          end_time: string | null;
+          duration_minutes: number | null;
+          status: string | null;
+          quote_status: string | null;
+          reschedule_status: string | null;
+          proposed_by: string | null;
+        }[] | null) ?? [];
       setDashboardBookingsCount(rows.length);
-      const nowKey = toLocalDateKey(new Date());
-      const upcoming =
-        rows.find((row) => row.booking_date && row.booking_date >= nowKey) ??
-        rows[0] ??
-        null;
+      const upcoming = pickDashboardUpcomingBooking(rows);
+      const dark = theme === "dark";
       if (!upcoming) {
         setDashboardUpcomingBooking(null);
       } else {
+        const badge = resolveClientBookingBadge({
+          status: upcoming.status,
+          quoteStatus: upcoming.quote_status,
+          rescheduleStatus: upcoming.reschedule_status,
+          proposedBy: upcoming.proposed_by,
+          isDark: dark,
+        });
         setDashboardUpcomingBooking({
+          id: upcoming.id,
           workshop: upcoming.workshop_name ?? "Warsztat ServyGo",
           service: upcoming.service_name ?? "Usługa serwisowa",
           date: upcoming.booking_date ?? "—",
           time: (upcoming.start_time ?? "").slice(0, 5) || "—",
-          status: upcoming.status ?? "awaiting_quote",
           address: "Adres warsztatu dostępny po otwarciu szczegółów",
+          badgeLabel: badge.label,
+          badgeClassName: badge.className,
         });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
+  }, [currentUser, theme]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -440,7 +460,7 @@ export default function Home() {
     void (async () => {
       try {
         const context = await resolveMessageViewerContext(currentUser.id, currentUser.email);
-        const unread = await getUnreadMessagesCount(currentUser.id, context.isAdminOrOwner);
+        const unread = await getUnifiedUnreadCount(currentUser.id, context.isAdminOrOwner);
         if (cancelled) return;
         setAccountUnreadMessages(unread);
         setAccountViewerRole(context.role);
@@ -938,14 +958,15 @@ export default function Home() {
     };
   }
 
-  const loadAccountData = useCallback(async () => {
-    if (!supabase || !currentUser) return;
+  const loadAccountData = useCallback(async (forUser?: User | null) => {
+    const user = forUser ?? currentUser;
+    if (!supabase || !user) return;
 
     setAccountLoading(true);
     setAccountError("");
 
     try {
-      const metadata = (currentUser.user_metadata ?? {}) as Record<string, unknown>;
+      const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
       const metadataFirstName = typeof metadata.first_name === "string" ? metadata.first_name : "";
       const metadataLastName = typeof metadata.last_name === "string" ? metadata.last_name : "";
       const metadataFullName = typeof metadata.full_name === "string" ? metadata.full_name.trim() : "";
@@ -953,28 +974,28 @@ export default function Home() {
       const fullNameLast = fullNameRest.join(" ").trim();
       const metadataPhone = typeof metadata.phone === "string" ? metadata.phone : "";
 
-      let profile = await getUserProfile(currentUser.id);
+      let profile = await getUserProfile(user.id);
       if (!profile) {
-        profile = await upsertUserProfile(currentUser.id, {
+        profile = await upsertUserProfile(user.id, {
           first_name: pickFirstNonEmpty(metadataFirstName, fullNameFirst),
           last_name: pickFirstNonEmpty(metadataLastName, fullNameLast),
-          email: currentUser.email ?? null,
+          email: user.email ?? null,
           phone: metadataPhone,
           country: "",
           city: "",
         });
       }
 
-      const cars = await getUserCars(currentUser.id);
+      const cars = await getUserCars(user.id);
       setProfileDraft({
         firstName: pickFirstNonEmpty(profile.first_name ?? undefined, metadataFirstName, fullNameFirst),
         lastName: pickFirstNonEmpty(profile.last_name ?? undefined, metadataLastName, fullNameLast),
-        email: pickFirstNonEmpty(currentUser.email),
+        email: pickFirstNonEmpty(user.email),
         phone: pickFirstNonEmpty(profile.phone ?? undefined, metadataPhone),
         country: profile.country ?? "",
         city: profile.city ?? "",
       });
-      setSecurityEmailDraft(currentUser.email ?? "");
+      setSecurityEmailDraft(user.email ?? "");
       setSecurityPhoneDraft(pickFirstNonEmpty(profile.phone ?? undefined, metadataPhone));
       setVehicles(cars.map(mapCarToStored));
     } catch (error) {
@@ -984,6 +1005,37 @@ export default function Home() {
       setAccountLoading(false);
     }
   }, [currentUser, t]);
+
+  const loadAccountDataRef = useRef(loadAccountData);
+  loadAccountDataRef.current = loadAccountData;
+
+  const vehiclesDeepLinkHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (!mounted || vehiclesDeepLinkHandledRef.current) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("account") !== "vehicles") return;
+
+    void (async () => {
+      if (!supabase || !isSupabaseConfigured) return;
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        setAuthModal("login");
+        router.replace("/", { scroll: false });
+        return;
+      }
+      vehiclesDeepLinkHandledRef.current = true;
+      setCurrentUser(data.user);
+      setAccountModalOpen(true);
+      setAccountTab("vehicles");
+      setAccountError("");
+      setAccountInfo("");
+      setActiveDropdown(null);
+      void loadAccountDataRef.current(data.user);
+      router.replace("/", { scroll: false });
+    })();
+  }, [mounted, router]);
 
   useEffect(() => {
     if (!mounted || !currentUser) return;
@@ -1552,9 +1604,9 @@ export default function Home() {
       <div className={pageMeshClass} />
       <div className={pageNoiseClass} />
       <div className={pagePatternClass} />
-      <main className="relative z-0 mx-auto w-full max-w-[1700px] px-4 py-5 sm:px-8 sm:py-9 lg:px-10">
+      <main className="relative z-0 mx-auto w-full max-w-[1760px] px-4 py-5 sm:px-6 sm:py-9 lg:px-8 2xl:px-10">
         <section
-          className="relative isolate mx-auto max-w-[1400px] overflow-visible px-4 pb-8 pt-0 sm:max-w-[1400px] sm:px-6 sm:pb-10 xl:max-w-[1500px] lg:px-8"
+          className="relative isolate w-full overflow-visible px-0 pb-8 pt-0 sm:pb-10"
         >
           <div
             ref={headerRef}
@@ -1651,6 +1703,18 @@ export default function Home() {
                           </span>
                           <span>
                             <span className="block text-sm font-semibold">Moje rezerwacje</span>
+                          </span>
+                        </Link>
+                        <Link
+                          href="/moj-kalendarz"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
+                        >
+                          <span className="mt-1 text-blue-400">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 2v4m8-4v4m4 8v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10"/><path d="M20 10V8l-2-4H6L4 8v2"/><circle cx="12" cy="14" r="1"/></svg>
+                          </span>
+                          <span>
+                            <span className="block text-sm font-semibold">Mój kalendarz</span>
                           </span>
                         </Link>
                         <Link
@@ -1822,16 +1886,19 @@ export default function Home() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  className={triggerButtonClass}
-                  aria-label="Powiadomienia"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M15 17h5l-1.4-1.6A2 2 0 0 1 18 14v-3a6 6 0 1 0-12 0v3a2 2 0 0 1-.6 1.4L4 17h5" />
-                    <path d="M10 17a2 2 0 0 0 4 0" />
-                  </svg>
-                </button>
+                {currentUser ? (
+                  <div className="relative z-[1002]">
+                    <ClientNotificationBell
+                      userId={currentUser.id}
+                      userEmail={currentUser.email}
+                      isDark={isDark}
+                      unreadCount={accountUnreadMessages}
+                      messagesHref={accountViewerRole === "workshop" ? "/workshop-panel" : "/moje-wiadomosci"}
+                      buttonClassName={triggerButtonClass}
+                      onUnreadCountChange={setAccountUnreadMessages}
+                    />
+                  </div>
+                ) : null}
 
                 {!currentUser ? (
                   <>
@@ -1877,6 +1944,9 @@ export default function Home() {
                       ) : null}
                       <Link href="/moje-rezerwacje" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
                         Moje rezerwacje
+                      </Link>
+                      <Link href="/moj-kalendarz" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                        Mój kalendarz
                       </Link>
                       <Link href="/ustawienia" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
                         Ustawienia
@@ -2153,7 +2223,7 @@ export default function Home() {
               onSubmit={handleSubmit}
               className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
             >
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{t("form.labels.vehicleType")}</span>
                 <AutocompleteSelect
                   value={vehicleType}
@@ -2181,9 +2251,9 @@ export default function Home() {
                 {searchFieldErrors.vehicleType ? (
                   <p className={searchFieldErrorHintClass}>{searchFieldErrors.vehicleType}</p>
                 ) : null}
-              </label>
+              </div>
 
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{t("form.labels.brand")}</span>
                 <AutocompleteSelect
                   name="brand"
@@ -2206,9 +2276,9 @@ export default function Home() {
                 {searchFieldErrors.brand ? (
                   <p className={searchFieldErrorHintClass}>{searchFieldErrors.brand}</p>
                 ) : null}
-              </label>
+              </div>
 
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{t("form.labels.model")}</span>
                 <AutocompleteSelect
                   name="model"
@@ -2228,9 +2298,9 @@ export default function Home() {
                 {searchFieldErrors.model ? (
                   <p className={searchFieldErrorHintClass}>{searchFieldErrors.model}</p>
                 ) : null}
-              </label>
+              </div>
 
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{t("form.labels.year")}</span>
                 <AutocompleteSelect
                   name="year"
@@ -2249,9 +2319,9 @@ export default function Home() {
                 {searchFieldErrors.year ? (
                   <p className={searchFieldErrorHintClass}>{searchFieldErrors.year}</p>
                 ) : null}
-              </label>
+              </div>
 
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{translatedFuelLabel}</span>
                 <AutocompleteSelect
                   name="fuel"
@@ -2273,9 +2343,9 @@ export default function Home() {
                 {searchFieldErrors.fuel ? (
                   <p className={searchFieldErrorHintClass}>{searchFieldErrors.fuel}</p>
                 ) : null}
-              </label>
+              </div>
 
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">{translatedServiceLabel}</span>
                 <ServiceCategoryPicker
                   value={service}
@@ -2296,7 +2366,7 @@ export default function Home() {
                 {searchFieldErrors.service ? (
                   <p className={searchFieldErrorHintClass}>{searchFieldErrors.service}</p>
                 ) : null}
-              </label>
+              </div>
 
               <label className="flex flex-col gap-2 md:col-span-2 xl:col-span-3">
                 <span className="text-sm font-medium">{t("form.labels.problem")}</span>
@@ -2314,7 +2384,6 @@ export default function Home() {
                   <input
                     type="text"
                     name="city"
-                    required
                     value={searchCity}
                     onChange={(event) => {
                       clearSearchFieldError("city");
@@ -2551,7 +2620,7 @@ export default function Home() {
                       { key: "profile", label: t("account.tabs.profile") },
                       { key: "vehicles", label: t("account.tabs.vehicles") },
                       { key: "security", label: t("account.tabs.security") },
-                      { key: "messages", label: `Skrzynka${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
+                      { key: "messages", label: `Powiadomienia${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
                     ] as { key: AccountTab; label: string }[]).map((tab) => (
                       <button
                         key={tab.key}

@@ -63,9 +63,19 @@ function mapInternalMessages(
     const senderProfile = row.sender_id ? profileMap.get(row.sender_id) : undefined;
     const recipientProfile = row.recipient_id ? profileMap.get(row.recipient_id) : undefined;
     const workshopName = row.related_workshop_id ? workshopMap.get(row.related_workshop_id) : null;
+
+    let senderLabel: string;
+    if (row.sender_role === "system") {
+      senderLabel = "Wiadomość systemowa";
+    } else if (row.sender_role === "workshop") {
+      senderLabel = workshopName?.trim() ? `Warsztat: ${workshopName.trim()}` : "Warsztat";
+    } else {
+      senderLabel = profileLabel(senderProfile, workshopName ?? roleLabel(row.sender_role));
+    }
+
     return {
       ...row,
-      sender_label: profileLabel(senderProfile, workshopName ?? roleLabel(row.sender_role)),
+      sender_label: senderLabel,
       recipient_label: profileLabel(recipientProfile, roleLabel(row.recipient_role)),
     };
   });
@@ -152,6 +162,30 @@ export async function markMessageAsRead(messageId: string): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
   const { error } = await supabase.rpc("mark_message_as_read", { p_message_id: messageId });
   if (error) throw new Error(formatSupabaseError(error));
+}
+
+/** Wszystkie wiadomości w wątku rezerwacji (odebrane + wysłane), chronologicznie. */
+export async function getBookingThreadMessages(
+  userId: string,
+  bookingId: string,
+  includeAllForAdmin = false,
+): Promise<InternalMessage[]> {
+  const [inboxRows, sentRows] = await Promise.all([
+    getInboxMessages(userId, includeAllForAdmin),
+    getSentMessages(userId),
+  ]);
+  const map = new Map<string, InternalMessage>();
+  for (const m of [...inboxRows, ...sentRows]) {
+    if (m.related_booking_id === bookingId) map.set(m.id, m);
+  }
+  return Array.from(map.values()).sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+/** Oznacza jako przeczytane wszystkie wiadomości w wątku rezerwacji, gdzie użytkownik jest odbiorcą. */
+export async function markBookingThreadMessagesRead(userId: string, bookingId: string): Promise<void> {
+  const msgs = await getBookingThreadMessages(userId, bookingId, false);
+  const unread = msgs.filter((m) => !m.is_read && m.recipient_id === userId);
+  await Promise.all(unread.map((m) => markMessageAsRead(m.id)));
 }
 
 export async function getUnreadMessagesCount(userId: string, includeAllForAdmin = false): Promise<number> {
@@ -245,4 +279,47 @@ export async function respondToBookingReschedule(bookingId: string, accept: bool
   });
   if (error) throw new Error(formatSupabaseError(error));
   return data === "confirmed" ? "confirmed" : "rejected";
+}
+
+/** Anulacja przez klienta + powiadomienie `user_notifications` dla warsztatu (RPC supabase-39). */
+export async function clientCancelVisitWithNotice(bookingId: string, reason?: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { error } = await supabase.rpc("client_cancel_visit_with_notice", {
+    p_booking_id: bookingId,
+    p_reason: reason?.trim() ?? "",
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+/** Klient proponuje nowy termin — `pending_workshop_decision`, bez zmiany głównej daty (RPC supabase-39). */
+export async function clientProposeBookingReschedule(
+  bookingId: string,
+  newBookingDate: string,
+  newStartTimeHHmm: string,
+  note?: string,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const t = newStartTimeHHmm.trim().length <= 5 ? `${newStartTimeHHmm.trim()}:00` : newStartTimeHHmm.trim();
+  const { error } = await supabase.rpc("client_propose_booking_reschedule", {
+    p_booking_id: bookingId,
+    p_new_booking_date: newBookingDate,
+    p_new_start_time: t,
+    p_note: note?.trim() ?? "",
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+/** Warsztat akceptuje lub odrzuca propozycję terminu od klienta (RPC supabase-39). */
+export async function workshopRespondClientReschedule(
+  bookingId: string,
+  accept: boolean,
+): Promise<"accepted" | "rejected"> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { data, error } = await supabase.rpc("workshop_respond_client_reschedule", {
+    p_booking_id: bookingId,
+    p_accept: accept,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+  const r = String(data ?? "").toLowerCase();
+  return r === "accepted" ? "accepted" : "rejected";
 }

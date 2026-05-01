@@ -27,6 +27,13 @@ type SearchResult = {
   serviceName?: string;
 };
 
+type BrowseRow =
+  | { kind: "back"; variant: "from-services" | "from-subcats" }
+  | { kind: "category"; category: ServiceCategory }
+  | { kind: "subcategory"; subcategoryName: string }
+  | { kind: "service"; serviceName: string }
+  | { kind: "search"; result: SearchResult };
+
 function normalizeSearchText(value: string) {
   return normalizeServiceTextForMatch(value);
 }
@@ -64,6 +71,7 @@ export default function ServiceCategoryPicker({
   noResultsText = "Brak wyników",
 }: ServiceCategoryPickerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -71,7 +79,37 @@ export default function ServiceCategoryPicker({
   const [isMobile, setIsMobile] = useState(false);
   const [mobileCustomOpen, setMobileCustomOpen] = useState(false);
   const [customServiceDraft, setCustomServiceDraft] = useState("");
+  const [browseHighlightIdx, setBrowseHighlightIdx] = useState(-1);
   const prevSheetOpenRef = useRef(false);
+
+  /** Document outside-click may fire in the same gesture as drilling into categories; reinforce stay-open while navigating */
+  function keepPickerOpen() {
+    queueMicrotask(() => setIsOpen(true));
+  }
+
+  function closePicker(blurInput = false) {
+    setIsOpen(false);
+    setQuery("");
+    if (blurInput) {
+      inputRef.current?.blur();
+    }
+  }
+
+  function handleFinalServiceSelection(serviceName: string) {
+    onChange(serviceName);
+    closePicker(true);
+  }
+
+  function handleCategoryDrill(categoryName: string, subcategories: { name: string }[]) {
+    setActiveCategory(categoryName);
+    setActiveSubcategory(subcategories.length === 1 ? (subcategories[0]?.name ?? null) : null);
+    keepPickerOpen();
+  }
+
+  function handleSubcategoryDrill(subcategoryName: string) {
+    setActiveSubcategory(subcategoryName);
+    keepPickerOpen();
+  }
 
   const displayValue = isOpen ? query : value;
   const sortedCategories = useMemo(
@@ -174,13 +212,116 @@ export default function ServiceCategoryPicker({
       });
   }, [query, sortedCategories]);
 
+  const normalizedBrowseQuery = useMemo(() => normalizeSearchText(query), [query]);
+
+  function applySearchResult(result: SearchResult) {
+    if (result.type === "category") {
+      const cat = sortedCategories.find((c) => c.name === result.categoryName);
+      if (cat) {
+        handleCategoryDrill(cat.name, cat.subcategories);
+      } else {
+        setActiveCategory(result.categoryName);
+        setActiveSubcategory(null);
+        keepPickerOpen();
+      }
+      setQuery("");
+      return;
+    }
+    if (result.type === "subcategory") {
+      setActiveCategory(result.categoryName);
+      setActiveSubcategory(result.subcategoryName ?? null);
+      setQuery("");
+      keepPickerOpen();
+      return;
+    }
+    handleFinalServiceSelection(result.serviceName ?? "");
+  }
+
+  const browseRows = useMemo((): BrowseRow[] => {
+    if (normalizedBrowseQuery) {
+      return searchResults.map((r) => ({ kind: "search" as const, result: r }));
+    }
+    if (selectedSubcategory) {
+      const rows: BrowseRow[] = [
+        { kind: "back", variant: "from-services" },
+        ...selectedSubcategory.services.map((s) => ({ kind: "service" as const, serviceName: s.name })),
+      ];
+      return rows;
+    }
+    if (selectedCategory) {
+      return [
+        { kind: "back", variant: "from-subcats" },
+        ...selectedCategory.subcategories.map((sub) => ({
+          kind: "subcategory" as const,
+          subcategoryName: sub.name,
+        })),
+      ];
+    }
+    return sortedCategories.map((c) => ({ kind: "category" as const, category: c }));
+  }, [
+    normalizedBrowseQuery,
+    searchResults,
+    selectedCategory,
+    selectedSubcategory,
+    sortedCategories,
+  ]);
+
+  function activateBrowseRow(row: BrowseRow) {
+    switch (row.kind) {
+      case "back":
+        if (row.variant === "from-services") {
+          if (hasSingleSubcategory) {
+            setActiveSubcategory(null);
+            setActiveCategory(null);
+          } else {
+            setActiveSubcategory(null);
+          }
+          keepPickerOpen();
+          return;
+        }
+        setActiveCategory(null);
+        keepPickerOpen();
+        return;
+      case "category":
+        handleCategoryDrill(row.category.name, row.category.subcategories);
+        return;
+      case "subcategory":
+        handleSubcategoryDrill(row.subcategoryName);
+        return;
+      case "service":
+        handleFinalServiceSelection(row.serviceName);
+        return;
+      case "search":
+        applySearchResult(row.result);
+        return;
+      default:
+        return;
+    }
+  }
+
+  useEffect(() => {
+    setBrowseHighlightIdx(-1);
+  }, [normalizedBrowseQuery, activeCategory, activeSubcategory]);
+
+  useEffect(() => {
+    if (isMobile || !isOpen || browseHighlightIdx < 0) return;
+    const rowEl = rootRef.current?.querySelector<HTMLElement>(
+      `[data-browse-row-index="${browseHighlightIdx}"]`,
+    );
+    rowEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [browseHighlightIdx, isOpen, isMobile, normalizedBrowseQuery, activeCategory, activeSubcategory]);
+
   return (
     <div ref={rootRef} className="relative w-full">
       <input
+        ref={inputRef}
         value={displayValue}
         readOnly={isMobile}
         disabled={disabled}
         onFocus={() => {
+          // Keep focus neutral. Open picker on explicit click/tap.
+        }}
+        onClick={() => {
           if (disabled) return;
           if (!query) {
             setQuery(value);
@@ -199,8 +340,44 @@ export default function ServiceCategoryPicker({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            setIsOpen(false);
-            setQuery("");
+            closePicker(true);
+            return;
+          }
+          if (event.key === "Enter") {
+            if (event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            if (isMobile) return;
+            if (!isOpen) return;
+            if (browseHighlightIdx < 0 || browseHighlightIdx >= browseRows.length) return;
+            activateBrowseRow(browseRows[browseHighlightIdx]);
+            return;
+          }
+          if (isMobile) return;
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            if (!isOpen) {
+              setIsOpen(true);
+              if (!query) {
+                setQuery(value);
+              }
+            }
+            setBrowseHighlightIdx((prev) => {
+              const max = browseRows.length - 1;
+              if (max < 0) return -1;
+              if (prev < 0) return 0;
+              return prev >= max ? 0 : prev + 1;
+            });
+            return;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            if (!isOpen) return;
+            setBrowseHighlightIdx((prev) => {
+              const max = browseRows.length - 1;
+              if (max < 0) return -1;
+              if (prev < 0) return max;
+              return prev <= 0 ? max : prev - 1;
+            });
           }
         }}
         placeholder={placeholder}
@@ -210,6 +387,7 @@ export default function ServiceCategoryPicker({
       <button
         type="button"
         disabled={disabled}
+        onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           if (disabled) return;
           setIsOpen((prev) => !prev);
@@ -228,8 +406,7 @@ export default function ServiceCategoryPicker({
         <MobileBottomSheet
           isOpen={isOpen}
           onClose={() => {
-            setIsOpen(false);
-            setQuery("");
+            closePicker();
             setMobileCustomOpen(false);
             setCustomServiceDraft("");
           }}
@@ -247,6 +424,9 @@ export default function ServiceCategoryPicker({
                   onMouseDown={(event) => event.stopPropagation()}
                   onTouchStart={(event) => event.stopPropagation()}
                   onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.preventDefault();
+                  }}
                   placeholder={placeholder}
                   className={`w-full rounded-xl border px-3 py-2 text-sm ${
                     isDark
@@ -259,6 +439,7 @@ export default function ServiceCategoryPicker({
               <div className="space-y-3">
                 <button
                   type="button"
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setMobileCustomOpen(false);
                     setCustomServiceDraft("");
@@ -274,6 +455,9 @@ export default function ServiceCategoryPicker({
                   onMouseDown={(event) => event.stopPropagation()}
                   onTouchStart={(event) => event.stopPropagation()}
                   onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.preventDefault();
+                  }}
                   placeholder="Opisz usługę..."
                   className={`w-full rounded-xl border px-3 py-2 text-sm ${
                     isDark
@@ -283,12 +467,12 @@ export default function ServiceCategoryPicker({
                 />
                 <button
                   type="button"
-                  onClick={() => {
+                  onMouseDown={(event) => {
+                    event.preventDefault();
                     const next = customServiceDraft.trim();
                     if (!next) return;
                     onChange(next);
-                    setIsOpen(false);
-                    setQuery("");
+                    closePicker(true);
                     setMobileCustomOpen(false);
                     setCustomServiceDraft("");
                   }}
@@ -304,12 +488,12 @@ export default function ServiceCategoryPicker({
                 {value ? (
                   <button
                     type="button"
-                    onClick={() => {
+                    onMouseDown={(event) => {
+                      event.preventDefault();
                       onChange("");
                       setActiveCategory(null);
                       setActiveSubcategory(null);
-                      setQuery("");
-                      setIsOpen(false);
+                      closePicker(true);
                     }}
                     className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
                       isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-700"
@@ -321,6 +505,7 @@ export default function ServiceCategoryPicker({
                 {!normalizeSearchText(query) ? (
                   <button
                     type="button"
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
                       setActiveCategory(null);
                       setActiveSubcategory(null);
@@ -348,22 +533,9 @@ export default function ServiceCategoryPicker({
                         <button
                           key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
                           type="button"
-                          onClick={() => {
-                            if (result.type === "category") {
-                              setActiveCategory(result.categoryName);
-                              setActiveSubcategory(null);
-                              setQuery("");
-                              return;
-                            }
-                            if (result.type === "subcategory") {
-                              setActiveCategory(result.categoryName);
-                              setActiveSubcategory(result.subcategoryName ?? null);
-                              setQuery("");
-                              return;
-                            }
-                            onChange(result.serviceName ?? "");
-                            setQuery("");
-                            setIsOpen(false);
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            applySearchResult(result);
                           }}
                           className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
                         >
@@ -375,13 +547,9 @@ export default function ServiceCategoryPicker({
                     <>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (hasSingleSubcategory) {
-                            setActiveSubcategory(null);
-                            setActiveCategory(null);
-                            return;
-                          }
-                          setActiveSubcategory(null);
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          activateBrowseRow({ kind: "back", variant: "from-services" });
                         }}
                         className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-xs font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
                       >
@@ -391,10 +559,9 @@ export default function ServiceCategoryPicker({
                         <button
                           key={`${selectedSubcategory.name}-${service.name}`}
                           type="button"
-                          onClick={() => {
-                            onChange(service.name);
-                            setIsOpen(false);
-                            setQuery("");
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            handleFinalServiceSelection(service.name);
                           }}
                           className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
                         >
@@ -407,7 +574,10 @@ export default function ServiceCategoryPicker({
                     <>
                       <button
                         type="button"
-                        onClick={() => setActiveCategory(null)}
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          activateBrowseRow({ kind: "back", variant: "from-subcats" });
+                        }}
                         className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-xs font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
                       >
                         ← Wróć
@@ -416,7 +586,10 @@ export default function ServiceCategoryPicker({
                         <button
                           key={`${selectedCategory.name}-${subcategory.name}`}
                           type="button"
-                          onClick={() => setActiveSubcategory(subcategory.name)}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            handleSubcategoryDrill(subcategory.name);
+                          }}
                           className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
                         >
                           {subcategory.name}
@@ -428,13 +601,9 @@ export default function ServiceCategoryPicker({
                       <button
                         key={category.name}
                         type="button"
-                        onClick={() => {
-                          setActiveCategory(category.name);
-                          if (category.subcategories.length === 1) {
-                            setActiveSubcategory(category.subcategories[0]?.name ?? null);
-                          } else {
-                            setActiveSubcategory(null);
-                          }
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          handleCategoryDrill(category.name, category.subcategories);
                         }}
                         className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
                       >
@@ -450,142 +619,141 @@ export default function ServiceCategoryPicker({
 
       {isOpen && !isMobile ? (
         <div
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
           className={`absolute left-0 top-full z-30 mt-2 max-h-[min(260px,60vh)] w-full max-w-[min(100%,92vw)] overflow-y-auto overscroll-contain rounded-xl border p-1 backdrop-blur-xl [-webkit-overflow-scrolling:touch] [touch-action:pan-y] sm:right-0 sm:max-w-none ${
             isDark
               ? "border-blue-400/25 bg-zinc-900/95 shadow-[0_14px_34px_rgba(2,6,23,0.72),0_0_24px_rgba(59,130,246,0.28)]"
               : "border-blue-200/70 bg-white/95 shadow-[0_18px_40px_rgba(37,99,235,0.2),0_0_22px_rgba(249,115,22,0.18)]"
           }`}
         >
-          {normalizeSearchText(query) ? (
-            searchResults.length === 0 ? (
-              <p className={`px-3 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
-            ) : (
-              searchResults.map((result) => (
-                <button
-                  key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
-                  type="button"
-                  onClick={() => {
-                    if (result.type === "category") {
-                      setActiveCategory(result.categoryName);
-                      setActiveSubcategory(null);
-                      setQuery("");
-                      return;
-                    }
-                    if (result.type === "subcategory") {
-                      setActiveCategory(result.categoryName);
-                      setActiveSubcategory(result.subcategoryName ?? null);
-                      setQuery("");
-                      return;
-                    }
-                    onChange(result.serviceName ?? "");
-                    setQuery("");
-                    setIsOpen(false);
-                  }}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                    isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
-                  }`}
-                >
-                  <span className="block font-medium">{result.label}</span>
-                  <span className={`block text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                    {result.type === "category"
-                      ? "Kategoria"
-                      : result.type === "subcategory"
-                        ? `${result.categoryName} -> podkategoria`
-                        : `${result.categoryName} -> ${result.subcategoryName ?? ""}`}
-                  </span>
-                </button>
-              ))
-            )
-          ) : selectedSubcategory ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  if (hasSingleSubcategory) {
-                    setActiveSubcategory(null);
-                    setActiveCategory(null);
-                    return;
-                  }
-                  setActiveSubcategory(null);
-                }}
-                className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
-                  isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"
-                }`}
-              >
-                ← {hasSingleSubcategory ? "Kategorie" : "Podkategorie"}
-              </button>
-              {selectedSubcategory.services.map((service) => (
-                <button
-                  key={`${selectedSubcategory.name}-${service.name}`}
-                  type="button"
-                  onClick={() => {
-                    onChange(service.name);
-                    setIsOpen(false);
-                    setQuery("");
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
-                    isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
-                  }`}
-                >
-                  <span>{service.name}</span>
-                  {value === service.name ? (
-                    <svg
-                      viewBox="0 0 20 20"
-                      className={`h-4 w-4 ${isDark ? "text-blue-300" : "text-blue-600"}`}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="m4 10 4 4 8-8" />
-                    </svg>
-                  ) : null}
-                </button>
-              ))}
-            </>
-          ) : selectedCategory ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setActiveCategory(null)}
-                className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
-                  isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"
-                }`}
-              >
-                ← Kategorie
-              </button>
-              {selectedCategory.subcategories.map((subcategory) => (
-                <button
-                  key={`${selectedCategory.name}-${subcategory.name}`}
-                  type="button"
-                  onClick={() => setActiveSubcategory(subcategory.name)}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                    isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
-                  }`}
-                >
-                  {subcategory.name}
-                </button>
-              ))}
-            </>
+          {normalizedBrowseQuery && searchResults.length === 0 ? (
+            <p className={`px-3 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
           ) : (
-            sortedCategories.map((category) => (
-              <button
-                key={category.name}
-                type="button"
-                onClick={() => {
-                  setActiveCategory(category.name);
-                  if (category.subcategories.length === 1) {
-                    setActiveSubcategory(category.subcategories[0]?.name ?? null);
-                  } else {
-                    setActiveSubcategory(null);
-                  }
-                }}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                  isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
-                }`}
-              >
-                {category.name}
-              </button>
-            ))
+            browseRows.map((row, idx) => {
+              const hi = browseHighlightIdx === idx;
+              const hiCls = hi
+                ? isDark
+                  ? "bg-zinc-800/90 ring-2 ring-inset ring-blue-400/55"
+                  : "bg-blue-50 ring-2 ring-inset ring-blue-500/45"
+                : "";
+
+              if (row.kind === "search") {
+                const result = row.result;
+                return (
+                  <button
+                    key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
+                    type="button"
+                    data-browse-row-index={idx}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      activateBrowseRow(row);
+                    }}
+                    className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
+                      isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
+                    } ${hiCls}`}
+                  >
+                    <span className="block font-medium">{result.label}</span>
+                    <span className={`block text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                      {result.type === "category"
+                        ? "Kategoria"
+                        : result.type === "subcategory"
+                          ? `${result.categoryName} -> podkategoria`
+                          : `${result.categoryName} -> ${result.subcategoryName ?? ""}`}
+                    </span>
+                  </button>
+                );
+              }
+
+              if (row.kind === "back") {
+                const label =
+                  row.variant === "from-services"
+                    ? `← ${hasSingleSubcategory ? "Kategorie" : "Podkategorie"}`
+                    : "← Kategorie";
+                return (
+                  <button
+                    key={`back-desktop-${row.variant}-${idx}`}
+                    type="button"
+                    data-browse-row-index={idx}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      activateBrowseRow(row);
+                    }}
+                    className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
+                      isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"
+                    } ${hiCls}`}
+                  >
+                    {label}
+                  </button>
+                );
+              }
+
+              if (row.kind === "service") {
+                return (
+                  <button
+                    key={`${selectedSubcategory?.name ?? "sub"}-${row.serviceName}-${idx}`}
+                    type="button"
+                    data-browse-row-index={idx}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      activateBrowseRow(row);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                      isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
+                    } ${hiCls}`}
+                  >
+                    <span>{row.serviceName}</span>
+                    {value === row.serviceName ? (
+                      <svg
+                        viewBox="0 0 20 20"
+                        className={`h-4 w-4 ${isDark ? "text-blue-300" : "text-blue-600"}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="m4 10 4 4 8-8" />
+                      </svg>
+                    ) : null}
+                  </button>
+                );
+              }
+
+              if (row.kind === "subcategory") {
+                return (
+                  <button
+                    key={`${selectedCategory?.name ?? "cat"}-${row.subcategoryName}-${idx}`}
+                    type="button"
+                    data-browse-row-index={idx}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      activateBrowseRow(row);
+                    }}
+                    className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
+                      isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
+                    } ${hiCls}`}
+                  >
+                    {row.subcategoryName}
+                  </button>
+                );
+              }
+
+              return (
+                <button
+                  key={`cat-desktop-${row.category.name}-${idx}`}
+                  type="button"
+                  data-browse-row-index={idx}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    activateBrowseRow(row);
+                  }}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
+                    isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
+                  } ${hiCls}`}
+                >
+                  {row.category.name}
+                </button>
+              );
+            })
           )}
         </div>
       ) : null}

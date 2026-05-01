@@ -1,8 +1,37 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type BuildMeta = {
+  display?: string;
+  semver?: string;
+  build?: number;
+};
+
 type LandingCtaFooterProps = {
   isDark: boolean;
 };
 
 export default function LandingCtaFooter({ isDark }: LandingCtaFooterProps) {
+  const [versionLine, setVersionLine] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/build-meta.json", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: BuildMeta | null) => {
+        if (cancelled || !data) return;
+        const v = typeof data.display === "string" && data.display.trim() ? data.display.trim() : data.semver ?? "";
+        setVersionLine(v ? `Wersja ${v}` : "");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const year = new Date().getFullYear();
+
   return (
     <>
       <section className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -26,11 +55,8 @@ export default function LandingCtaFooter({ isDark }: LandingCtaFooterProps) {
       </section>
 
       <footer className={`mt-12 border-t pb-2 pt-6 ${isDark ? "border-zinc-700 text-zinc-300" : "border-blue-100/80 bg-gradient-to-r from-white via-blue-50/40 to-orange-50/30 text-zinc-600"}`}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 font-semibold">
-            <span className="text-blue-600">ServyGo</span>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-wrap gap-4 text-sm sm:order-1">
             <a href="#" className="hover:text-blue-600">
               Regulamin
             </a>
@@ -41,10 +67,15 @@ export default function LandingCtaFooter({ isDark }: LandingCtaFooterProps) {
               Kontakt
             </a>
           </div>
+          <div className="sm:order-2 sm:ml-auto sm:min-w-[200px] sm:pl-8 sm:text-right">
+            <div className="font-semibold text-blue-600">ServyGo</div>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+              © {year} ServyGo
+              {versionLine ? <span className="text-zinc-400"> · {versionLine}</span> : null}
+            </p>
+          </div>
         </div>
-        <p className="mt-3 text-xs">© {new Date().getFullYear()} ServyGo</p>
       </footer>
     </>
   );
 }
-

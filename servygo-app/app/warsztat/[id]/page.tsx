@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
@@ -13,6 +13,8 @@ import { sendSystemMessage } from "@/lib/messagesApi";
 import { createTranslator, LanguageCode } from "@/lib/translations";
 import { getAvailableSlots, inferEndTime } from "@/lib/bookingAvailability";
 import { trackEvent } from "@/lib/analytics";
+import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
+import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 
 function padTime(value: number) {
   return String(value).padStart(2, "0");
@@ -64,7 +66,7 @@ function formatPriceRange(priceFrom?: number | null, priceTo?: number | null, fa
   return "Zapytaj o widełki";
 }
 
-export default function WorkshopDetailsPage() {
+function WorkshopDetailsPageContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -235,6 +237,7 @@ export default function WorkshopDetailsPage() {
     }),
     [searchParams],
   );
+  const problemFromSearch = useMemo(() => (searchParams.get("problem") ?? "").trim(), [searchParams]);
 
   const filteredServices = useMemo(() => {
     if (!workshop) return [];
@@ -417,12 +420,21 @@ export default function WorkshopDetailsPage() {
       if (!slots.includes(effectiveSelectedTime)) {
         throw new Error("SLOT_TAKEN");
       }
+      const vtKey = selectedVehicle.vehicleType as VehicleTypeKey | "";
+      const vehicleTypeLabel =
+        (vtKey && vehicleTypeOptions.some((x) => x.key === vtKey)
+          ? vehicleTypeOptions.find((x) => x.key === vtKey)?.label
+          : null) ?? (selectedVehicle.vehicleType ? selectedVehicle.vehicleType : null);
+      const categoryGuess = classifyServiceCategory(selectedService.service_name).category?.trim() ?? "";
+
       const { data: bookingId, error } = await supabase.rpc("create_booking_safe", {
         p_workshop_id: workshop.supabaseId,
         p_user_id: currentUserId,
         p_service_id: selectedService.id ?? null,
         p_service_name: selectedService.service_name,
         p_vehicle_data: {
+          vehicle_type: selectedVehicle.vehicleType || null,
+          vehicle_type_label: vehicleTypeLabel,
           brand: selectedVehicle.brand || null,
           model: selectedVehicle.model || null,
           year: Number.isFinite(selectedVehicle.year) ? selectedVehicle.year : null,
@@ -430,6 +442,7 @@ export default function WorkshopDetailsPage() {
           fuel: selectedVehicle.fuel || null,
           city: selectedVehicle.city || null,
           vin: selectedVehicle.vin || null,
+          plate_number: null,
         },
         p_booking_date: effectiveDateKey,
         p_start_time: effectiveSelectedTime,
@@ -438,6 +451,8 @@ export default function WorkshopDetailsPage() {
         p_client_email: "",
         p_client_phone: "",
         p_notes: null,
+        p_problem_description: problemFromSearch || null,
+        p_service_category: categoryGuess || null,
         p_employee_id: selectedEmployeeId === "any" ? null : selectedEmployeeId,
       });
       if (error) throw error;
@@ -1080,3 +1095,10 @@ export default function WorkshopDetailsPage() {
   );
 }
 
+export default function WorkshopDetailsPage() {
+  return (
+    <Suspense fallback={null}>
+      <WorkshopDetailsPageContent />
+    </Suspense>
+  );
+}

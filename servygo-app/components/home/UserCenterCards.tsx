@@ -39,6 +39,14 @@ export default function UserCenterCards({
       guestHint: "Śledź terminy i statusy rezerwacji.",
     },
     {
+      title: "Mój kalendarz",
+      value: isLoggedIn ? "✓" : "—",
+      link: "Otwórz kalendarz",
+      href: "/moj-kalendarz",
+      icon: "🗓️",
+      guestHint: "Planuj przeglądy, olej, OC i inne terminy przy aucie.",
+    },
+    {
       title: "Ulubione warsztaty",
       value: isLoggedIn ? "0" : "—",
       link: "Zobacz ulubione",
@@ -58,6 +66,7 @@ export default function UserCenterCards({
   const lightCardAccent = [
     "bg-blue-100 text-blue-600",
     "bg-orange-100 text-orange-600",
+    "bg-indigo-100 text-indigo-600",
     "bg-sky-100 text-sky-600",
     "bg-yellow-100 text-yellow-700",
   ];
@@ -77,7 +86,7 @@ export default function UserCenterCards({
           </div>
         ) : null}
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         {cards.map((item) => (
           <article
             key={item.title}

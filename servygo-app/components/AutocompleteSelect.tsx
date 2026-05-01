@@ -73,7 +73,34 @@ export default function AutocompleteSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [isMobile, setIsMobile] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  function closeDropdown(blurInput = false) {
+    setIsOpen(false);
+    setQuery("");
+    setHighlightedIndex(-1);
+    if (blurInput) {
+      inputRef.current?.blur();
+    }
+  }
+
+  function handleSelectOption(option: AutocompleteOption) {
+    onChange(option.value);
+    setQuery("");
+    setIsOpen(false);
+    setHighlightedIndex(-1);
+    inputRef.current?.blur();
+  }
+
+  function handleClearSelection() {
+    onChange("");
+    setQuery("");
+    setIsOpen(false);
+    setHighlightedIndex(-1);
+    inputRef.current?.blur();
+  }
 
   const normalizedOptions = useMemo(
     () => options.map(normalizeOption).sort(compareOptionLabels),
@@ -105,6 +132,17 @@ export default function AutocompleteSelect({
   }, [normalizedOptions, query]);
 
   useEffect(() => {
+    if (highlightedIndex < 0) return;
+    if (filteredOptions.length === 0) {
+      setHighlightedIndex(-1);
+      return;
+    }
+    if (highlightedIndex >= filteredOptions.length) {
+      setHighlightedIndex(filteredOptions.length - 1);
+    }
+  }, [filteredOptions, highlightedIndex]);
+
+  useEffect(() => {
     function updateViewportMode() {
       setIsMobile(window.innerWidth < 640);
     }
@@ -118,8 +156,7 @@ export default function AutocompleteSelect({
     function handleClickOutside(event: MouseEvent) {
       if (!rootRef.current) return;
       if (!rootRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-        setQuery("");
+        closeDropdown();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -133,15 +170,23 @@ export default function AutocompleteSelect({
       {label ? <span className="text-sm font-medium">{label}</span> : null}
       <div className="relative w-full">
         <input
+          ref={inputRef}
           name={name}
           value={displayValue}
-          required={required}
+          aria-required={required}
+          aria-expanded={isOpen}
+          aria-autocomplete="list"
+          role="combobox"
           readOnly={isMobile}
           disabled={disabled}
           onFocus={() => {
+            // Keep focus neutral. Open list on explicit click/tap.
+          }}
+          onClick={() => {
             if (disabled) return;
             setQuery(selectedOption?.label ?? value);
             setIsOpen(true);
+            setHighlightedIndex(-1);
           }}
           onChange={(event) => {
             if (isMobile) return;
@@ -149,11 +194,43 @@ export default function AutocompleteSelect({
             setQuery(nextValue);
             onChange(nextValue);
             setIsOpen(true);
+            setHighlightedIndex(-1);
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
-              setIsOpen(false);
+              closeDropdown(true);
+              return;
+            }
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (!isOpen || filteredOptions.length === 0) return;
+              const pick =
+                highlightedIndex >= 0 && highlightedIndex < filteredOptions.length
+                  ? filteredOptions[highlightedIndex]
+                  : filteredOptions.length === 1
+                    ? filteredOptions[0]
+                    : null;
+              if (pick) handleSelectOption(pick);
+              return;
+            }
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              if (!isOpen) {
+                setQuery(selectedOption?.label ?? value);
+                setIsOpen(true);
+              }
+              if (filteredOptions.length === 0) return;
+              setHighlightedIndex((prev) => (prev < 0 ? 0 : Math.min(prev + 1, filteredOptions.length - 1)));
+              return;
+            }
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              if (!isOpen || filteredOptions.length === 0) return;
+              setHighlightedIndex((prev) => {
+                if (prev <= 0) return -1;
+                return prev - 1;
+              });
             }
           }}
           placeholder={placeholder}
@@ -163,9 +240,11 @@ export default function AutocompleteSelect({
         <button
           type="button"
           disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             if (disabled) return;
             setIsOpen((prev) => !prev);
+            setHighlightedIndex(-1);
           }}
           className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${
             isOpen ? "rotate-180" : ""
@@ -181,8 +260,7 @@ export default function AutocompleteSelect({
         <MobileBottomSheet
           isOpen={isOpen}
           onClose={() => {
-            setIsOpen(false);
-            setQuery("");
+            closeDropdown();
           }}
           title={label ?? placeholder ?? "Wybierz"}
           isDark={isDark}
@@ -197,6 +275,9 @@ export default function AutocompleteSelect({
                 onMouseDown={(event) => event.stopPropagation()}
                 onTouchStart={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.preventDefault();
+                }}
                 placeholder={placeholder ?? "Szukaj..."}
                 className={`w-full rounded-xl border px-3 py-2 text-sm ${
                   isDark
@@ -204,21 +285,20 @@ export default function AutocompleteSelect({
                     : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
                 }`}
               />
-            {selectedOption ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onChange("");
-                  setQuery("");
-                  setIsOpen(false);
-                }}
-                className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
-                  isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-700"
-                }`}
-              >
-                Wyczyść
-              </button>
-            ) : null}
+              {selectedOption ? (
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    handleClearSelection();
+                  }}
+                  className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
+                    isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-700"
+                  }`}
+                >
+                  Wyczyść
+                </button>
+              ) : null}
             </div>
             <div className="min-h-0 max-h-[min(260px,60vh)] flex-1 space-y-1 overflow-y-auto overscroll-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
               {filteredOptions.length === 0 ? (
@@ -228,10 +308,9 @@ export default function AutocompleteSelect({
                   <button
                     key={option.value}
                     type="button"
-                    onClick={() => {
-                      onChange(option.value);
-                      setQuery("");
-                      setIsOpen(false);
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      handleSelectOption(option);
                     }}
                     className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm ${
                       isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
@@ -248,6 +327,7 @@ export default function AutocompleteSelect({
       ) : null}
       {isOpen && !isMobile ? (
         <div
+          role="listbox"
           className={`absolute left-0 top-full z-20 mt-1 max-h-[min(260px,60vh)] w-full max-w-[min(100%,92vw)] overflow-y-auto overscroll-contain rounded-xl border p-1 shadow-xl backdrop-blur [-webkit-overflow-scrolling:touch] [touch-action:pan-y] sm:right-0 sm:max-w-none ${
             isDark
               ? "border-blue-400/20 bg-zinc-900/95 shadow-[0_14px_34px_rgba(2,6,23,0.72),0_0_24px_rgba(59,130,246,0.28)]"
@@ -257,19 +337,24 @@ export default function AutocompleteSelect({
           {filteredOptions.length === 0 ? (
             <p className={`px-3 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
           ) : (
-            filteredOptions.map((option) => (
+            filteredOptions.map((option, index) => (
               <button
                 key={option.value}
                 type="button"
-                onClick={() => {
-                  onChange(option.value);
-                  setQuery("");
-                  setIsOpen(false);
+                role="option"
+                aria-selected={selectedOption?.value === option.value}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  handleSelectOption(option);
                 }}
                 className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
                   isDark
-                    ? "text-zinc-200 hover:bg-zinc-800/90"
-                    : "text-zinc-700 hover:bg-blue-50"
+                    ? highlightedIndex === index
+                      ? "bg-zinc-800 text-zinc-100"
+                      : "text-zinc-200 hover:bg-zinc-800/90"
+                    : highlightedIndex === index
+                      ? "bg-blue-100 text-zinc-900"
+                      : "text-zinc-700 hover:bg-blue-50"
                 }`}
               >
                 <span>{option.label}</span>

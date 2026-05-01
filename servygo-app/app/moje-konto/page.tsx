@@ -88,8 +88,8 @@ export default function MojeKontoPage() {
           <Link href="/ustawienia" className={`rounded-2xl border px-4 py-4 text-sm font-medium ${isDark ? "border-zinc-700 bg-zinc-900/70 hover:bg-zinc-800/80" : "border-blue-200 bg-white/85 hover:bg-blue-50"}`}>
             Ustawienia
           </Link>
-          <Link href="/moje-konto/kalendarz" className={`rounded-2xl border px-4 py-4 text-sm font-medium ${isDark ? "border-zinc-700 bg-zinc-900/70 hover:bg-zinc-800/80" : "border-blue-200 bg-white/85 hover:bg-blue-50"}`}>
-            Kalendarz
+          <Link href="/moj-kalendarz" className={`rounded-2xl border px-4 py-4 text-sm font-medium ${isDark ? "border-zinc-700 bg-zinc-900/70 hover:bg-zinc-800/80" : "border-blue-200 bg-white/85 hover:bg-blue-50"}`}>
+            Mój kalendarz
           </Link>
         </section>
       </main>

@@ -1,17 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
+import BookingConversationModal from "@/components/booking/BookingConversationModal";
+import ClientRescheduleModal from "@/components/booking/ClientRescheduleModal";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
+import { quoteDecisionLabel, notifyWorkshopOwnerQuoteResponded } from "@/lib/bookingQuoteNotifications";
+import {
+  clientQuoteDecisionPending,
+  clientRescheduleDecisionPending,
+  clientWorkshopReschedulePending,
+  normalizeBookingStatus,
+  resolveClientBookingBadge,
+} from "@/lib/bookingStatusUi";
+import {
+  clientCancelVisitWithNotice,
+  respondToBookingQuote,
+  respondToBookingReschedule,
+  sendSystemMessage,
+} from "@/lib/messagesApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { inferEndTime } from "@/lib/bookingAvailability";
 
+type ConversationOpen = {
+  row: BookingRow & { pickup: string };
+  draftSubject?: string;
+  draftBody?: string;
+};
+
 type BookingRow = {
   id: string;
+  workshop_id: string;
   workshop_name: string | null;
   service_name: string | null;
+  service_category: string | null;
   booking_date: string | null;
   start_time: string | null;
   end_time: string | null;
@@ -20,29 +45,19 @@ type BookingRow = {
   final_price: number | null;
   duration_minutes: number | null;
   created_at: string | null;
+  quote_note: string | null;
+  quote_status: string | null;
+  quote_sent_at: string | null;
+  vehicle_data: unknown;
+  problem_description: string | null;
+  proposed_booking_date: string | null;
+  proposed_start_time: string | null;
+  proposed_end_time: string | null;
+  reschedule_reason: string | null;
+  reschedule_status: string | null;
+  proposed_by: string | null;
+  employee_id: string | null;
 };
-
-function statusLabel(statusRaw: string | null | undefined) {
-  const status = (statusRaw ?? "").trim().toLowerCase();
-  if (status === "awaiting_quote") return "Oczekuje na wycenę";
-  if (status === "quote_sent") return "Wycena wysłana";
-  if (status === "quote_accepted") return "Wycena zaakceptowana";
-  if (status === "quote_rejected") return "Wycena odrzucona";
-  if (status === "confirmed") return "Potwierdzona";
-  if (status === "awaiting_reschedule") return "Oczekuje na zmianę terminu";
-  if (status === "cancelled" || status === "cancelled_by_client" || status === "cancelled_by_workshop") return "Anulowana";
-  if (status === "completed" || status === "done") return "Zakończona";
-  if (status === "new" || status === "pending") return "Nowa";
-  return statusRaw || "Nieznany";
-}
-
-function statusClass(statusRaw: string | null | undefined, isDark: boolean) {
-  const status = (statusRaw ?? "").trim().toLowerCase();
-  if (status.includes("cancel")) return isDark ? "border-red-500/30 bg-red-500/15 text-red-200" : "border-red-200 bg-red-50 text-red-700";
-  if (status === "confirmed" || status === "quote_accepted") return isDark ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "completed" || status === "done") return isDark ? "border-slate-500/30 bg-slate-500/15 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700";
-  return isDark ? "border-blue-500/30 bg-blue-500/15 text-blue-100" : "border-blue-200 bg-blue-50 text-blue-700";
-}
 
 function formatDate(dateRaw: string | null | undefined) {
   if (!dateRaw) return "—";
@@ -61,14 +76,43 @@ function formatPrice(row: BookingRow) {
   return "Do potwierdzenia";
 }
 
-export default function MojeRezerwacjePage() {
+function MojeRezerwacjePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const highlightId = (searchParams.get("highlight") ?? "").trim();
+  const chatBookingId = (searchParams.get("chat") ?? "").trim();
+  const highlightRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [user, setUser] = useState<User | null>(null);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [quoteBusyId, setQuoteBusyId] = useState<string | null>(null);
+  const [rescheduleBusyId, setRescheduleBusyId] = useState<string | null>(null);
+  const [conversation, setConversation] = useState<ConversationOpen | null>(null);
+  const [cancelModalRow, setCancelModalRow] = useState<(BookingRow & { pickup: string }) | null>(null);
+  const [cancelReasonDraft, setCancelReasonDraft] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [rescheduleModalRow, setRescheduleModalRow] = useState<(BookingRow & { pickup: string }) | null>(null);
+
+  const refreshBookings = useCallback(async () => {
+    if (!user || !supabase) return;
+    const { data, error: queryError } = await supabase
+      .from("bookings")
+      .select(
+        "id, workshop_id, workshop_name, service_name, service_category, booking_date, start_time, end_time, status, price, final_price, duration_minutes, created_at, quote_note, quote_status, quote_sent_at, vehicle_data, problem_description, proposed_booking_date, proposed_start_time, proposed_end_time, reschedule_reason, reschedule_status, proposed_by, employee_id",
+      )
+      .eq("user_id", user.id)
+      .order("booking_date", { ascending: false })
+      .order("start_time", { ascending: false })
+      .limit(200);
+    if (queryError) {
+      setError(queryError.message);
+      return;
+    }
+    setBookings((data as BookingRow[] | null) ?? []);
+  }, [user]);
 
   useEffect(() => {
     setMounted(true);
@@ -112,26 +156,14 @@ export default function MojeRezerwacjePage() {
     setLoading(true);
     setError("");
     void (async () => {
-      const { data, error: queryError } = await supabase
-        .from("bookings")
-        .select("id, workshop_name, service_name, booking_date, start_time, end_time, status, price, final_price, duration_minutes, created_at")
-        .eq("user_id", user.id)
-        .order("booking_date", { ascending: false })
-        .order("start_time", { ascending: false })
-        .limit(200);
+      await refreshBookings();
       if (cancelled) return;
-      if (queryError) {
-        setError(queryError.message);
-        setBookings([]);
-      } else {
-        setBookings((data as BookingRow[] | null) ?? []);
-      }
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [mounted, user]);
+  }, [mounted, user, refreshBookings]);
 
   const isDark = theme === "dark";
   const bookingsWithPickup = useMemo(
@@ -147,6 +179,116 @@ export default function MojeRezerwacjePage() {
       }),
     [bookings],
   );
+
+  useEffect(() => {
+    if (!highlightId || loading) return;
+    requestAnimationFrame(() => highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }, [highlightId, loading, bookings.length]);
+
+  useEffect(() => {
+    if (!chatBookingId || loading || bookingsWithPickup.length === 0) return;
+    const row = bookingsWithPickup.find((x) => x.id === chatBookingId);
+    if (!row) return;
+    setConversation((prev) => (prev?.row.id === row.id ? prev : { row }));
+  }, [chatBookingId, loading, bookingsWithPickup]);
+
+  function closeConversation() {
+    setConversation(null);
+    if (chatBookingId) router.replace("/moje-rezerwacje", { scroll: false });
+  }
+
+  async function handleRescheduleDecision(row: BookingRow & { pickup: string }, accept: boolean) {
+    if (!supabase) return;
+    setRescheduleBusyId(row.id);
+    setError("");
+    try {
+      await respondToBookingReschedule(row.id, accept);
+      const { data: wRow } = await supabase.from("workshops").select("owner_id").eq("id", row.workshop_id).maybeSingle();
+      const ownerId = (wRow as { owner_id?: string | null } | null)?.owner_id ?? null;
+      if (ownerId) {
+        await sendSystemMessage({
+          recipientId: ownerId,
+          recipientRole: "workshop",
+          subject: accept ? "Klient zaakceptował zmianę terminu" : "Klient odrzucił zmianę terminu",
+          body: accept
+            ? `Klient zaakceptował nowy termin dla usługi „${row.service_name ?? "usługa"}”.`
+            : `Klient odrzucił propozycję zmiany terminu dla usługi „${row.service_name ?? "usługa"}”.`,
+          relatedBookingId: row.id,
+          relatedWorkshopId: row.workshop_id,
+        });
+      }
+      const { data: fresh } = await supabase
+        .from("bookings")
+        .select(
+          "booking_date, start_time, end_time, status, proposed_booking_date, proposed_start_time, proposed_end_time, reschedule_status",
+        )
+        .eq("id", row.id)
+        .maybeSingle();
+      if (fresh) {
+        const patch = fresh as Partial<BookingRow>;
+        setBookings((prev) => prev.map((b) => (b.id === row.id ? { ...b, ...patch } : b)));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji o terminie.");
+    } finally {
+      setRescheduleBusyId(null);
+    }
+  }
+
+  async function confirmCancelVisit() {
+    if (!cancelModalRow) return;
+    setCancelBusy(true);
+    setError("");
+    try {
+      await clientCancelVisitWithNotice(cancelModalRow.id, cancelReasonDraft.trim() || undefined);
+      setCancelModalRow(null);
+      setCancelReasonDraft("");
+      await refreshBookings();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się zrezygnować z wizyty.");
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
+  async function handleQuoteDecision(row: BookingRow & { pickup: string }, accept: boolean) {
+    if (!supabase) return;
+    setQuoteBusyId(row.id);
+    setError("");
+    try {
+      await respondToBookingQuote(row.id, accept);
+      const { data: wRow } = await supabase
+        .from("workshops")
+        .select("owner_id, name")
+        .eq("id", row.workshop_id)
+        .maybeSingle();
+      const w = wRow as { owner_id?: string | null; name?: string | null } | null;
+      await notifyWorkshopOwnerQuoteResponded({
+        ownerUserId: w?.owner_id ?? null,
+        bookingId: row.id,
+        workshopId: row.workshop_id,
+        workshopName: w?.name ?? row.workshop_name ?? "Warsztat",
+        serviceName: row.service_name ?? "Usługa",
+        accepted: accept,
+        finalPrice: row.final_price,
+      });
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === row.id
+            ? {
+                ...b,
+                status: accept ? "confirmed" : "quote_rejected",
+                quote_status: accept ? "accepted" : "rejected",
+              }
+            : b,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji.");
+    } finally {
+      setQuoteBusyId(null);
+    }
+  }
 
   if (!mounted || !user) return null;
 
@@ -190,54 +332,416 @@ export default function MojeRezerwacjePage() {
           </div>
         ) : (
           <section className="mt-5 space-y-4">
-            {bookingsWithPickup.map((row) => (
-              <article
-                key={row.id}
-                className={`rounded-2xl border p-5 shadow-sm ${
-                  isDark ? "border-zinc-700 bg-zinc-900/75" : "border-blue-200/80 bg-white/95"
-                }`}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold">{row.workshop_name || "Warsztat"}</h2>
-                    <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{row.service_name || "Usługa"}</p>
+            {bookingsWithPickup.map((row) => {
+              const vd = parseBookingVehicleData(row.vehicle_data);
+              const stRaw = row.status ?? "";
+              const norm = normalizeBookingStatus(stRaw);
+              const badge = resolveClientBookingBadge({
+                status: row.status,
+                quoteStatus: row.quote_status,
+                rescheduleStatus: row.reschedule_status,
+                proposedBy: row.proposed_by,
+                isDark,
+              });
+              const quotePending = clientQuoteDecisionPending(row.status, row.quote_status);
+              const reschedulePending = clientRescheduleDecisionPending(row.status, row.reschedule_status);
+              const hasQuote =
+                row.quote_sent_at != null || (row.final_price != null && Number.isFinite(row.final_price));
+              const quoteRejected =
+                norm === "quote_rejected" || (row.quote_status ?? "").trim().toLowerCase() === "rejected";
+              const problemText = (row.problem_description ?? "").trim();
+              const allowContact =
+                norm !== "cancelled" && norm !== "completed" && norm !== "done" && norm !== "rejected";
+              const statusLc = (row.status ?? "").trim().toLowerCase();
+              const awaitingWorkshopOnClientProposal = clientWorkshopReschedulePending(row.reschedule_status, row.proposed_by);
+              const allowReschedule =
+                allowContact &&
+                !quotePending &&
+                !reschedulePending &&
+                !awaitingWorkshopOnClientProposal &&
+                (norm === "confirmed" || norm === "quote_sent") &&
+                statusLc !== "awaiting_reschedule";
+
+              return (
+                <article
+                  key={row.id}
+                  ref={row.id === highlightId ? highlightRef : undefined}
+                  className={`rounded-2xl border p-5 shadow-sm ${
+                    row.id === highlightId
+                      ? isDark
+                        ? "border-orange-500/50 ring-2 ring-orange-500/30"
+                        : "border-orange-300 ring-2 ring-orange-200"
+                      : ""
+                  } ${isDark ? "border-zinc-700 bg-zinc-900/75" : "border-blue-200/80 bg-white/95"}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold">{row.workshop_name || "Warsztat"}</h2>
+                      <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{row.service_name || "Usługa"}</p>
+                      {row.service_category ? (
+                        <p className={`mt-0.5 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Kategoria: {row.service_category}</p>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`inline-flex shrink-0 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${badge.className}`}
+                    >
+                      {badge.label}
+                    </span>
                   </div>
-                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusClass(row.status, isDark)}`}>
-                    {statusLabel(row.status)}
-                  </span>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
-                  <div>
-                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Data</p>
-                    <p className="font-medium">{formatDate(row.booking_date)}</p>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+                    <div>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Data</p>
+                      <p className="font-medium">{formatDate(row.booking_date)}</p>
+                    </div>
+                    <div>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Godzina</p>
+                      <p className="font-medium">{trimTime(row.start_time)}</p>
+                    </div>
+                    <div>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Przewidywany odbiór</p>
+                      <p className="font-medium">{row.pickup}</p>
+                    </div>
+                    <div>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Cena</p>
+                      <p className="font-medium">{formatPrice(row)}</p>
+                    </div>
+                    <div>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Czas usługi</p>
+                      <p className="font-medium">{row.duration_minutes ?? 60} min</p>
+                    </div>
+                    <div>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>ID</p>
+                      <p className="font-mono text-xs">{row.id.slice(0, 8)}...</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Godzina</p>
-                    <p className="font-medium">{trimTime(row.start_time)}</p>
+
+                  <div
+                    className={`mt-4 grid gap-3 rounded-xl border p-3 text-sm sm:grid-cols-2 ${
+                      isDark ? "border-zinc-700 bg-zinc-950/40" : "border-blue-100 bg-blue-50/40"
+                    }`}
+                  >
+                    <div>
+                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Pojazd (z zapytania)</p>
+                      <p className="mt-1 font-medium">{dash([vd.brand, vd.model].filter(Boolean).join(" "))}</p>
+                      <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        {dash(vd.vehicleType)} · rocznik {dash(vd.year)} · {dash(vd.fuel)}
+                      </p>
+                      <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>VIN: {dash(vd.vin)}</p>
+                    </div>
+                    <div>
+                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Opis problemu</p>
+                      <p className={`mt-1 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{problemText || "—"}</p>
+                      {!problemText ? (
+                        <p className={`mt-1 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Klient nie podał opisu.</p>
+                      ) : null}
+                    </div>
                   </div>
-                  <div>
-                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Przewidywany odbiór</p>
-                    <p className="font-medium">{row.pickup}</p>
-                  </div>
-                  <div>
-                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Cena</p>
-                    <p className="font-medium">{formatPrice(row)}</p>
-                  </div>
-                  <div>
-                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Czas usługi</p>
-                    <p className="font-medium">{row.duration_minutes ?? 60} min</p>
-                  </div>
-                  <div>
-                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>ID</p>
-                    <p className="font-mono text-xs">{row.id.slice(0, 8)}...</p>
-                  </div>
-                </div>
-              </article>
-            ))}
+
+                  {hasQuote ? (
+                    <div
+                      className={`mt-4 rounded-xl border p-4 shadow-sm ${
+                        quoteRejected
+                          ? isDark
+                            ? "border-red-500/35 bg-red-950/35"
+                            : "border-red-200 bg-red-50/90"
+                          : isDark
+                            ? "border-emerald-500/25 bg-emerald-950/25"
+                            : "border-emerald-200 bg-emerald-50/70"
+                      }`}
+                    >
+                      <p
+                        className={`text-xs font-bold uppercase tracking-wide ${
+                          quoteRejected
+                            ? isDark
+                              ? "text-red-200"
+                              : "text-red-800"
+                            : isDark
+                              ? "text-emerald-200"
+                              : "text-emerald-800"
+                        }`}
+                      >
+                        Wycena warsztatu
+                      </p>
+                      <p
+                        className={`mt-2 text-lg font-semibold ${
+                          quoteRejected
+                            ? isDark
+                              ? "text-red-100"
+                              : "text-red-900"
+                            : isDark
+                              ? "text-emerald-100"
+                              : "text-emerald-900"
+                        }`}
+                      >
+                        {row.final_price != null && Number.isFinite(row.final_price) ? `${Number(row.final_price).toFixed(2)} zł` : "—"}
+                      </p>
+                      {(row.quote_note ?? "").trim() ? (
+                        <p
+                          className={`mt-2 whitespace-pre-wrap text-sm ${
+                            quoteRejected
+                              ? isDark
+                                ? "text-red-100/95"
+                                : "text-red-950"
+                              : isDark
+                                ? "text-emerald-100/90"
+                                : "text-emerald-950"
+                          }`}
+                        >
+                          {row.quote_note}
+                        </p>
+                      ) : (
+                        <p
+                          className={`mt-2 text-xs ${
+                            quoteRejected
+                              ? isDark
+                                ? "text-red-200/75"
+                                : "text-red-700/85"
+                              : isDark
+                                ? "text-emerald-200/70"
+                                : "text-emerald-800/80"
+                          }`}
+                        >
+                          Brak dodatkowej wiadomości od warsztatu.
+                        </p>
+                      )}
+                      <p
+                        className={`mt-2 text-xs font-medium ${
+                          quoteRejected
+                            ? isDark
+                              ? "text-red-200/90"
+                              : "text-red-800"
+                            : isDark
+                              ? "text-emerald-200/80"
+                              : "text-emerald-800/90"
+                        }`}
+                      >
+                        Status decyzji: {quoteDecisionLabel(row.quote_status, row.status)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className={`mt-4 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      {norm === "pending_quote" ? "Oczekuje na wycenę od warsztatu." : null}
+                    </p>
+                  )}
+
+                  {reschedulePending ? (
+                    <div
+                      className={`mt-4 rounded-xl border p-4 ${isDark ? "border-amber-500/25 bg-amber-950/20" : "border-yellow-200 bg-yellow-50/80"}`}
+                    >
+                      <p className={`text-sm font-semibold ${isDark ? "text-amber-100" : "text-yellow-950"}`}>
+                        Warsztat zaproponował zmianę terminu
+                      </p>
+                      <p className={`mt-2 text-sm ${isDark ? "text-amber-100/90" : "text-yellow-950"}`}>
+                        Nowy termin: {formatDate(row.proposed_booking_date)} · {trimTime(row.proposed_start_time)}
+                        {row.proposed_end_time ? ` – odbiór ok. ${trimTime(row.proposed_end_time)}` : ""}
+                      </p>
+                      {(row.reschedule_reason ?? "").trim() ? (
+                        <p className={`mt-2 whitespace-pre-wrap text-sm ${isDark ? "text-amber-100/85" : "text-yellow-950"}`}>
+                          {row.reschedule_reason}
+                        </p>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={rescheduleBusyId === row.id}
+                          onClick={() => void handleRescheduleDecision(row, true)}
+                          className={`rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+                            isDark ? "bg-emerald-600 hover:bg-emerald-500" : "bg-emerald-600 hover:bg-emerald-500"
+                          }`}
+                        >
+                          Akceptuję nowy termin
+                        </button>
+                        <button
+                          type="button"
+                          disabled={rescheduleBusyId === row.id}
+                          onClick={() => void handleRescheduleDecision(row, false)}
+                          className={`rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50 ${
+                            isDark ? "border-zinc-500 text-zinc-100 hover:bg-zinc-800" : "border-zinc-300 text-zinc-800 hover:bg-zinc-50"
+                          }`}
+                        >
+                          Odrzucam zmianę
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {awaitingWorkshopOnClientProposal ? (
+                    <div
+                      className={`mt-4 rounded-xl border p-4 ${isDark ? "border-sky-500/25 bg-sky-950/25" : "border-sky-200 bg-sky-50/85"}`}
+                    >
+                      <p className={`text-sm font-semibold ${isDark ? "text-sky-100" : "text-sky-950"}`}>Oczekujemy na decyzję warsztatu</p>
+                      <p className={`mt-2 text-sm ${isDark ? "text-sky-100/90" : "text-sky-950"}`}>
+                        Proponowany termin: {formatDate(row.proposed_booking_date)} · {trimTime(row.proposed_start_time)}
+                      </p>
+                      {(row.reschedule_reason ?? "").trim() ? (
+                        <p className={`mt-2 whitespace-pre-wrap text-sm ${isDark ? "text-sky-100/85" : "text-sky-950"}`}>{row.reschedule_reason}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {quotePending ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={quoteBusyId === row.id}
+                        onClick={() => void handleQuoteDecision(row, true)}
+                        className={`rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+                          isDark ? "bg-emerald-600 hover:bg-emerald-500" : "bg-emerald-600 hover:bg-emerald-500"
+                        }`}
+                      >
+                        Akceptuję wycenę
+                      </button>
+                      <button
+                        type="button"
+                        disabled={quoteBusyId === row.id}
+                        onClick={() => void handleQuoteDecision(row, false)}
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50 ${
+                          isDark ? "border-rose-400/60 text-rose-100 hover:bg-rose-950/40" : "border-rose-300 text-rose-700 hover:bg-rose-50"
+                        }`}
+                      >
+                        Odrzucam
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {allowContact ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelReasonDraft("");
+                          setCancelModalRow(row);
+                        }}
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold ${
+                          isDark
+                            ? "border-rose-500/55 text-rose-100 hover:bg-rose-950/35"
+                            : "border-rose-400 text-rose-800 hover:bg-rose-50"
+                        }`}
+                      >
+                        Zrezygnuj z wizyty
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setConversation(
+                            norm === "pending_quote"
+                              ? {
+                                  row,
+                                  draftSubject: `Pytanie o wycenę — ${row.service_name ?? "usługa"}`,
+                                  draftBody: `Dzień dobry,\n\nChciałbym dopytać o wycenę usługi „${row.service_name ?? "usługa"}”.\n\n`,
+                                }
+                              : { row },
+                          )
+                        }
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
+                          isDark ? "border-blue-500/50 bg-blue-950/20 text-blue-100 hover:bg-blue-950/40" : "border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100"
+                        }`}
+                      >
+                        {norm === "pending_quote" ? "Wyślij wiadomość (wycena)" : "Wyślij wiadomość"}
+                      </button>
+                      {allowReschedule ? (
+                        <button
+                          type="button"
+                          onClick={() => setRescheduleModalRow(row)}
+                          className={`rounded-xl border px-4 py-2 text-sm font-semibold ${
+                            isDark
+                              ? "border-orange-400/55 text-orange-100 hover:bg-orange-950/30"
+                              : "border-orange-400 bg-white text-orange-900 hover:bg-orange-50"
+                          }`}
+                        >
+                          Przenieś wizytę
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
           </section>
         )}
       </main>
+
+      {cancelModalRow ? (
+        <div className="fixed inset-0 z-[10052] flex items-center justify-center p-4">
+          <button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" aria-label="Zamknij" onClick={() => !cancelBusy && setCancelModalRow(null)} />
+          <div
+            className={`relative z-[1] w-full max-w-md rounded-2xl border p-6 shadow-2xl ${
+              isDark ? "border-zinc-600 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
+            }`}
+          >
+            <h3 className="text-lg font-bold">Zrezygnuj z wizyty</h3>
+            <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Czy na pewno chcesz zrezygnować z tej wizyty?</p>
+            <label className={`mt-4 block text-sm font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+              Powód rezygnacji (opcjonalnie)
+              <textarea
+                value={cancelReasonDraft}
+                onChange={(e) => setCancelReasonDraft(e.target.value)}
+                rows={3}
+                className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm text-black ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                placeholder="Np. zmiana planów…"
+              />
+            </label>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={cancelBusy}
+                onClick={() => setCancelModalRow(null)}
+                className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-zinc-500 text-zinc-200" : "border-zinc-300 text-zinc-800"}`}
+              >
+                Nie, wróć
+              </button>
+              <button
+                type="button"
+                disabled={cancelBusy}
+                onClick={() => void confirmCancelVisit()}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {cancelBusy ? "Zapisywanie…" : "Tak, rezygnuję"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rescheduleModalRow && user ? (
+        <ClientRescheduleModal
+          bookingId={rescheduleModalRow.id}
+          workshopId={rescheduleModalRow.workshop_id}
+          workshopName={rescheduleModalRow.workshop_name || "Warsztat"}
+          serviceLabel={rescheduleModalRow.service_name || "Usługa"}
+          durationMinutes={rescheduleModalRow.duration_minutes ?? 60}
+          employeeId={rescheduleModalRow.employee_id}
+          defaultDateKey={rescheduleModalRow.booking_date}
+          isDark={isDark}
+          onClose={() => setRescheduleModalRow(null)}
+          onSuccess={() => void refreshBookings()}
+        />
+      ) : null}
+
+      {conversation && user ? (
+        <BookingConversationModal
+          key={`${conversation.row.id}-${conversation.draftBody ?? ""}-${conversation.draftSubject ?? ""}`}
+          bookingId={conversation.row.id}
+          workshopId={conversation.row.workshop_id}
+          workshopName={conversation.row.workshop_name || "Warsztat"}
+          serviceName={conversation.row.service_name || "Usługa"}
+          userId={user.id}
+          isDark={isDark}
+          draftSubject={conversation.draftSubject}
+          draftBody={conversation.draftBody}
+          onClose={closeConversation}
+        />
+      ) : null}
     </ServyGoPageShell>
+  );
+}
+
+export default function MojeRezerwacjePage() {
+  return (
+    <Suspense fallback={null}>
+      <MojeRezerwacjePageContent />
+    </Suspense>
   );
 }
 

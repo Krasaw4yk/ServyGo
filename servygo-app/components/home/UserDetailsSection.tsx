@@ -10,12 +10,14 @@ type VehiclePreview = {
 };
 
 type UpcomingBooking = {
+  id?: string;
   workshop: string;
   service: string;
   date: string;
   time: string;
-  status: string;
   address: string;
+  badgeLabel: string;
+  badgeClassName: string;
 };
 
 type Step = {
@@ -71,7 +73,16 @@ export default function UserDetailsSection({
       </article>
 
       <article className={`rounded-2xl border p-5 transition duration-300 hover:-translate-y-1 ${isDark ? "border-zinc-700 bg-zinc-900/75" : "border-orange-100/90 bg-gradient-to-br from-white via-white to-orange-50/55 shadow-[0_12px_30px_rgba(37,99,235,0.08),0_6px_18px_rgba(249,115,22,0.06)] hover:shadow-[0_20px_50px_rgba(37,99,235,0.14),0_10px_30px_rgba(249,115,22,0.10)]"}`}>
-        <h3 className="text-lg font-semibold">Nadchodząca wizyta</h3>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-lg font-semibold leading-snug">Nadchodząca wizyta</h3>
+          {dashboardUpcomingBooking ? (
+            <span
+              className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold leading-tight shadow-sm ${dashboardUpcomingBooking.badgeClassName}`}
+            >
+              {dashboardUpcomingBooking.badgeLabel}
+            </span>
+          ) : null}
+        </div>
         {dashboardUpcomingBooking ? (
           <div className="mt-4 space-y-2 text-sm">
             <p className="font-semibold">{dashboardUpcomingBooking.workshop}</p>
@@ -80,9 +91,6 @@ export default function UserDetailsSection({
             <p>
               {dashboardUpcomingBooking.date} • {dashboardUpcomingBooking.time}
             </p>
-            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${isDark ? "border-blue-500/40 bg-blue-500/15 text-blue-200" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
-              {dashboardUpcomingBooking.status}
-            </span>
           </div>
         ) : (
           <p className={`mt-4 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
@@ -90,7 +98,10 @@ export default function UserDetailsSection({
           </p>
         )}
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/moje-rezerwacje" className="rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700">
+          <Link
+            href={dashboardUpcomingBooking?.id ? `/moje-rezerwacje?highlight=${dashboardUpcomingBooking.id}` : "/moje-rezerwacje"}
+            className="rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700"
+          >
             Szczegóły
           </Link>
           <Link href="/moje-rezerwacje" className={`rounded-xl px-4 py-2 text-sm font-semibold ${isDark ? "text-blue-300" : "text-blue-600"}`}>

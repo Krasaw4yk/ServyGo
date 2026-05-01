@@ -9,8 +9,12 @@ import ServyGoPageShell from "@/components/ServyGoPageShell";
 import InternalInbox from "@/components/InternalInbox";
 import { getWorkshopDetailForAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
-import { getUnreadMessagesCount, resolveMessageViewerContext, sendSystemMessage } from "@/lib/messagesApi";
+import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
+import { notifyClientBookingQuoteSent, quoteDecisionLabel } from "@/lib/bookingQuoteNotifications";
+import { resolveMessageViewerContext, sendSystemMessage, workshopRespondClientReschedule } from "@/lib/messagesApi";
+import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
+import { sendBookingNotificationEmail } from "@/lib/sendBookingNotificationEmail";
 import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
 import {
   getAllServiceOptions,
@@ -63,7 +67,7 @@ import {
 const WORKSHOP_SECTIONS = [
   "Dashboard",
   "Rezerwacje",
-  "Wiadomości",
+  "Powiadomienia",
   "Kalendarz / dostępność",
   "Usługi i ceny",
   "Pracownicy",
@@ -261,11 +265,11 @@ function mapAdminPreviewBooking(
 
 function formatBookingStatus(status: string) {
   const x = status.toLowerCase();
-  if (x === "awaiting_quote") return "Oczekuje na wycenę";
-  if (x === "quote_sent") return "Wycena wysłana";
-  if (x === "quote_accepted") return "Wycena zaakceptowana";
+  if (x === "pending_quote" || x === "awaiting_quote") return "Oczekuje na wycenę";
+  if (x === "quote_sent") return "Wycena gotowa";
+  if (x === "quote_accepted") return "Potwierdzona";
   if (x === "quote_rejected") return "Wycena odrzucona";
-  if (x === "awaiting_reschedule") return "Oczekuje na decyzję dot. zmiany terminu";
+  if (x === "awaiting_reschedule") return "Propozycja zmiany terminu";
   if (x === "pending" || x === "new") return "Oczekuje";
   if (x === "confirmed") return "Potwierdzona";
   if (x === "cancelled" || x === "cancelled_by_client" || x === "cancelled_by_workshop" || x === "cancelled_by_system") return "Anulowana";
@@ -276,13 +280,18 @@ function formatBookingStatus(status: string) {
 
 function statusPillClass(status: string, isDark: boolean) {
   const x = status.toLowerCase();
-  if (x === "awaiting_quote") return isDark ? "bg-amber-500/20 text-amber-200" : "bg-amber-100 text-amber-700";
-  if (x === "quote_sent") return isDark ? "bg-orange-500/20 text-orange-200" : "bg-orange-100 text-orange-700";
+  if (x === "pending_quote" || x === "awaiting_quote") return isDark ? "bg-orange-500/20 text-orange-200" : "bg-orange-100 text-orange-700";
+  if (x === "quote_sent") return isDark ? "bg-yellow-500/20 text-yellow-200" : "bg-yellow-100 text-yellow-800";
   if (x === "awaiting_reschedule") return isDark ? "bg-purple-500/20 text-purple-200" : "bg-purple-100 text-purple-700";
-  if (x === "confirmed") return isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700";
+  if (x === "confirmed" || x === "quote_accepted") return isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700";
   if (x === "completed" || x === "done") return isDark ? "bg-blue-500/20 text-blue-200" : "bg-blue-100 text-blue-700";
   if (x === "rejected" || x === "quote_rejected" || x === "cancelled" || x === "cancelled_by_client" || x === "cancelled_by_workshop" || x === "cancelled_by_system") return isDark ? "bg-rose-500/20 text-rose-200" : "bg-rose-100 text-rose-700";
   return isDark ? "bg-amber-500/20 text-amber-200" : "bg-amber-100 text-amber-700";
+}
+
+function isBookingCancelledStatus(status: string) {
+  const x = status.toLowerCase();
+  return x === "cancelled" || x.startsWith("cancelled_by");
 }
 
 function hasWorkshopPanelAccess(workshop: Workshop, userId: string) {
@@ -405,10 +414,18 @@ function WorkshopPanelPageContent() {
     is_active: true,
   });
   const [bookingActionId, setBookingActionId] = useState<string | null>(null);
+  const [clientRescheduleBusyId, setClientRescheduleBusyId] = useState<string | null>(null);
   const [quoteDraftByBookingId, setQuoteDraftByBookingId] = useState<Record<string, string>>({});
+  const [quoteNoteByBookingId, setQuoteNoteByBookingId] = useState<Record<string, string>>({});
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [cancelModalBooking, setCancelModalBooking] = useState<WorkshopOwnerBookingRow | null>(null);
+  const [cancelModalReason, setCancelModalReason] = useState("");
+  const [rescheduleModalBooking, setRescheduleModalBooking] = useState<WorkshopOwnerBookingRow | null>(null);
+  const [rescheduleModalDate, setRescheduleModalDate] = useState("");
+  const [rescheduleModalTime, setRescheduleModalTime] = useState("");
+  const [rescheduleModalReason, setRescheduleModalReason] = useState("");
 
   const isDark = mounted ? theme === "dark" : false;
   const formInputClassName = `rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-white text-black" : "border-zinc-300 bg-white text-black"}`;
@@ -543,6 +560,25 @@ function WorkshopPanelPageContent() {
     });
   }, []);
 
+  const respondClientRescheduleProposal = useCallback(
+    async (b: WorkshopOwnerBookingRow, accept: boolean) => {
+      const ws = workshop;
+      if (!ws) return;
+      setClientRescheduleBusyId(b.id);
+      setError("");
+      try {
+        await workshopRespondClientReschedule(b.id, accept);
+        setSuccess(accept ? "Zaakceptowano nowy termin od klienta." : "Odrzucono prośbę klienta o zmianę terminu.");
+        await loadAll(ws);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Nie zapisano decyzji.");
+      } finally {
+        setClientRescheduleBusyId(null);
+      }
+    },
+    [workshop, loadAll],
+  );
+
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) {
       setLoading(false);
@@ -564,7 +600,7 @@ function WorkshopPanelPageContent() {
       }
       setCurrentUserId(u.id);
       try {
-        const unread = await getUnreadMessagesCount(u.id);
+        const unread = await getUnifiedUnreadCount(u.id);
         if (!cancelled) setUnreadMessages(unread);
       } catch {
         if (!cancelled) setUnreadMessages(0);
@@ -753,7 +789,14 @@ function WorkshopPanelPageContent() {
     const monthBookings = bookings.filter((b) => (b.date ?? "").startsWith(month)).length;
     const pendingBookings = bookings.filter((b) => {
       const st = b.status.toLowerCase();
-      return st === "pending" || st === "new" || st === "awaiting_quote" || st === "quote_sent";
+      return (
+        st === "pending" ||
+        st === "new" ||
+        st === "awaiting_quote" ||
+        st === "pending_quote" ||
+        st === "quote_sent" ||
+        st === "awaiting_reschedule"
+      );
     }).length;
     const completedBookings = bookings.filter((b) => {
       const st = b.status.toLowerCase();
@@ -901,8 +944,10 @@ function WorkshopPanelPageContent() {
     return { todayBusy, todayAvailableSlots, monthClosedDays };
   }, [monthCalendarDays]);
   const activeCalendarStatuses = new Set([
+    "pending_quote",
     "awaiting_quote",
     "quote_sent",
+    "quote_rejected",
     "quote_accepted",
     "awaiting_reschedule",
     "confirmed",
@@ -911,14 +956,20 @@ function WorkshopPanelPageContent() {
     const today = asDateKey(new Date());
     const todayRows = bookings.filter((b) => b.date === today);
     const active = todayRows.filter((b) => activeCalendarStatuses.has((b.status ?? "").toLowerCase())).length;
-    const cancelled = todayRows.filter((b) => (b.status ?? "").toLowerCase().startsWith("cancelled")).length;
+    const cancelled = todayRows.filter((b) => {
+      const s = (b.status ?? "").toLowerCase();
+      return s === "cancelled" || s.startsWith("cancelled_by");
+    }).length;
     return { all: todayRows.length, active, cancelled };
   }, [bookings]);
   const weeklySummary = useMemo(() => {
     const weekKeys = new Set(weekDates.map((d) => asDateKey(d)));
     const weekRows = bookings.filter((b) => weekKeys.has(b.date));
     const active = weekRows.filter((b) => activeCalendarStatuses.has((b.status ?? "").toLowerCase())).length;
-    const cancelled = weekRows.filter((b) => (b.status ?? "").toLowerCase().startsWith("cancelled")).length;
+    const cancelled = weekRows.filter((b) => {
+      const s = (b.status ?? "").toLowerCase();
+      return s === "cancelled" || s.startsWith("cancelled_by");
+    }).length;
     return { all: weekRows.length, active, cancelled };
   }, [bookings, weekDates]);
   const selectedDaySlots = useMemo(() => {
@@ -1127,36 +1178,32 @@ function WorkshopPanelPageContent() {
     setBookingActionId(id);
     setError("");
     try {
-      await sendBookingQuoteAsWorkshopOwner(id, finalPrice);
+      const noteText = (quoteNoteByBookingId[id] ?? booking.quote_note ?? "").trim();
+      await sendBookingQuoteAsWorkshopOwner(id, finalPrice, noteText || null);
       const now = new Date().toISOString();
       setBookings((prev) =>
         prev.map((b) =>
           b.id === id
-            ? { ...b, status: "quote_sent", final_price: finalPrice, quote_sent_at: now }
+            ? {
+                ...b,
+                status: "quote_sent",
+                final_price: finalPrice,
+                quote_sent_at: now,
+                quote_note: noteText || null,
+                quote_status: "pending_client_decision",
+              }
             : b,
         ),
       );
-      await sendSystemMessage({
-        recipientId: booking.user_id,
-        recipientRole: "client",
-        subject: `Wycena: ${booking.service_name}`,
-        body: [
-          `Warsztat: ${workshop.name}`,
-          `Usługa: ${booking.service_name}`,
-          `Termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
-          `Cena końcowa: ${finalPrice.toFixed(2)} zł`,
-          "",
-          "To jest aktywna wycena. Możesz ją zaakceptować lub odrzucić w skrzynce wiadomości.",
-        ].join("\n"),
-        relatedBookingId: booking.id,
-        relatedWorkshopId: workshop.id,
-      });
-      await sendBookingEmailNotification({
+      await notifyClientBookingQuoteSent({
+        clientUserId: booking.user_id,
         bookingId: booking.id,
         workshopId: workshop.id,
-        recipientId: booking.user_id,
-        subject: `ServyGo: ${booking.service_name} - nowa wycena`,
-        message: `Warsztat ${workshop.name} wysłał wycenę: ${finalPrice.toFixed(2)} zł. Sprawdź skrzynkę wiadomości w ServyGo.`,
+        workshopName: workshop.name,
+        serviceName: booking.service_name,
+        bookingDateLine: `${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
+        priceNumber: finalPrice,
+        quoteNote: noteText || null,
       });
       setSuccess("Wycena została wysłana do klienta.");
     } catch (e) {
@@ -1166,20 +1213,35 @@ function WorkshopPanelPageContent() {
     }
   }
 
-  async function cancelBookingByWorkshop(id: string) {
+  function openCancelBookingModal(booking: WorkshopOwnerBookingRow) {
     if (readOnly || !workshop) return;
-    const booking = bookings.find((item) => item.id === id);
+    setCancelModalBooking(booking);
+    setCancelModalReason("");
+  }
+
+  async function confirmCancelBookingModal() {
+    if (readOnly || !workshop) return;
+    const booking = cancelModalBooking;
     if (!booking) return;
-    const reason = window.prompt("Podaj krótki powód anulowania:");
-    if (!reason) return;
-    setBookingActionId(id);
+    const reason = cancelModalReason.trim();
+    if (!reason) {
+      setError("Podaj powód anulowania.");
+      return;
+    }
+    setBookingActionId(booking.id);
     setError("");
     try {
-      await cancelBookingAsWorkshopOwner(id, reason);
+      await cancelBookingAsWorkshopOwner(booking.id, reason);
       setBookings((prev) =>
         prev.map((b) =>
-          b.id === id
-            ? { ...b, status: "cancelled_by_workshop", cancel_reason: reason.trim() }
+          b.id === booking.id
+            ? {
+                ...b,
+                status: "cancelled",
+                cancel_reason: reason,
+                cancellation_reason: reason,
+                cancelled_by: "workshop",
+              }
             : b,
         ),
       );
@@ -1191,7 +1253,7 @@ function WorkshopPanelPageContent() {
           `Warsztat: ${workshop.name}`,
           `Usługa: ${booking.service_name}`,
           `Termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
-          `Powód anulowania: ${reason.trim()}`,
+          `Powód anulowania: ${reason}`,
         ].join("\n"),
         relatedBookingId: booking.id,
         relatedWorkshopId: workshop.id,
@@ -1201,8 +1263,15 @@ function WorkshopPanelPageContent() {
         workshopId: workshop.id,
         recipientId: booking.user_id,
         subject: `ServyGo: anulowanie rezerwacji ${booking.service_name}`,
-        message: `Warsztat ${workshop.name} anulował rezerwację. Powód: ${reason.trim()}`,
+        message: `Warsztat ${workshop.name} anulował rezerwację. Powód: ${reason}`,
       });
+      await sendBookingNotificationEmail({
+        type: "booking_cancelled",
+        bookingId: booking.id,
+        subject: `Anulowanie rezerwacji: ${booking.service_name}`,
+        body: `Warsztat ${workshop.name} anulował rezerwację. Powód: ${reason}`,
+      });
+      setCancelModalBooking(null);
       setSuccess("Rezerwacja została anulowana.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Nie udało się anulować rezerwacji.");
@@ -1211,29 +1280,40 @@ function WorkshopPanelPageContent() {
     }
   }
 
-  async function proposeRescheduleByWorkshop(id: string) {
+  function openRescheduleModal(booking: WorkshopOwnerBookingRow) {
     if (readOnly || !workshop) return;
-    const booking = bookings.find((item) => item.id === id);
+    setRescheduleModalBooking(booking);
+    setRescheduleModalDate(booking.date ?? "");
+    setRescheduleModalTime(booking.start_time?.slice(0, 5) ?? booking.time ?? "");
+    setRescheduleModalReason("");
+  }
+
+  async function confirmRescheduleModal() {
+    if (readOnly || !workshop) return;
+    const booking = rescheduleModalBooking;
     if (!booking) return;
-    const newDate = window.prompt("Podaj nową datę (YYYY-MM-DD):", booking.date);
-    if (!newDate?.trim()) return;
-    const newTime = window.prompt("Podaj nową godzinę (HH:MM):", booking.start_time?.slice(0, 5) ?? booking.time ?? "");
-    if (!newTime?.trim()) return;
-    const reason = window.prompt("Podaj krótki powód zmiany terminu:");
-    if (!reason?.trim()) return;
-    setBookingActionId(id);
+    const newDate = rescheduleModalDate.trim();
+    const newTime = rescheduleModalTime.trim();
+    const reason = rescheduleModalReason.trim();
+    if (!newDate || !newTime || !reason) {
+      setError("Uzupełnij datę, godzinę i powód zmiany terminu.");
+      return;
+    }
+    setBookingActionId(booking.id);
     setError("");
     try {
-      await proposeBookingRescheduleAsWorkshopOwner(id, newDate.trim(), newTime.trim(), reason.trim());
+      await proposeBookingRescheduleAsWorkshopOwner(booking.id, newDate, newTime, reason);
       setBookings((prev) =>
         prev.map((b) =>
-          b.id === id
+          b.id === booking.id
             ? {
                 ...b,
                 status: "awaiting_reschedule",
-                proposed_booking_date: newDate.trim(),
-                proposed_start_time: newTime.trim(),
-                reschedule_reason: reason.trim(),
+                proposed_booking_date: newDate,
+                proposed_start_time: newTime,
+                reschedule_reason: reason,
+                reschedule_status: "pending_client_decision",
+                proposed_by: "workshop",
               }
             : b,
         ),
@@ -1241,14 +1321,15 @@ function WorkshopPanelPageContent() {
       await sendSystemMessage({
         recipientId: booking.user_id,
         recipientRole: "client",
-        subject: `Propozycja nowego terminu: ${booking.service_name}`,
+        subject: "Warsztat zaproponował zmianę terminu",
         body: [
           `Warsztat: ${workshop.name}`,
+          `Usługa: ${booking.service_name}`,
           `Aktualny termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
-          `Proponowany termin: ${newDate.trim()} ${newTime.trim()}`,
-          `Powód: ${reason.trim()}`,
+          `Proponowany termin: ${newDate} ${newTime}`,
+          `Powód: ${reason}`,
           "",
-          "W skrzynce możesz zaakceptować lub odrzucić propozycję.",
+          "Wejdź w „Moje rezerwacje”, aby zaakceptować lub odrzucić propozycję.",
         ].join("\n"),
         relatedBookingId: booking.id,
         relatedWorkshopId: workshop.id,
@@ -1258,8 +1339,15 @@ function WorkshopPanelPageContent() {
         workshopId: workshop.id,
         recipientId: booking.user_id,
         subject: `ServyGo: propozycja nowego terminu (${booking.service_name})`,
-        message: `Warsztat zaproponował nowy termin: ${newDate.trim()} ${newTime.trim()}. Powód: ${reason.trim()}`,
+        message: `Warsztat zaproponował nowy termin: ${newDate} ${newTime}. Powód: ${reason}`,
       });
+      await sendBookingNotificationEmail({
+        type: "reschedule_proposed",
+        bookingId: booking.id,
+        subject: "Propozycja zmiany terminu",
+        body: `Nowy termin: ${newDate} ${newTime}. Powód: ${reason}`,
+      });
+      setRescheduleModalBooking(null);
       setSuccess("Wysłano propozycję zmiany terminu.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Nie udało się zaproponować nowego terminu.");
@@ -1850,14 +1938,14 @@ function WorkshopPanelPageContent() {
                     }`}
                   >
                     <span className="inline-flex items-center gap-2">
-                      {item === "Wiadomości" ? (
+                      {item === "Powiadomienia" ? (
                         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                           <rect x="3" y="5" width="18" height="14" rx="2" />
                           <path d="m4 7 8 6 8-6" />
                         </svg>
                       ) : null}
                       <span>{item}</span>
-                      {item === "Wiadomości" && unreadMessages > 0 ? (
+                      {item === "Powiadomienia" && unreadMessages > 0 ? (
                         <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
                           {unreadMessages > 99 ? "99+" : unreadMessages}
                         </span>
@@ -1905,14 +1993,14 @@ function WorkshopPanelPageContent() {
                       }`}
                     >
                       <span className="inline-flex items-center gap-2">
-                        {item === "Wiadomości" ? (
+                        {item === "Powiadomienia" ? (
                           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                             <rect x="3" y="5" width="18" height="14" rx="2" />
                             <path d="m4 7 8 6 8-6" />
                           </svg>
                         ) : null}
                         <span>{item}</span>
-                        {item === "Wiadomości" && unreadMessages > 0 ? (
+                        {item === "Powiadomienia" && unreadMessages > 0 ? (
                           <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
                             {unreadMessages > 99 ? "99+" : unreadMessages}
                           </span>
@@ -2062,6 +2150,7 @@ function WorkshopPanelPageContent() {
                               bookings.slice(0, 10).map((b) => {
                                 const busy = bookingActionId === b.id;
                                 const st = b.status.toLowerCase();
+                                const cancelled = isBookingCancelledStatus(b.status);
                                 return (
                                   <tr key={b.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
                                     <td className="px-3 py-2">{b.created_at?.slice(0, 10) ?? "—"}</td>
@@ -2073,8 +2162,8 @@ function WorkshopPanelPageContent() {
                                     <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>{formatBookingStatus(b.status)}</span></td>
                                     <td className="px-3 py-2">
                                       <div className="flex flex-wrap gap-1">
-                                        <button type="button" disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")} onClick={() => void sendQuoteForBooking(b.id)} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Wyślij wycenę</button>
-                                        <button type="button" disabled={readOnly || busy || st === "completed" || st === "cancelled_by_client" || st === "cancelled_by_workshop" || st === "cancelled_by_system"} onClick={() => void cancelBookingByWorkshop(b.id)} className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Anuluj</button>
+                                        <button type="button" disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")} onClick={() => void sendQuoteForBooking(b.id)} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Wyślij wycenę</button>
+                                        <button type="button" disabled={readOnly || busy || st === "completed" || cancelled} onClick={() => openCancelBookingModal(b)} className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Anuluj</button>
                                         <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Szczegóły</button>
                                       </div>
                                     </td>
@@ -2179,7 +2268,12 @@ function WorkshopPanelPageContent() {
                           ) : (
                             bookings.map((b) => {
                               const busy = bookingActionId === b.id;
+                              const crBusy = clientRescheduleBusyId === b.id;
                               const st = b.status.toLowerCase();
+                              const cancelled = isBookingCancelledStatus(b.status);
+                              const clientPending =
+                                (b.reschedule_status ?? "").trim().toLowerCase() === "pending_workshop_decision" &&
+                                (b.proposed_by ?? "").trim().toLowerCase() === "client";
                               return (
                                 <tr key={b.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
                                   <td className="px-3 py-2">{b.created_at?.slice(0, 10) ?? "—"}</td>
@@ -2189,9 +2283,31 @@ function WorkshopPanelPageContent() {
                                   <td className="px-3 py-2 text-xs">{b.carLabel}</td>
                                   <td className="whitespace-nowrap px-3 py-2">{b.date} {b.start_time?.slice(0, 5) ?? b.time} - {b.end_time?.slice(0, 5) ?? "—"}</td>
                                   <td className="px-3 py-2">{b.duration_minutes} min</td>
-                                  <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>{formatBookingStatus(b.status)}</span></td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex flex-wrap items-center gap-1">
+                                  <td className="px-3 py-2 align-top">
+                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>
+                                      {formatBookingStatus(b.status)}
+                                    </span>
+                                    {clientPending ? (
+                                      <div
+                                        className={`mt-1 max-w-[12rem] rounded-lg border px-2 py-1 text-[10px] font-semibold leading-snug ${
+                                          isDark ? "border-sky-500/45 bg-sky-500/15 text-sky-100" : "border-sky-300 bg-sky-50 text-sky-900"
+                                        }`}
+                                      >
+                                        Klient prosi o zmianę terminu
+                                        <div className="mt-0.5 font-normal opacity-95">
+                                          {(b.proposed_booking_date ?? "").trim().slice(0, 10)}{" "}
+                                          {(b.proposed_start_time ?? "").slice(0, 5)}
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                    {b.final_price != null && Number.isFinite(b.final_price) && (st === "quote_sent" || st === "confirmed" || st === "quote_rejected") ? (
+                                      <div className={`mt-1 max-w-[11rem] text-[10px] leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                        Wycena: {Number(b.final_price).toFixed(2)} zł · {quoteDecisionLabel(b.quote_status, b.status)}
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    <div className="flex min-w-[200px] max-w-[220px] flex-col gap-1">
                                       <input
                                         type="number"
                                         min={0}
@@ -2199,12 +2315,20 @@ function WorkshopPanelPageContent() {
                                         value={quoteDraftByBookingId[b.id] ?? (typeof b.final_price === "number" ? String(b.final_price) : "")}
                                         onChange={(e) => setQuoteDraftByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
                                         placeholder="Cena"
-                                        className="w-24 rounded-lg border px-2 py-1 text-xs text-black"
-                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || st === "cancelled_by_client" || st === "cancelled_by_workshop" || st === "cancelled_by_system"}
+                                        className="w-full rounded-lg border px-2 py-1 text-xs text-black"
+                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || cancelled}
+                                      />
+                                      <textarea
+                                        rows={2}
+                                        value={quoteNoteByBookingId[b.id] ?? b.quote_note ?? ""}
+                                        onChange={(e) => setQuoteNoteByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
+                                        placeholder="Notatka do wyceny (opcjonalnie)"
+                                        className="w-full resize-y rounded-lg border px-2 py-1 text-xs text-black"
+                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || cancelled}
                                       />
                                       <button
                                         type="button"
-                                        disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")}
+                                        disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")}
                                         onClick={() => void sendQuoteForBooking(b.id)}
                                         className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
                                       >
@@ -2212,16 +2336,38 @@ function WorkshopPanelPageContent() {
                                       </button>
                                       <button
                                         type="button"
-                                        disabled={readOnly || busy || st === "completed" || st === "done" || st === "cancelled_by_client" || st === "cancelled_by_workshop" || st === "cancelled_by_system"}
-                                        onClick={() => void cancelBookingByWorkshop(b.id)}
+                                        disabled={readOnly || busy || st === "completed" || st === "done" || cancelled}
+                                        onClick={() => openCancelBookingModal(b)}
                                         className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
                                       >
                                         Anuluj
                                       </button>
+                                      {clientPending ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            disabled={readOnly || busy || crBusy}
+                                            onClick={() => void respondClientRescheduleProposal(b, true)}
+                                            className="rounded-lg border border-emerald-500/60 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-800 disabled:opacity-40 dark:text-emerald-100"
+                                          >
+                                            {crBusy ? "…" : "Akceptuj nowy termin"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={readOnly || busy || crBusy}
+                                            onClick={() => void respondClientRescheduleProposal(b, false)}
+                                            className="rounded-lg border border-zinc-400/60 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                          >
+                                            Odrzuć zmianę
+                                          </button>
+                                        </>
+                                      ) : null}
                                       <button
                                         type="button"
-                                        disabled={readOnly || busy || st === "completed" || st === "done" || st.startsWith("cancelled")}
-                                        onClick={() => void proposeRescheduleByWorkshop(b.id)}
+                                        disabled={
+                                          readOnly || busy || st === "completed" || st === "done" || cancelled || st === "awaiting_reschedule" || clientPending
+                                        }
+                                        onClick={() => openRescheduleModal(b)}
                                         className="rounded-lg border border-purple-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
                                       >
                                         Zmień termin
@@ -2240,7 +2386,7 @@ function WorkshopPanelPageContent() {
                   </section>
                 ) : null}
 
-                {activeSection === "Wiadomości" && currentUserId ? (
+                {activeSection === "Powiadomienia" && currentUserId ? (
                   <InternalInbox
                     currentUserId={currentUserId}
                     isDark={isDark}
@@ -2868,22 +3014,259 @@ function WorkshopPanelPageContent() {
         {selectedBooking ? (
           <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
             <button type="button" className="absolute inset-0 bg-zinc-950/70" onClick={() => setSelectedBooking(null)} aria-label="Zamknij" />
-            <div className={`relative z-[1] w-full max-w-lg rounded-2xl border p-5 ${isDark ? "border-blue-500/35 bg-zinc-900" : "border-blue-200 bg-white"}`}>
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-bold">Szczegóły rezerwacji</h3>
-                <button type="button" onClick={() => setSelectedBooking(null)} className="rounded-lg border px-2 py-1 text-xs">Zamknij</button>
-              </div>
-              <dl className="mt-4 space-y-2 text-sm">
-                <div><dt className="text-xs text-zinc-500">Klient</dt><dd>{selectedBooking.clientLabel}</dd></div>
-                <div><dt className="text-xs text-zinc-500">Kontakt</dt><dd>{selectedBooking.clientPhone} · {selectedBooking.clientEmail}</dd></div>
-                <div><dt className="text-xs text-zinc-500">Usługa</dt><dd>{selectedBooking.service_name}</dd></div>
-                <div><dt className="text-xs text-zinc-500">Auto</dt><dd>{selectedBooking.carLabel}</dd></div>
-                <div><dt className="text-xs text-zinc-500">Termin</dt><dd>{selectedBooking.date} {selectedBooking.time}</dd></div>
-                <div><dt className="text-xs text-zinc-500">Status</dt><dd>{formatBookingStatus(selectedBooking.status)}</dd></div>
-              </dl>
+            <div
+              className={`relative z-[1] max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border p-5 sm:p-6 ${
+                isDark ? "border-blue-500/35 bg-zinc-900" : "border-blue-200 bg-white"
+              }`}
+            >
+              {(() => {
+                const b = selectedBooking;
+                const vd = parseBookingVehicleData(b.vehicle_data);
+                const startT = b.start_time?.slice(0, 5) ?? b.time ?? "—";
+                const endT = b.end_time?.slice(0, 5) ?? "—";
+                const quoteSent = Boolean(b.quote_sent_at);
+                const problemText = (b.problem_description ?? "").trim();
+                const secTitle = (t: string) => (
+                  <h4 className={`text-xs font-bold uppercase tracking-wide ${isDark ? "text-blue-300/90" : "text-blue-700"}`}>{t}</h4>
+                );
+                const row = (label: string, value: string) => (
+                  <div className="grid gap-1 sm:grid-cols-[160px_1fr] sm:items-start">
+                    <dt className={`text-xs font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{label}</dt>
+                    <dd className={`text-sm ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{value}</dd>
+                  </div>
+                );
+                const guidePrice =
+                  typeof b.price === "number" && Number.isFinite(b.price) && b.price > 0 ? `${b.price} zł` : "— (widełki po wycenie)";
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h3 className="text-xl font-bold">Szczegóły rezerwacji</h3>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBooking(null)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                      >
+                        Zamknij
+                      </button>
+                    </div>
+
+                    <section className={`mt-5 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
+                      {secTitle("Klient")}
+                      <dl className="space-y-2">
+                        {row("Imię i nazwisko", dash(b.clientLabel))}
+                        {row("E-mail", dash(b.clientEmail))}
+                        {row("Telefon", dash(b.clientPhone))}
+                        {row("ID użytkownika", b.user_id)}
+                      </dl>
+                    </section>
+
+                    <section className={`mt-4 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
+                      {secTitle("Auto")}
+                      <dl className="space-y-2">
+                        {row("Typ pojazdu", dash(vd.vehicleType))}
+                        {row("Marka", dash(vd.brand))}
+                        {row("Model", dash(vd.model))}
+                        {row("Rocznik", dash(vd.year))}
+                        {row("Silnik / paliwo", [dash(vd.engine), dash(vd.fuel)].filter((x) => x !== "—").join(" · ") || "—")}
+                        {row("VIN", dash(vd.vin))}
+                        {row("Nr rejestracyjny", dash(vd.plate))}
+                        {row("Miasto (zapytanie)", dash(vd.city))}
+                        {row("Podsumowanie (zapisane)", dash(b.carLabel))}
+                      </dl>
+                    </section>
+
+                    <section className={`mt-4 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
+                      {secTitle("Usługa")}
+                      <dl className="space-y-2">
+                        {row("Wybrana usługa", dash(b.service_name))}
+                        {row("Kategoria", dash(b.service_category))}
+                        {row("Czas wykonania", `${b.duration_minutes ?? "—"} min`)}
+                        {row("Cena wstępna / widełki", guidePrice)}
+                      </dl>
+                    </section>
+
+                    <section className={`mt-4 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
+                      {secTitle("Problem")}
+                      <div>
+                        <p className={`text-sm whitespace-pre-wrap ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+                          {problemText || "—"}
+                        </p>
+                        {!problemText ? (
+                          <p className={`mt-1 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Klient nie podał opisu.</p>
+                        ) : null}
+                      </div>
+                      {(b.notes ?? "").trim() ? (
+                        <div className={`mt-2 border-t pt-2 ${isDark ? "border-zinc-700" : "border-blue-100"}`}>
+                          <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Notatki (pole notes)</p>
+                          <p className={`mt-1 text-sm whitespace-pre-wrap ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{b.notes}</p>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className={`mt-4 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
+                      {secTitle("Termin")}
+                      <dl className="space-y-2">
+                        {row("Data", dash(b.date))}
+                        {row("Godzina rozpoczęcia", dash(startT))}
+                        {row("Przewidywane zakończenie", dash(endT))}
+                        {row("Czas trwania usługi", `${b.duration_minutes ?? "—"} min`)}
+                        {row("Status rezerwacji", formatBookingStatus(b.status))}
+                        {(b.proposed_booking_date ?? "").trim()
+                          ? row(
+                              "Propozycja nowego terminu",
+                              `${dash(b.proposed_booking_date)} ${dash(b.proposed_start_time?.slice(0, 5))}`,
+                            )
+                          : null}
+                        {(b.reschedule_reason ?? "").trim() ? row("Powód zmiany terminu", dash(b.reschedule_reason)) : null}
+                        {(b.reschedule_status ?? "").trim() ? row("Status zmiany terminu", dash(b.reschedule_status)) : null}
+                      </dl>
+                    </section>
+
+                    <section className={`mt-4 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
+                      {secTitle("Wycena")}
+                      <dl className="space-y-2">
+                        {row("Wycena wysłana", quoteSent ? "Tak" : "Nie")}
+                        {row(
+                          "Kwota wyceny",
+                          b.final_price != null && Number.isFinite(b.final_price) ? `${Number(b.final_price).toFixed(2)} zł` : "—",
+                        )}
+                        {row("Treść / notatka", dash(b.quote_note))}
+                        {row(
+                          "Data wysłania",
+                          b.quote_sent_at
+                            ? new Date(b.quote_sent_at).toLocaleString("pl-PL")
+                            : "—",
+                        )}
+                        {row("Decyzja klienta", quoteDecisionLabel(b.quote_status, b.status))}
+                      </dl>
+                    </section>
+                  </>
+                );
+              })()}
             </div>
           </div>
         ) : null}
+
+        {cancelModalBooking ? (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <button
+              type="button"
+              className="absolute inset-0 bg-zinc-950/70"
+              aria-label="Zamknij"
+              onClick={() => {
+                if (!bookingActionId) setCancelModalBooking(null);
+              }}
+            />
+            <div
+              className={`relative z-[1] w-full max-w-md rounded-2xl border p-5 shadow-xl ${
+                isDark ? "border-zinc-600 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
+              }`}
+            >
+              <h3 className="text-lg font-bold">Anulować rezerwację?</h3>
+              <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                Czy na pewno chcesz anulować tę rezerwację?
+              </p>
+              <label className={`mt-4 block text-sm font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                Powód anulowania
+                <textarea
+                  value={cancelModalReason}
+                  onChange={(e) => setCancelModalReason(e.target.value)}
+                  rows={3}
+                  className={`${formInputClassName} mt-1 w-full`}
+                />
+              </label>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(bookingActionId)}
+                  onClick={() => setCancelModalBooking(null)}
+                  className="rounded-xl border border-zinc-400 px-4 py-2 text-sm font-semibold"
+                >
+                  Wróć
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(bookingActionId)}
+                  onClick={() => void confirmCancelBookingModal()}
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  Potwierdź anulowanie
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {rescheduleModalBooking ? (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <button
+              type="button"
+              className="absolute inset-0 bg-zinc-950/70"
+              aria-label="Zamknij"
+              onClick={() => {
+                if (!bookingActionId) setRescheduleModalBooking(null);
+              }}
+            />
+            <div
+              className={`relative z-[1] w-full max-w-md rounded-2xl border p-5 shadow-xl ${
+                isDark ? "border-zinc-600 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
+              }`}
+            >
+              <h3 className="text-lg font-bold">Zaproponuj nowy termin</h3>
+              <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                Klient zatwierdzi lub odrzuci propozycję w „Moje rezerwacje”.
+              </p>
+              <div className="mt-4 grid gap-3">
+                <label className={`text-sm font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  Nowa data
+                  <input
+                    type="date"
+                    value={rescheduleModalDate}
+                    onChange={(e) => setRescheduleModalDate(e.target.value)}
+                    className={`${formInputClassName} mt-1 w-full`}
+                  />
+                </label>
+                <label className={`text-sm font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  Godzina rozpoczęcia
+                  <input
+                    type="time"
+                    value={rescheduleModalTime}
+                    onChange={(e) => setRescheduleModalTime(e.target.value)}
+                    className={`${formInputClassName} mt-1 w-full`}
+                  />
+                </label>
+                <label className={`text-sm font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  Powód / notatka dla klienta
+                  <textarea
+                    value={rescheduleModalReason}
+                    onChange={(e) => setRescheduleModalReason(e.target.value)}
+                    rows={3}
+                    className={`${formInputClassName} mt-1 w-full`}
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(bookingActionId)}
+                  onClick={() => setRescheduleModalBooking(null)}
+                  className="rounded-xl border border-zinc-400 px-4 py-2 text-sm font-semibold"
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(bookingActionId)}
+                  onClick={() => void confirmRescheduleModal()}
+                  className="rounded-xl bg-purple-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  Wyślij propozycję
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {isVehiclePricingModalOpen ? (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-5">
             <button

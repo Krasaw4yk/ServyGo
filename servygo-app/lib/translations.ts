@@ -278,7 +278,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         calendar: "Kalendarz terminów",
         description: "Opis",
         photos: "Zdjęcia",
-        customerMessages: "Wiadomości klientów",
+        customerMessages: "Powiadomienia klientów",
       },
     },
     offers: {

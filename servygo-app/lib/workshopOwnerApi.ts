@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
+import { parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
 import { formatSupabaseError, isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
 
 export type WorkshopOwnerBookingRow = {
@@ -18,13 +19,29 @@ export type WorkshopOwnerBookingRow = {
   final_price?: number | null;
   quote_sent_at?: string | null;
   quote_expires_at?: string | null;
+  quote_note?: string | null;
+  quote_status?: string | null;
   cancel_reason?: string | null;
   proposed_booking_date?: string | null;
   proposed_start_time?: string | null;
   proposed_end_time?: string | null;
   reschedule_reason?: string | null;
+  reschedule_status?: string | null;
+  reschedule_note?: string | null;
+  proposed_by?: string | null;
+  employee_id?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
   created_at: string;
   car_id: string | null;
+  vehicle_data?: unknown;
+  notes?: string | null;
+  problem_description?: string | null;
+  service_category?: string | null;
+  client_name?: string | null;
+  client_email?: string | null;
+  client_phone?: string | null;
   clientLabel: string;
   clientEmail: string;
   clientPhone: string;
@@ -200,13 +217,56 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
   const { data: rows, error } = await supabase
     .from("bookings")
     .select(
-      "id, user_id, workshop_id, workshop_name, service_name, price, final_price, quote_sent_at, quote_expires_at, cancel_reason, proposed_booking_date, proposed_start_time, proposed_end_time, reschedule_reason, duration_minutes, date, time, booking_date, start_time, end_time, status, created_at, car_id",
+      [
+        "id",
+        "user_id",
+        "workshop_id",
+        "workshop_name",
+        "service_name",
+        "service_category",
+        "price",
+        "final_price",
+        "quote_sent_at",
+        "quote_expires_at",
+        "quote_note",
+        "quote_status",
+        "cancel_reason",
+        "proposed_booking_date",
+        "proposed_start_time",
+        "proposed_end_time",
+        "reschedule_reason",
+        "reschedule_status",
+        "reschedule_note",
+        "proposed_by",
+        "cancelled_at",
+        "cancelled_by",
+        "cancellation_reason",
+        "duration_minutes",
+        "date",
+        "time",
+        "booking_date",
+        "start_time",
+        "end_time",
+        "status",
+        "created_at",
+        "car_id",
+        "vehicle_data",
+        "notes",
+        "problem_description",
+        "client_name",
+        "client_email",
+        "client_phone",
+        "employee_id",
+      ].join(", "),
     )
     .eq("workshop_id", workshopId)
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw new Error(formatSupabaseError(error));
-  const list = (rows as Omit<WorkshopOwnerBookingRow, "clientLabel" | "carLabel">[] | null) ?? [];
+  const list = ((rows ?? []) as unknown) as Omit<
+    WorkshopOwnerBookingRow,
+    "clientLabel" | "clientEmail" | "clientPhone" | "carLabel"
+  >[];
   if (list.length === 0) return [];
   const userIds = [...new Set(list.map((r) => r.user_id))];
   const { data: profiles, error: pErr } = await supabase
@@ -239,22 +299,34 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
     arr.push(c);
     carsByUser.set(c.user_id, arr);
   }
-  function clientLabel(uid: string) {
+  function clientLabel(uid: string, snapshotName: string | null | undefined) {
+    const snap = (snapshotName ?? "").trim();
+    if (snap) return snap;
     const p = profileMap.get(uid);
     if (!p) return "Klient";
     const n = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
     return n || p.email || "Klient";
   }
-  function clientEmail(uid: string) {
+  function clientEmail(uid: string, snapshotEmail: string | null | undefined) {
+    const snap = (snapshotEmail ?? "").trim();
+    if (snap) return snap;
     const p = profileMap.get(uid);
     return p?.email?.trim() || "—";
   }
-  function clientPhone(uid: string) {
+  function clientPhone(uid: string, snapshotPhone: string | null | undefined) {
+    const snap = (snapshotPhone ?? "").trim();
+    if (snap) return snap;
     const p = profileMap.get(uid);
     const raw = (p?.phone ?? "").trim();
     return raw || "—";
   }
-  function carLabel(uid: string, carId: string | null) {
+  function carLabel(uid: string, carId: string | null, vehicleData: unknown) {
+    const vd = parseBookingVehicleData(vehicleData);
+    const fromJson = [vd.brand, vd.model, vd.year].filter(Boolean).join(" ").trim();
+    if (fromJson) {
+      const tail = [vd.vehicleType, vd.fuel, vd.vin ? `VIN ${vd.vin}` : "", vd.plate].filter(Boolean).join(" · ");
+      return tail ? `${fromJson} (${tail})` : fromJson;
+    }
     const listC = carsByUser.get(uid) ?? [];
     const one = carId
       ? listC.find((c) => c.id === carId)
@@ -267,10 +339,10 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
     ...r,
     date: r.booking_date ?? r.date,
     time: (r.start_time ? r.start_time.slice(0, 5) : null) ?? r.time,
-    clientLabel: clientLabel(r.user_id),
-    clientEmail: clientEmail(r.user_id),
-    clientPhone: clientPhone(r.user_id),
-    carLabel: carLabel(r.user_id, r.car_id),
+    clientLabel: clientLabel(r.user_id, r.client_name),
+    clientEmail: clientEmail(r.user_id, r.client_email),
+    clientPhone: clientPhone(r.user_id, r.client_phone),
+    carLabel: carLabel(r.user_id, r.car_id, r.vehicle_data),
   }));
 }
 
@@ -317,20 +389,23 @@ export async function upsertWorkshopEmployeeForOwner(
 }
 
 const OWNER_BOOKING_STATUSES = [
-  "awaiting_quote",
+  "pending_quote",
   "quote_sent",
-  "quote_accepted",
   "quote_rejected",
   "confirmed",
-  "cancelled_by_client",
-  "cancelled_by_workshop",
-  "cancelled_by_system",
+  "cancelled",
   "completed",
   "pending",
   "new",
-  "cancelled",
   "done",
   "rejected",
+  "awaiting_reschedule",
+  /** Legacy alias kept until DB migration 36 applied everywhere */
+  "awaiting_quote",
+  "quote_accepted",
+  "cancelled_by_client",
+  "cancelled_by_workshop",
+  "cancelled_by_system",
 ] as const;
 
 export async function updateBookingStatusAsWorkshopOwner(bookingId: string, status: (typeof OWNER_BOOKING_STATUSES)[number]): Promise<void> {
@@ -340,12 +415,18 @@ export async function updateBookingStatusAsWorkshopOwner(bookingId: string, stat
   if (error) throw new Error(formatSupabaseError(error));
 }
 
-export async function sendBookingQuoteAsWorkshopOwner(bookingId: string, finalPrice: number): Promise<void> {
+export async function sendBookingQuoteAsWorkshopOwner(
+  bookingId: string,
+  finalPrice: number,
+  quoteNote?: string | null,
+): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
   if (!Number.isFinite(finalPrice) || finalPrice < 0) throw new Error("Nieprawidłowa cena.");
+  const trimmedNote = quoteNote?.trim() ?? "";
   const { error } = await supabase.rpc("send_booking_quote", {
     p_booking_id: bookingId,
     p_final_price: finalPrice,
+    p_quote_note: trimmedNote.length ? trimmedNote : null,
   });
   if (error) throw new Error(formatSupabaseError(error));
 }

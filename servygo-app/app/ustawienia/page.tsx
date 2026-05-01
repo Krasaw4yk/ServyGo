@@ -11,6 +11,28 @@ import { isAdmin } from "@/lib/adminApi";
 import { getUserActiveWorkshop } from "@/lib/workshopApi";
 
 type ToggleKey = "email" | "sms" | "reminders" | "promotions";
+
+type SidebarNavItem =
+  | { type: "scroll"; label: string; sectionId: string }
+  | { type: "link"; label: string; href: string };
+
+const SIDEBAR_NAV: SidebarNavItem[] = [
+  { type: "scroll", label: "Ustawienia konta", sectionId: "sec-konto" },
+  { type: "link", label: "Moje rezerwacje", href: "/moje-rezerwacje" },
+  { type: "link", label: "Moje pojazdy", href: "/?account=vehicles" },
+  { type: "scroll", label: "Bezpieczeństwo", sectionId: "sec-bezpieczenstwo" },
+  { type: "link", label: "Powiadomienia", href: "/moje-wiadomosci" },
+  { type: "link", label: "Kalendarz", href: "/moj-kalendarz" },
+  { type: "scroll", label: "Prywatność", sectionId: "sec-prywatnosc" },
+  { type: "scroll", label: "Pomoc i kontakt", sectionId: "sec-pomoc" },
+  { type: "scroll", label: "O aplikacji", sectionId: "sec-aplikacji" },
+];
+
+function sidebarEntryClass(active: boolean) {
+  return `block w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
+    active ? "bg-blue-600 text-white" : "bg-white text-zinc-700 hover:bg-blue-50 hover:text-blue-700"
+  }`;
+}
 type ProfileRow = {
   first_name: string | null;
   last_name: string | null;
@@ -137,6 +159,15 @@ export default function UstawieniaPage() {
     window.localStorage.setItem("servygo-theme", theme);
   }, [mounted, theme]);
 
+  useEffect(() => {
+    if (!mounted) return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [mounted]);
+
   const displayName = useMemo(() => {
     const full = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
     return full || user?.email || "Użytkownik ServyGo";
@@ -148,20 +179,14 @@ export default function UstawieniaPage() {
     router.push("/");
   }
 
+  function scrollToSection(sectionId: string, menuLabel: string) {
+    setActiveMenu(menuLabel);
+    window.history.replaceState(null, "", `#${sectionId}`);
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   if (!mounted || !user) return null;
   const isDark = theme === "dark";
-
-  const sidebarItems = [
-    "Ustawienia konta",
-    "Moje rezerwacje",
-    "Moje pojazdy",
-    "Bezpieczeństwo",
-    "Powiadomienia",
-    "Płatności",
-    "Prywatność",
-    "Pomoc i kontakt",
-    "O aplikacji",
-  ];
 
   return (
     <ServyGoPageShell isDark={isDark}>
@@ -187,20 +212,23 @@ export default function UstawieniaPage() {
             </div>
 
             <nav className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-1">
-              {sidebarItems.map((item) => {
-                const active = item === activeMenu;
+              {SIDEBAR_NAV.map((entry) => {
+                if (entry.type === "link") {
+                  return (
+                    <Link key={entry.label} href={entry.href} className={sidebarEntryClass(false)}>
+                      {entry.label}
+                    </Link>
+                  );
+                }
+                const active = activeMenu === entry.label;
                 return (
                   <button
-                    key={item}
+                    key={entry.label}
                     type="button"
-                    onClick={() => setActiveMenu(item)}
-                    className={`rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
-                      active
-                        ? "bg-blue-600 text-white"
-                        : "bg-white text-zinc-700 hover:bg-blue-50 hover:text-blue-700"
-                    }`}
+                    onClick={() => scrollToSection(entry.sectionId, entry.label)}
+                    className={sidebarEntryClass(active)}
                   >
-                    {item}
+                    {entry.label}
                   </button>
                 );
               })}
@@ -216,16 +244,15 @@ export default function UstawieniaPage() {
           </aside>
 
           <section className="w-full rounded-3xl border border-blue-200/80 bg-white/90 p-5 shadow-[0_20px_60px_rgba(37,99,235,0.12)] backdrop-blur-md sm:p-7">
-            <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <header className="mb-6">
               <div>
                 <h1 className="text-3xl font-bold text-zinc-900">Ustawienia</h1>
                 <p className="mt-1 text-sm text-zinc-600">Zarządzaj swoim kontem i preferencjami</p>
               </div>
-              <div className="rounded-full border border-blue-100 bg-blue-50 px-3 py-2 text-blue-600">🔔</div>
             </header>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+              <article id="sec-konto" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Dane konta</h2>
                 <div className="mt-3 space-y-2 text-sm text-zinc-700">
                   <p><span className="font-semibold">Imię i nazwisko:</span> {displayName}</p>
@@ -237,7 +264,7 @@ export default function UstawieniaPage() {
                 </button>
               </article>
 
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+              <article id="sec-powiadomienia" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Powiadomienia</h2>
                 <div className="mt-3 space-y-2">
                   <SettingToggle checked={toggles.email} onChange={() => setToggles((p) => ({ ...p, email: !p.email }))} label="Powiadomienia e-mail" description="Informacje o zmianach statusu rezerwacji." />
@@ -247,7 +274,7 @@ export default function UstawieniaPage() {
                 </div>
               </article>
 
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+              <article id="sec-bezpieczenstwo" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Bezpieczeństwo</h2>
                 <ul className="mt-3 space-y-2 text-sm text-zinc-700">
                   <li className="rounded-xl border border-zinc-200 px-3 py-2">Zmiana hasła</li>
@@ -256,7 +283,7 @@ export default function UstawieniaPage() {
                 </ul>
               </article>
 
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+              <article id="sec-prywatnosc" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Prywatność</h2>
                 <ul className="mt-3 space-y-2 text-sm text-zinc-700">
                   <li className="rounded-xl border border-zinc-200 px-3 py-2">Polityka prywatności</li>
@@ -265,15 +292,15 @@ export default function UstawieniaPage() {
                 </ul>
               </article>
 
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+              <article id="sec-pojazdy" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Moje pojazdy</h2>
                 <p className="mt-2 text-sm text-zinc-600">Masz zapisanych {vehiclesCount} pojazdów. Zarządzaj nimi i dodawaj kolejne auta.</p>
-                <Link href="/moje-konto" className="mt-4 inline-flex rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
+                <Link href="/?account=vehicles" className="mt-4 inline-flex rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
                   Zarządzaj pojazdami
                 </Link>
               </article>
 
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+              <article id="sec-rezerwacje" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Moje rezerwacje</h2>
                 <p className="mt-2 text-sm text-zinc-600">Masz {bookingsCount} rezerwacji. Sprawdź swoje aktualne i poprzednie wizyty.</p>
                 <Link href="/moje-rezerwacje" className="mt-4 inline-flex rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
@@ -281,15 +308,17 @@ export default function UstawieniaPage() {
                 </Link>
               </article>
 
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
-                <h2 className="text-lg font-semibold text-zinc-900">Płatności</h2>
-                <p className="mt-2 text-sm text-zinc-600">Historia płatności i metody płatności będą dostępne w tej sekcji.</p>
-                <button type="button" className="mt-4 rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
-                  Przegląd płatności
-                </button>
+              <article id="sec-kalendarz" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
+                <h2 className="text-lg font-semibold text-zinc-900">Kalendarz wizyt</h2>
+                <p className="mt-2 text-sm text-zinc-600">
+                  Przeglądaj zaplanowane terminy w wygodnym widoku kalendarza — ta sama lista co na stronie konta.
+                </p>
+                <Link href="/moj-kalendarz" className="mt-4 inline-flex rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
+                  Otwórz kalendarz
+                </Link>
               </article>
 
-              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+              <article id="sec-pomoc" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Pomoc i kontakt</h2>
                 <p className="mt-2 text-sm text-zinc-600">Skontaktuj się z naszym zespołem wsparcia lub odwiedź FAQ.</p>
                 <div className="mt-4 flex gap-2">
@@ -303,7 +332,7 @@ export default function UstawieniaPage() {
               </article>
             </div>
 
-            <article className="mt-5 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 p-5 text-white shadow-[0_18px_38px_rgba(37,99,235,0.35)]">
+            <article id="sec-aplikacji" className="mt-5 scroll-mt-28 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 p-5 text-white shadow-[0_18px_38px_rgba(37,99,235,0.35)]">
               <h3 className="text-lg font-semibold">Potrzebujesz pomocy?</h3>
               <p className="mt-1 text-sm text-blue-50">Skontaktuj się z naszym zespołem supportu — odpowiadamy zwykle w ciągu 24h.</p>
               <div className="mt-4 flex flex-wrap gap-2">

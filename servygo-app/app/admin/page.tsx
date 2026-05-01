@@ -8,7 +8,8 @@ import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import InternalInbox from "@/components/InternalInbox";
-import { getUnreadMessagesCount, sendSystemMessage } from "@/lib/messagesApi";
+import { sendSystemMessage } from "@/lib/messagesApi";
+import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 import {
   type AdminSidebarNotificationCounts,
   type AdminWorkshopDetail,
@@ -38,7 +39,7 @@ import { getAdminDashboardStats, type AdminDashboardStats } from "@/lib/adminSta
 
 const SIDEBAR_ITEMS = [
   "Dashboard",
-  "Wiadomości",
+  "Powiadomienia",
   "Zgłoszenia warsztatów",
   "Warsztaty",
   "Rezerwacje",
@@ -53,7 +54,7 @@ type SidebarBadgeState = Record<SidebarItem, number>;
 
 const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
   Dashboard: 0,
-  Wiadomości: 0,
+  Powiadomienia: 0,
   "Zgłoszenia warsztatów": 0,
   Warsztaty: 0,
   Rezerwacje: 0,
@@ -256,11 +257,11 @@ export default function AdminPage() {
     try {
       const [counts, unreadMessages]: [AdminSidebarNotificationCounts, number] = await Promise.all([
         getAdminSidebarNotificationCounts(currentUser.id, currentUser.email),
-        getUnreadMessagesCount(currentUser.id, true),
+        getUnifiedUnreadCount(currentUser.id, true),
       ]);
       setLiveSidebarBadges((prev) => ({
         ...prev,
-        Wiadomości: unreadMessages,
+        Powiadomienia: unreadMessages,
         "Zgłoszenia warsztatów": counts.pendingLeads,
         Rezerwacje: counts.newBookings,
         Użytkownicy: counts.newUsers24h,
@@ -827,7 +828,7 @@ export default function AdminPage() {
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-2">
-                        {item === "Wiadomości" ? (
+                        {item === "Powiadomienia" ? (
                           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                             <rect x="3" y="5" width="18" height="14" rx="2" />
                             <path d="m4 7 8 6 8-6" />
@@ -1347,13 +1348,13 @@ export default function AdminPage() {
               </>
             ) : null}
 
-            {activeTab === "Wiadomości" && currentUser ? (
+            {activeTab === "Powiadomienia" && currentUser ? (
               <InternalInbox
                 currentUserId={currentUser.id}
                 isDark={isDark}
                 viewerRole="admin"
                 onUnreadCountChange={(count) =>
-                  setLiveSidebarBadges((prev) => ({ ...prev, Wiadomości: count }))
+                  setLiveSidebarBadges((prev) => ({ ...prev, Powiadomienia: count }))
                 }
               />
             ) : null}
