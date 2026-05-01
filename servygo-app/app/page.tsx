@@ -11,7 +11,7 @@ import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
-import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
+import { getServiceCatalogGroupedByMainCategory } from "@/lib/serviceCatalog";
 import {
   createTranslator,
   getTranslationNode,
@@ -23,6 +23,8 @@ import {
   getVehicleModels,
   getVehicleTypeLabel,
   getVehicleYears,
+  sortAlphabetically,
+  sortYearsDesc,
   vehicleData,
   vehicleTypeOptions,
   type VehicleTypeKey,
@@ -424,13 +426,22 @@ export default function Home() {
     () => vehicles.find((v) => v.id === selectedSavedCarId) ?? null,
     [selectedSavedCarId, vehicles],
   );
+  const sortedVehicles = useMemo(
+    () =>
+      [...vehicles].sort((a, b) =>
+        `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`, "pl", { sensitivity: "base" }),
+      ),
+    [vehicles],
+  );
   const savedCarOptions = useMemo<SavedCarOption[]>(
     () =>
-      vehicles.map((vehicle) => ({
-        id: vehicle.id,
-        label: `${vehicle.brand} ${vehicle.model} (${vehicle.year || "—"})${vehicle.isPrimary ? " • domyślne" : ""}`,
-      })),
-    [vehicles],
+      sortedVehicles
+        .map((vehicle) => ({
+          id: vehicle.id,
+          label: `${vehicle.brand} ${vehicle.model} (${vehicle.year || "—"})${vehicle.isPrimary ? " • domyślne" : ""}`,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "pl", { sensitivity: "base" })),
+    [sortedVehicles],
   );
   const filteredSavedCarOptions = useMemo(() => {
     const needle = carPickerQuery.trim().toLowerCase();
@@ -449,7 +460,7 @@ export default function Home() {
   const brandsForVehicleType = getVehicleBrands(vehicleType);
   const fuelsForVehicleType = getVehicleFuels(vehicleType);
   const serviceCatalogForVehicleType = useMemo(
-    () => getServiceCatalogByVehicleType(vehicleType),
+    () => (vehicleType ? getServiceCatalogGroupedByMainCategory(vehicleType) : []),
     [vehicleType],
   );
   const fuelLabel = currentVehicleConfig?.fuelLabel ?? "Silnik / paliwo";
@@ -521,9 +532,10 @@ export default function Home() {
     [],
   );
   const citySelectOptions = useMemo(
-    () => polishCityOptions.map((city) => ({ value: city, label: city })),
+    () => sortAlphabetically(polishCityOptions).map((city) => ({ value: city, label: city })),
     [],
   );
+  const sortedYears = useMemo(() => sortYearsDesc(years).map(String), [years]);
   const currentFieldClassName = isDark ? fieldClassName : lightFieldClassName;
   const headerShellClass = isDark
     ? "mb-8 w-full max-w-full rounded-3xl border border-blue-500/25 bg-zinc-950/70 px-3 py-3 shadow-[0_20px_70px_rgba(2,6,23,0.65)] backdrop-blur-2xl sm:px-4 md:px-8 md:py-[1.125rem]"
@@ -1455,20 +1467,25 @@ export default function Home() {
       <div className={pagePatternClass} />
       <main className="relative z-[1] mx-auto w-full max-w-7xl px-2 py-6 sm:px-6 sm:py-10">
         <section
-          className={`relative overflow-hidden rounded-3xl border px-5 py-8 sm:px-7 sm:py-10 md:px-10 md:py-12 ${
+          className={`relative isolate overflow-visible rounded-3xl border px-5 pb-10 pt-8 sm:px-7 sm:pb-11 sm:pt-10 md:px-10 md:pb-12 md:pt-12 ${
             isDark
               ? "border-blue-500/20 bg-gradient-to-b from-[#061225] via-[#050d1d] to-[#02050b]"
               : "border-blue-200/80 bg-gradient-to-b from-white/60 via-[#f7fbff]/70 to-[#fff4e9]/78 shadow-[0_24px_65px_rgba(37,99,235,0.14),0_20px_46px_rgba(249,115,22,0.13)] backdrop-blur-[2px]"
           }`}
         >
-          {isDark ? (
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(59,130,246,0.18),transparent_45%),radial-gradient(ellipse_at_bottom_left,rgba(249,115,22,0.1),transparent_45%)]" />
-          ) : null}
-          <div className="pointer-events-none absolute -top-24 right-[-80px] h-72 w-72 rounded-full bg-blue-500/25 blur-3xl" />
-          <div className="pointer-events-none absolute bottom-[-120px] left-[-120px] h-80 w-80 rounded-full bg-orange-500/20 blur-3xl" />
-          <div className="pointer-events-none absolute left-1/3 top-1/3 h-56 w-56 rounded-full bg-blue-400/10 blur-3xl" />
-          <div className={`pointer-events-none absolute right-8 top-24 h-24 w-24 rounded-full blur-2xl ${isDark ? "bg-blue-500/25" : "bg-blue-300/45"}`} />
-          <div className={`pointer-events-none absolute bottom-10 left-10 h-28 w-28 rounded-full blur-3xl ${isDark ? "bg-orange-500/15" : "bg-orange-300/45"}`} />
+          <div
+            className="pointer-events-none absolute inset-0 isolate overflow-hidden rounded-[inherit]"
+            aria-hidden
+          >
+            {isDark ? (
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(59,130,246,0.18),transparent_45%),radial-gradient(ellipse_at_bottom_left,rgba(249,115,22,0.1),transparent_45%)]" />
+            ) : null}
+            <div className="absolute -top-24 right-[-80px] h-72 w-72 rounded-full bg-blue-500/25 blur-3xl" />
+            <div className="absolute bottom-[-120px] left-[-120px] h-80 w-80 rounded-full bg-orange-500/20 blur-3xl" />
+            <div className="absolute left-1/3 top-1/3 h-56 w-56 rounded-full bg-blue-400/10 blur-3xl" />
+            <div className={`absolute right-8 top-24 h-24 w-24 rounded-full blur-2xl ${isDark ? "bg-blue-500/25" : "bg-blue-300/45"}`} />
+            <div className={`absolute bottom-10 left-10 h-28 w-28 rounded-full blur-3xl ${isDark ? "bg-orange-500/15" : "bg-orange-300/45"}`} />
+          </div>
 
           <div
             ref={headerRef}
@@ -1821,18 +1838,18 @@ export default function Home() {
           >
             {t("hero.badge")}
           </span>
-          <h1 className="mt-4 max-w-3xl pb-1 text-3xl font-bold leading-[1.15] [text-wrap:balance] break-words sm:text-4xl md:text-5xl md:leading-[1.12]">
+          <h1 className="mt-4 block max-w-3xl pb-4 text-3xl font-bold leading-[1.45] antialiased [-webkit-font-smoothing:antialiased] [text-rendering:optimizeLegibility] [text-wrap:balance] break-words sm:text-4xl md:text-5xl md:leading-[1.42]">
             {t("hero.titlePrefix")}{" "}
-            <span className="pb-[0.08em] bg-gradient-to-r from-blue-500 to-blue-300 bg-clip-text text-transparent break-words">
+            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-blue-500 to-blue-300 bg-clip-text font-bold text-transparent">
               {t("hero.titleHighlightOffers")}
             </span>{" "}
-            <span className="pb-[0.08em] bg-gradient-to-r from-orange-500 to-orange-300 bg-clip-text text-transparent break-words">
+            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-orange-500 to-orange-300 bg-clip-text font-bold text-transparent">
               {t("hero.titleHighlightRepairs")}
             </span>,{" "}
-            <span className="pb-[0.08em] bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text text-transparent break-words">
+            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-orange-400 to-amber-300 bg-clip-text font-bold text-transparent">
               {t("hero.titleHighlightReplacement")}
             </span>,{" "}
-            <span className="pb-[0.08em] bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text text-transparent break-words">
+            <span className="relative inline-block max-w-full align-baseline pb-[0.22em] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text font-bold text-transparent">
               {t("hero.titleHighlightDiagnostics")}
             </span>
           </h1>
@@ -2562,7 +2579,7 @@ export default function Home() {
                             disabled={accountSaving || accountLoading}
                           >
                             <option value="">{t("account.placeholders.year")}</option>
-                            {years.map((yearOption) => (
+                            {sortedYears.map((yearOption) => (
                               <option key={yearOption} value={yearOption}>
                                 {yearOption}
                               </option>
@@ -2620,7 +2637,7 @@ export default function Home() {
                           {vehicles.length === 0 ? (
                             <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>—</p>
                           ) : (
-                            vehicles.map((vehicle) => (
+                            sortedVehicles.map((vehicle) => (
                               <article
                                 key={vehicle.id}
                                 className={`rounded-xl border p-3 ${

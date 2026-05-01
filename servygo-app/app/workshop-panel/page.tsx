@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -17,6 +18,8 @@ import {
   getVehicleFuels,
   getVehicleModels,
   getVehicleYears,
+  sortAlphabetically,
+  sortYearsDesc,
   vehicleTypeOptions,
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
@@ -50,6 +53,12 @@ import {
   updateBookingStatusAsWorkshopOwner,
   updateOwnedWorkshopProfile,
 } from "@/lib/workshopOwnerApi";
+import {
+  classifyServiceCategory,
+  SERVICE_MAIN_CATEGORIES,
+  slugifyServiceKey,
+  type ServiceMainCategory,
+} from "@/lib/serviceCategoryClassifier";
 
 const WORKSHOP_SECTIONS = [
   "Dashboard",
@@ -64,11 +73,14 @@ const WORKSHOP_SECTIONS = [
 ] as const;
 
 type WorkshopSection = (typeof WORKSHOP_SECTIONS)[number];
+
 type ServiceDraftRow = {
   id?: string;
   service_key: string | null;
   service_name: string;
   category: string;
+  /** Gdy false, przy zapisie kategoria jest przeliczana z nazwy (slugi mogą się zmieniać w czasie). */
+  category_manual: boolean;
   description: string;
   price_from: string;
   price_to: string;
@@ -76,6 +88,11 @@ type ServiceDraftRow = {
   is_active: boolean;
   is_custom: boolean;
 };
+
+function stableServiceDraftKey(row: Pick<ServiceDraftRow, "service_key" | "service_name">) {
+  const sk = row.service_key?.trim();
+  return sk ? sk : slugifyServiceKey(row.service_name);
+}
 type ServiceVehiclePriceDraftRow = {
   id?: string;
   workshop_service_id: string;
@@ -369,6 +386,9 @@ function WorkshopPanelPageContent() {
   const [savingVehiclePrices, setSavingVehiclePrices] = useState(false);
   const [selectedServiceForVehiclePricing, setSelectedServiceForVehiclePricing] = useState<string>("");
   const [isVehiclePricingModalOpen, setIsVehiclePricingModalOpen] = useState(false);
+  const [vehiclePriceEditorDraft, setVehiclePriceEditorDraft] = useState<ServiceVehiclePriceDraftRow | null>(null);
+  const [vehiclePriceEditorSaving, setVehiclePriceEditorSaving] = useState(false);
+  const [vehiclePriceActionId, setVehiclePriceActionId] = useState<string | null>(null);
   const [employeeDraftRows, setEmployeeDraftRows] = useState<EmployeeDraft[]>([]);
   const [savingEmployees, setSavingEmployees] = useState(false);
   const [employeeRoleOptions, setEmployeeRoleOptions] = useState<string[]>(() => [...EMPLOYEE_ROLE_OPTIONS]);
@@ -377,6 +397,7 @@ function WorkshopPanelPageContent() {
   const [customServiceDraft, setCustomServiceDraft] = useState({
     service_name: "",
     category: "Inne",
+    category_manual: false,
     description: "",
     price_from: "",
     price_to: "",
@@ -460,6 +481,7 @@ function WorkshopPanelPageContent() {
         service_key: row.service_key,
         service_name: row.service_name,
         category: row.category ?? "Inne",
+        category_manual: Boolean(row.category_manual),
         description: row.description ?? "",
         price_from: row.price_from == null ? "" : String(row.price_from),
         price_to: row.price_to == null ? "" : String(row.price_to),
@@ -617,6 +639,7 @@ function WorkshopPanelPageContent() {
                 service_key: row.service_key,
                 service_name: row.service_name,
                 category: row.category ?? "Inne",
+                category_manual: Boolean(row.category_manual),
                 description: row.description ?? "",
                 price_from: row.price_from == null ? "" : String(row.price_from),
                 price_to: row.price_to == null ? "" : String(row.price_to),
@@ -917,30 +940,18 @@ function WorkshopPanelPageContent() {
   const serviceCatalogRows = useMemo(() => {
     const bucket = new Map<string, { key: string; name: string; category: string }>();
     for (const name of getAllServiceOptions()) {
-      const lower = name.toLowerCase();
-      const category = lower.includes("olej") || lower.includes("filtr")
-        ? "Serwis okresowy"
-        : lower.includes("hamul")
-          ? "Hamulce"
-          : lower.includes("opon") || lower.includes("koł")
-            ? "Opony i koła"
-            : lower.includes("diagnost")
-              ? "Diagnostyka"
-              : lower.includes("klimatyz")
-                ? "Klimatyzacja"
-                : lower.includes("akumulator")
-                  ? "Elektryka"
-                  : lower.includes("zawieszen")
-                    ? "Zawieszenie"
-                    : "Inne";
-      const key = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      const category = classifyServiceCategory(name).category;
+      const key = slugifyServiceKey(name);
       bucket.set(key, { key, name, category });
     }
-    return Array.from(bucket.values()).sort((a, b) => a.name.localeCompare(b.name, "pl"));
+    return Array.from(bucket.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "pl", { sensitivity: "base" }),
+    );
   }, []);
 
   const mergedServiceRows = useMemo(() => {
-    const byKey = new Map(serviceDraftRows.map((r) => [r.service_key ?? `custom:${r.service_name}`, r]));
+    const byKey = new Map<string, ServiceDraftRow>();
+    for (const r of serviceDraftRows) byKey.set(stableServiceDraftKey(r), r);
     const merged: ServiceDraftRow[] = [];
     for (const item of serviceCatalogRows) {
       const existing = byKey.get(item.key);
@@ -949,6 +960,7 @@ function WorkshopPanelPageContent() {
           service_key: item.key,
           service_name: item.name,
           category: item.category,
+          category_manual: false,
           description: "",
           price_from: "",
           price_to: "",
@@ -964,32 +976,48 @@ function WorkshopPanelPageContent() {
   }, [serviceCatalogRows, serviceDraftRows]);
 
   const serviceCategories = useMemo(() => {
-    const values = Array.from(new Set(mergedServiceRows.map((r) => r.category || "Inne")));
-    return ["Wszystkie", ...values.sort((a, b) => a.localeCompare(b, "pl"))];
+    const values = Array.from(
+      new Set(
+        mergedServiceRows.map((r) => {
+          const inferred = classifyServiceCategory(r.service_name);
+          return (r.category_manual ? r.category : inferred.category) || "Inne";
+        }),
+      ),
+    );
+    const orderMap = new Map(SERVICE_MAIN_CATEGORIES.map((c, i) => [c, i]));
+    const sorted = [...values].sort((a, b) => {
+      const ai = orderMap.get(a as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 998;
+      const bi = orderMap.get(b as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 998;
+      if (ai !== bi) return ai - bi;
+      return a.localeCompare(b, "pl", { sensitivity: "base" });
+    });
+    return ["Wszystkie", ...sorted];
   }, [mergedServiceRows]);
 
   const visibleServiceRows = useMemo(
     () =>
       mergedServiceRows.filter((r) => {
-        const categoryOk = servicesCategoryFilter === "Wszystkie" || (r.category || "Inne") === servicesCategoryFilter;
+        const inferred = classifyServiceCategory(r.service_name);
+        const logicalCategory = (r.category_manual ? r.category : inferred.category) || "Inne";
+        const categoryOk = servicesCategoryFilter === "Wszystkie" || logicalCategory === servicesCategoryFilter;
         const activityOk = servicesActivityFilter === "all"
           ? true
           : servicesActivityFilter === "active"
             ? r.is_active
             : !r.is_active;
         return categoryOk && activityOk;
-      }),
+      }).sort((a, b) => a.service_name.localeCompare(b.service_name, "pl", { sensitivity: "base" })),
     [mergedServiceRows, servicesCategoryFilter, servicesActivityFilter],
   );
-  const vehicleYearOptions = useMemo(() => getVehicleYears(), []);
+  const vehicleYearOptions = useMemo(() => sortYearsDesc(getVehicleYears()).map(String), []);
   const serviceNameOptions = useMemo(
     () =>
-      Array.from(
+      sortAlphabetically(Array.from(
         new Set([
           ...serviceCatalogRows.map((row) => row.name),
           ...mergedServiceRows.map((row) => row.service_name).filter(Boolean),
         ]),
-      ).sort((a, b) => a.localeCompare(b, "pl")),
+      )),
     [mergedServiceRows, serviceCatalogRows],
   );
   const vehiclePriceCountByService = useMemo(() => {
@@ -1006,6 +1034,8 @@ function WorkshopPanelPageContent() {
       selectedServiceForVehiclePricing
         ? serviceVehiclePriceDraftRows.filter(
             (row) => row.service_name.trim().toLowerCase() === selectedServiceForVehiclePricing.trim().toLowerCase(),
+          ).sort((a, b) =>
+            `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`, "pl", { sensitivity: "base" }),
           )
         : [],
     [selectedServiceForVehiclePricing, serviceVehiclePriceDraftRows],
@@ -1335,11 +1365,19 @@ function WorkshopPanelPageContent() {
   }
 
   function patchServiceRow(target: ServiceDraftRow, patch: Partial<ServiceDraftRow>) {
-    const key = target.id ? `id:${target.id}` : `key:${target.service_key ?? target.service_name}`;
+    const rowKeyStable = stableServiceDraftKey(target);
+    const legacyKey =
+      target.service_key?.trim() ? target.service_key.trim() : `custom:${target.service_name.trim().toLowerCase()}`;
     setServiceDraftRows((_prev) => {
       const merged = mergedServiceRows.map((row) => {
-        const rowKey = row.id ? `id:${row.id}` : `key:${row.service_key ?? row.service_name}`;
-        return rowKey === key ? { ...row, ...patch } : row;
+        const matches =
+          stableServiceDraftKey(row) === rowKeyStable ||
+          (row.id && target.id && row.id === target.id) ||
+          (!row.id &&
+            !target.id &&
+            (row.service_key?.trim() ? row.service_key.trim() : `custom:${row.service_name.trim().toLowerCase()}`) ===
+              legacyKey);
+        return matches ? { ...row, ...patch } : row;
       });
       return merged.filter((r) => r.is_custom || r.service_key !== null || r.is_active || r.price_from || r.price_to || r.duration_minutes);
     });
@@ -1369,18 +1407,26 @@ function WorkshopPanelPageContent() {
           if (row.id) return !idsToDelete.includes(row.id);
           return row.is_custom || row.is_active || row.price_from.trim() || row.price_to.trim() || row.duration_minutes.trim();
         })
-        .map((row) => ({
-          id: row.id,
-          service_key: row.service_key,
-          service_name: row.service_name,
-          category: row.category,
-          description: row.description || null,
-          price_from: row.price_from.trim() ? Number(row.price_from) : null,
-          price_to: row.price_to.trim() ? Number(row.price_to) : null,
-          duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
-          is_active: row.is_active,
-          is_custom: row.is_custom,
-        }));
+        .map((row) => {
+          const trimmedName = row.service_name.trim();
+          const resolvedCategory =
+            row.category_manual && row.category.trim()
+              ? row.category.trim()
+              : classifyServiceCategory(trimmedName).category;
+          return {
+            id: row.id,
+            service_key: row.service_key,
+            service_name: trimmedName,
+            category: resolvedCategory || "Inne",
+            category_manual: row.category_manual,
+            description: row.description || null,
+            price_from: row.price_from.trim() ? Number(row.price_from) : null,
+            price_to: row.price_to.trim() ? Number(row.price_to) : null,
+            duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
+            is_active: row.is_active,
+            is_custom: row.is_custom,
+          };
+        });
       await deleteWorkshopServiceConfigsForOwner(workshop.id, idsToDelete);
       await upsertWorkshopServiceConfigsForOwner(workshop.id, rows);
       const refreshed = await listWorkshopServiceConfigsForOwner(workshop.id);
@@ -1390,6 +1436,7 @@ function WorkshopPanelPageContent() {
           service_key: row.service_key,
           service_name: row.service_name,
           category: row.category ?? "Inne",
+          category_manual: Boolean(row.category_manual),
           description: row.description ?? "",
           price_from: row.price_from == null ? "" : String(row.price_from),
           price_to: row.price_to == null ? "" : String(row.price_to),
@@ -1435,120 +1482,148 @@ function WorkshopPanelPageContent() {
     }
   }
 
-  function patchServiceVehiclePriceRow(target: ServiceVehiclePriceDraftRow, patch: Partial<ServiceVehiclePriceDraftRow>) {
-    const key = target.id ? `id:${target.id}` : `tmp:${target.service_name}:${target.brand}:${target.model}:${target.engine}`;
-    setServiceVehiclePriceDraftRows((prev) =>
-      prev.map((row) => {
-        const rowKey = row.id ? `id:${row.id}` : `tmp:${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
-        return rowKey === key ? { ...row, ...patch } : row;
-      }),
+  function openCreateVehiclePriceEditor(serviceName: string) {
+    setVehiclePriceEditorDraft({
+      workshop_service_id: "",
+      service_name: serviceName,
+      vehicle_type: "car",
+      brand: "",
+      model: "",
+      year_from: "",
+      year_to: "",
+      engine: "",
+      fuel: "",
+      transmission: "",
+      price_from: "",
+      price_to: "",
+      duration_minutes: "",
+      is_active: true,
+    });
+  }
+
+  function openEditVehiclePriceEditor(row: ServiceVehiclePriceDraftRow) {
+    setVehiclePriceEditorDraft({ ...row });
+  }
+
+  async function refreshVehiclePriceRows(workshopId: string) {
+    const refreshed = await listWorkshopServiceVehiclePricesForOwner(workshopId);
+    setServiceVehiclePriceDraftRows(
+      refreshed.map((row) => ({
+        id: row.id,
+        workshop_service_id: row.workshop_service_id ?? "",
+        service_name: row.service_name,
+        vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
+        brand: row.brand ?? "",
+        model: row.model ?? "",
+        year_from: row.year_from == null ? "" : String(row.year_from),
+        year_to: row.year_to == null ? "" : String(row.year_to),
+        engine: row.engine ?? "",
+        fuel: row.fuel ?? "",
+        transmission: row.transmission ?? "",
+        price_from: row.price_from == null ? "" : String(row.price_from),
+        price_to: row.price_to == null ? "" : String(row.price_to),
+        duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
+        is_active: row.is_active,
+      })),
     );
   }
 
-  function addServiceVehiclePriceRow(serviceName = "") {
-    setServiceVehiclePriceDraftRows((prev) => [
-      ...prev,
-      {
-        workshop_service_id: "",
-        service_name: serviceName,
-        vehicle_type: "car",
-        brand: "",
-        model: "",
-        year_from: "",
-        year_to: "",
-        engine: "",
-        fuel: "",
-        transmission: "",
-        price_from: "",
-        price_to: "",
-        duration_minutes: "",
-        is_active: true,
-      },
-    ]);
-  }
-
-  function removeServiceVehiclePriceRow(target: ServiceVehiclePriceDraftRow) {
-    const key = target.id ? `id:${target.id}` : `tmp:${target.service_name}:${target.brand}:${target.model}:${target.engine}`;
-    setServiceVehiclePriceDraftRows((prev) =>
-      prev.filter((row) => {
-        const rowKey = row.id ? `id:${row.id}` : `tmp:${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
-        return rowKey !== key;
-      }),
-    );
-  }
-
-  async function saveServiceVehiclePrices() {
-    if (readOnly || !workshop) return;
-    setSavingVehiclePrices(true);
+  async function saveVehiclePriceEditor() {
+    if (readOnly || !workshop || !vehiclePriceEditorDraft) return;
+    setVehiclePriceEditorSaving(true);
     setError("");
     setSuccess("");
     try {
-      const idsToDelete = serviceVehiclePriceDraftRows
-        .filter(
-          (row) =>
-            Boolean(row.id) &&
-            !row.is_active &&
-            !row.service_name.trim() &&
-            !row.price_from.trim() &&
-            !row.price_to.trim() &&
-            !row.duration_minutes.trim(),
-        )
-        .map((row) => row.id as string);
-      const rows = serviceVehiclePriceDraftRows
-        .filter((row) => {
-          if (row.id) return !idsToDelete.includes(row.id);
-          return Boolean(row.service_name.trim());
-        })
-        .map((row) => {
-          const trimmedService = row.service_name.trim();
-          const linkedService = mergedServiceRows.find(
-            (item) => item.service_name.trim().toLowerCase() === trimmedService.toLowerCase(),
-          );
-          return {
-            id: row.id,
-            workshop_service_id: row.workshop_service_id || linkedService?.id || null,
-            service_name: trimmedService,
-            vehicle_type: row.vehicle_type || "car",
-            brand: row.brand.trim() || null,
-            model: row.model.trim() || null,
-            year_from: row.year_from.trim() ? Number(row.year_from) : null,
-            year_to: row.year_to.trim() ? Number(row.year_to) : null,
-            engine: row.engine.trim() || null,
-            fuel: row.fuel.trim() || null,
-            transmission: row.transmission.trim() || null,
-            price_from: row.price_from.trim() ? Number(row.price_from) : null,
-            price_to: row.price_to.trim() ? Number(row.price_to) : null,
-            duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
-            is_active: row.is_active,
-          };
-        });
-      await deleteWorkshopServiceVehiclePricesForOwner(workshop.id, idsToDelete);
-      await upsertWorkshopServiceVehiclePricesForOwner(workshop.id, rows);
-      const refreshed = await listWorkshopServiceVehiclePricesForOwner(workshop.id);
-      setServiceVehiclePriceDraftRows(
-        refreshed.map((row) => ({
-          id: row.id,
-          workshop_service_id: row.workshop_service_id ?? "",
-          service_name: row.service_name,
-          vehicle_type: ((row.vehicle_type ?? "").trim().toLowerCase() as VehicleTypeKey) || "car",
-          brand: row.brand ?? "",
-          model: row.model ?? "",
-          year_from: row.year_from == null ? "" : String(row.year_from),
-          year_to: row.year_to == null ? "" : String(row.year_to),
-          engine: row.engine ?? "",
-          fuel: row.fuel ?? "",
-          transmission: row.transmission ?? "",
-          price_from: row.price_from == null ? "" : String(row.price_from),
-          price_to: row.price_to == null ? "" : String(row.price_to),
-          duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
-          is_active: row.is_active,
-        })),
+      const draft = vehiclePriceEditorDraft;
+      const trimmedService = draft.service_name.trim();
+      if (!trimmedService) throw new Error("Nazwa usługi jest wymagana.");
+      const linkedService = mergedServiceRows.find(
+        (item) => item.service_name.trim().toLowerCase() === trimmedService.toLowerCase(),
       );
-      setSuccess("Ceny usług pod konkretne auta zostały zapisane.");
+      await upsertWorkshopServiceVehiclePricesForOwner(workshop.id, [
+        {
+          id: draft.id,
+          workshop_service_id: draft.workshop_service_id || linkedService?.id || null,
+          service_name: trimmedService,
+          vehicle_type: draft.vehicle_type || "car",
+          brand: draft.brand.trim() || null,
+          model: draft.model.trim() || null,
+          year_from: draft.year_from.trim() ? Number(draft.year_from) : null,
+          year_to: draft.year_to.trim() ? Number(draft.year_to) : null,
+          engine: draft.engine.trim() || null,
+          fuel: draft.fuel.trim() || null,
+          transmission: draft.transmission.trim() || null,
+          price_from: draft.price_from.trim() ? Number(draft.price_from) : null,
+          price_to: draft.price_to.trim() ? Number(draft.price_to) : null,
+          duration_minutes: draft.duration_minutes.trim() ? Number(draft.duration_minutes) : null,
+          is_active: draft.is_active,
+        },
+      ]);
+      await refreshVehiclePriceRows(workshop.id);
+      setVehiclePriceEditorDraft(null);
+      setSuccess("Cena dla auta została zapisana.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Błąd zapisu cen pod auta.");
+      setError(e instanceof Error ? e.message : "Błąd zapisu ceny dla auta.");
     } finally {
-      setSavingVehiclePrices(false);
+      setVehiclePriceEditorSaving(false);
+    }
+  }
+
+  async function toggleVehiclePriceActive(row: ServiceVehiclePriceDraftRow, nextValue: boolean) {
+    if (readOnly || !workshop) return;
+    const actionKey = row.id ?? `${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
+    setVehiclePriceActionId(actionKey);
+    setError("");
+    setSuccess("");
+    try {
+      const trimmedService = row.service_name.trim();
+      const linkedService = mergedServiceRows.find(
+        (item) => item.service_name.trim().toLowerCase() === trimmedService.toLowerCase(),
+      );
+      await upsertWorkshopServiceVehiclePricesForOwner(workshop.id, [
+        {
+          id: row.id,
+          workshop_service_id: row.workshop_service_id || linkedService?.id || null,
+          service_name: trimmedService,
+          vehicle_type: row.vehicle_type || "car",
+          brand: row.brand.trim() || null,
+          model: row.model.trim() || null,
+          year_from: row.year_from.trim() ? Number(row.year_from) : null,
+          year_to: row.year_to.trim() ? Number(row.year_to) : null,
+          engine: row.engine.trim() || null,
+          fuel: row.fuel.trim() || null,
+          transmission: row.transmission.trim() || null,
+          price_from: row.price_from.trim() ? Number(row.price_from) : null,
+          price_to: row.price_to.trim() ? Number(row.price_to) : null,
+          duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
+          is_active: nextValue,
+        },
+      ]);
+      await refreshVehiclePriceRows(workshop.id);
+      setSuccess("Status aktywności ceny auta został zaktualizowany.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się zmienić statusu aktywności.");
+    } finally {
+      setVehiclePriceActionId(null);
+    }
+  }
+
+  async function deleteVehiclePriceRow(row: ServiceVehiclePriceDraftRow) {
+    if (readOnly || !workshop || !row.id) return;
+    const confirmed = window.confirm("Usunąć tę cenę dla auta?");
+    if (!confirmed) return;
+    const actionKey = row.id ?? `${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
+    setVehiclePriceActionId(actionKey);
+    setError("");
+    setSuccess("");
+    try {
+      await deleteWorkshopServiceVehiclePricesForOwner(workshop.id, [row.id]);
+      await refreshVehiclePriceRows(workshop.id);
+      setSuccess("Cena dla auta została usunięta.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się usunąć ceny auta.");
+    } finally {
+      setVehiclePriceActionId(null);
     }
   }
 
@@ -1626,6 +1701,130 @@ function WorkshopPanelPageContent() {
       </ServyGoPageShell>
     );
   }
+
+  const modalFieldClassName =
+    "h-11 rounded-[10px] border border-gray-200 bg-gray-50 px-3 text-[14px] text-gray-900 transition duration-200 hover:border-[#cbd5f5] focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60";
+  const vehiclePriceEditorModal = vehiclePriceEditorDraft
+    ? createPortal(
+        <div className="fixed inset-0 z-[9999] flex h-screen w-screen items-center justify-center bg-black/40 p-4">
+          <div className="flex w-[90%] max-h-[90vh] max-w-[1000px] flex-col overflow-y-auto rounded-2xl bg-white p-6 shadow-[0_20px_50px_rgba(0,0,0,0.15)]">
+            <div className="mb-5 flex items-center justify-between gap-3 border-b border-gray-200 pb-4">
+              <h4 className="text-2xl font-bold text-gray-900">{vehiclePriceEditorDraft.id ? "Edytuj cenę auta" : "Dodaj cenę dla auta"}</h4>
+              <button type="button" onClick={() => setVehiclePriceEditorDraft(null)} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-100">Zamknij</button>
+            </div>
+            <div className="mt-1">
+              <div className="grid grid-cols-1 gap-x-5 md:grid-cols-2">
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Typ pojazdu</span>
+                <select
+                  disabled={readOnly || vehiclePriceEditorSaving}
+                  value={vehiclePriceEditorDraft.vehicle_type}
+                  onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, vehicle_type: e.target.value as VehicleTypeKey, brand: "", model: "", fuel: "" } : prev)}
+                  className={modalFieldClassName}
+                >
+                  {vehicleTypeOptions.map((option) => <option key={`vehicle-type-${option.key}`} value={option.key}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Marka</span>
+                <select
+                  disabled={readOnly || vehiclePriceEditorSaving}
+                  value={vehiclePriceEditorDraft.brand}
+                  onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, brand: e.target.value, model: "" } : prev)}
+                  className={modalFieldClassName}
+                >
+                  <option value="">Wybierz markę</option>
+                  {sortAlphabetically(getVehicleBrands(vehiclePriceEditorDraft.vehicle_type || "car")).map((brand) => <option key={`vehicle-brand-${brand}`} value={brand}>{brand}</option>)}
+                </select>
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Model</span>
+                <select
+                  disabled={readOnly || vehiclePriceEditorSaving || !vehiclePriceEditorDraft.brand}
+                  value={vehiclePriceEditorDraft.model}
+                  onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, model: e.target.value } : prev)}
+                  className={modalFieldClassName}
+                >
+                  <option value="">Wybierz model</option>
+                  {sortAlphabetically(getVehicleModels(vehiclePriceEditorDraft.vehicle_type || "car", vehiclePriceEditorDraft.brand)).map((model) => <option key={`vehicle-model-${model}`} value={model}>{model}</option>)}
+                </select>
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Silnik</span>
+                <input disabled={readOnly || vehiclePriceEditorSaving} value={vehiclePriceEditorDraft.engine} onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, engine: e.target.value } : prev)} className={modalFieldClassName} />
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Paliwo</span>
+                <select
+                  disabled={readOnly || vehiclePriceEditorSaving}
+                  value={vehiclePriceEditorDraft.fuel}
+                  onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, fuel: e.target.value } : prev)}
+                  className={modalFieldClassName}
+                >
+                  <option value="">Wybierz paliwo</option>
+                  {sortAlphabetically(getVehicleFuels(vehiclePriceEditorDraft.vehicle_type || "car")).map((fuel) => <option key={`vehicle-fuel-${fuel}`} value={fuel}>{fuel}</option>)}
+                </select>
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Skrzynia biegów (opcjonalnie)</span>
+                <input disabled={readOnly || vehiclePriceEditorSaving} value={vehiclePriceEditorDraft.transmission} onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, transmission: e.target.value } : prev)} className={modalFieldClassName} />
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Rok od</span>
+                <select disabled={readOnly || vehiclePriceEditorSaving} value={vehiclePriceEditorDraft.year_from} onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, year_from: e.target.value } : prev)} className={modalFieldClassName}>
+                  <option value="">Od</option>
+                  {vehicleYearOptions.map((year) => <option key={`vehicle-year-from-${year}`} value={year}>{year}</option>)}
+                </select>
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Rok do</span>
+                <select disabled={readOnly || vehiclePriceEditorSaving} value={vehiclePriceEditorDraft.year_to} onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, year_to: e.target.value } : prev)} className={modalFieldClassName}>
+                  <option value="">Do</option>
+                  {vehicleYearOptions.map((year) => <option key={`vehicle-year-to-${year}`} value={year}>{year}</option>)}
+                </select>
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Cena od</span>
+                <input disabled={readOnly || vehiclePriceEditorSaving} value={vehiclePriceEditorDraft.price_from} onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, price_from: e.target.value } : prev)} className={modalFieldClassName} />
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Cena do</span>
+                <input disabled={readOnly || vehiclePriceEditorSaving} value={vehiclePriceEditorDraft.price_to} onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, price_to: e.target.value } : prev)} className={modalFieldClassName} />
+              </label>
+              <label className="mb-5 flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-gray-900">Czas (min)</span>
+                <input disabled={readOnly || vehiclePriceEditorSaving} value={vehiclePriceEditorDraft.duration_minutes} onChange={(e) => setVehiclePriceEditorDraft((prev) => prev ? { ...prev, duration_minutes: e.target.value } : prev)} className={modalFieldClassName} />
+              </label>
+              <div className="mb-5 flex items-center gap-3 text-sm md:pt-6">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={vehiclePriceEditorDraft.is_active}
+                  disabled={readOnly || vehiclePriceEditorSaving}
+                  onClick={() =>
+                    setVehiclePriceEditorDraft((prev) =>
+                      prev ? { ...prev, is_active: !prev.is_active } : prev,
+                    )
+                  }
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition duration-200 ${vehiclePriceEditorDraft.is_active ? "bg-[#2563eb]" : "bg-zinc-400"} disabled:opacity-50`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition duration-200 ${vehiclePriceEditorDraft.is_active ? "translate-x-5" : "translate-x-1"}`} />
+                </button>
+                <span className="font-medium text-gray-900">Aktywne</span>
+              </div>
+            </div>
+            </div>
+            <div className="sticky bottom-0 mt-5 flex justify-end gap-3 border-t border-gray-200 bg-white pt-4">
+              <button type="button" disabled={vehiclePriceEditorSaving} onClick={() => setVehiclePriceEditorDraft(null)} className="rounded-xl border border-gray-300 bg-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-300 disabled:opacity-50">Anuluj</button>
+              <button type="button" disabled={readOnly || vehiclePriceEditorSaving} onClick={() => void saveVehiclePriceEditor()} className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
+                {vehiclePriceEditorSaving ? "Zapisywanie..." : "Zapisz"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
 
   return (
     <ServyGoPageShell isDark={isDark}>
@@ -2325,6 +2524,7 @@ function WorkshopPanelPageContent() {
                         <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
                           <tr>
                             <th className="px-2 py-2 text-left">Usługa</th>
+                            <th className="min-w-[200px] px-2 py-2 text-left">Kategoria</th>
                             <th className="px-2 py-2 text-left">Oferuję</th>
                             <th className="px-2 py-2 text-left">Status</th>
                             <th className="px-2 py-2 text-left">Auta z cenami</th>
@@ -2332,11 +2532,62 @@ function WorkshopPanelPageContent() {
                           </tr>
                         </thead>
                         <tbody>
-                          {visibleServiceRows.map((row) => (
-                            <tr key={row.id ?? row.service_key ?? row.service_name} className={`border-t ${isDark ? "border-zinc-800" : "border-zinc-100"}`}>
+                          {visibleServiceRows.map((row) => {
+                            const inferred = classifyServiceCategory(row.service_name);
+                            const effectiveCategory = row.category_manual ? row.category : inferred.category;
+                            const tagNote =
+                              inferred.tags.length > 0 ? `Powiązane tagi: ${inferred.tags.join(", ")}` : null;
+                            return (
+                              <tr key={row.id ?? row.service_key ?? row.service_name} className={`border-t ${isDark ? "border-zinc-800" : "border-zinc-100"}`}>
                               <td className="px-2 py-2">
                                 <p className="font-medium">{row.service_name}</p>
-                                <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{row.category}</p>
+                              </td>
+                              <td className="px-2 py-2 align-top">
+                                <select
+                                  disabled={readOnly}
+                                  value={
+                                    SERVICE_MAIN_CATEGORIES.includes(effectiveCategory as ServiceMainCategory)
+                                      ? effectiveCategory
+                                      : effectiveCategory || "Inne"
+                                  }
+                                  onChange={(e) => patchServiceRow(row, { category: e.target.value, category_manual: true })}
+                                  className={`mt-1 w-full max-w-[220px] rounded-lg border px-2 py-1 text-xs ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white text-zinc-900"}`}
+                                >
+                                  {!SERVICE_MAIN_CATEGORIES.includes(effectiveCategory as ServiceMainCategory) &&
+                                  effectiveCategory ? (
+                                    <option value={effectiveCategory}>{effectiveCategory} (niestandardowa)</option>
+                                  ) : null}
+                                  {SERVICE_MAIN_CATEGORIES.map((cat) => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                  ))}
+                                </select>
+                                <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                                  {row.category_manual ? (
+                                    <>
+                                      Wybrano ręcznie
+                                      <button
+                                        type="button"
+                                        disabled={readOnly}
+                                        onClick={() =>
+                                          patchServiceRow(row, {
+                                            category_manual: false,
+                                            category: classifyServiceCategory(row.service_name).category,
+                                          })
+                                        }
+                                        className="ml-2 font-semibold text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+                                      >
+                                        Przywróć auto
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      Auto: przy zapisie = <span className="font-medium">{inferred.category}</span>
+                                    </>
+                                  )}
+                                </p>
+                                {tagNote ? (
+                                  <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-500"}`}>{tagNote}</p>
+                                ) : null}
                               </td>
                               <td className="px-2 py-2">
                                 <button
@@ -2383,7 +2634,8 @@ function WorkshopPanelPageContent() {
                                 </div>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -2659,7 +2911,7 @@ function WorkshopPanelPageContent() {
                     <button
                       type="button"
                       disabled={readOnly || !selectedServiceForVehiclePricing}
-                      onClick={() => addServiceVehiclePriceRow(selectedServiceForVehiclePricing)}
+                      onClick={() => openCreateVehiclePriceEditor(selectedServiceForVehiclePricing)}
                       className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-600 disabled:opacity-50"
                     >
                       Dodaj cenę dla auta
@@ -2693,61 +2945,46 @@ function WorkshopPanelPageContent() {
                       </thead>
                       <tbody>
                         {selectedServiceVehicleRows.map((row, idx) => {
-                          const brands = row.vehicle_type ? getVehicleBrands(row.vehicle_type) : [];
-                          const models = row.vehicle_type && row.brand ? getVehicleModels(row.vehicle_type, row.brand) : [];
-                          const fuels = row.vehicle_type ? getVehicleFuels(row.vehicle_type) : [];
+                          const details = [row.engine.trim(), row.fuel.trim(), row.transmission.trim()].filter(Boolean).join(" · ") || "—";
+                          const yearRange = row.year_from && row.year_to
+                            ? `${row.year_from}-${row.year_to}`
+                            : row.year_from || row.year_to || "—";
+                          const vehicleTypeLabel = vehicleTypeOptions.find((x) => x.key === row.vehicle_type)?.label ?? "Pojazd";
+                          const actionKey = row.id ?? `${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
+                          const actionBusy = vehiclePriceActionId === actionKey;
                           return (
                             <tr key={row.id ?? `vehicle-row-modal-${idx}`} className={`border-t ${isDark ? "border-zinc-800" : "border-blue-100"}`}>
                               <td className="px-2 py-2">
-                                <div className="space-y-1">
-                                  <select disabled={readOnly} value={row.vehicle_type} onChange={(e) => patchServiceVehiclePriceRow(row, { vehicle_type: e.target.value as VehicleTypeKey, brand: "", model: "", fuel: "" })} className={formInputClassName}>
-                                    {vehicleTypeOptions.map((option) => <option key={`${row.id ?? idx}-${option.key}`} value={option.key}>{option.label}</option>)}
-                                  </select>
-                                  <select disabled={readOnly} value={row.brand} onChange={(e) => patchServiceVehiclePriceRow(row, { brand: e.target.value, model: "" })} className={formInputClassName}>
-                                    <option value="">Marka</option>
-                                    {brands.map((brand) => <option key={`${row.id ?? idx}-brand-${brand}`} value={brand}>{brand}</option>)}
-                                  </select>
-                                  <select disabled={readOnly || !row.brand} value={row.model} onChange={(e) => patchServiceVehiclePriceRow(row, { model: e.target.value })} className={formInputClassName}>
-                                    <option value="">Model</option>
-                                    {models.map((model) => <option key={`${row.id ?? idx}-model-${model}`} value={model}>{model}</option>)}
-                                  </select>
-                                </div>
+                                <p className="font-semibold">{[row.brand, row.model].filter(Boolean).join(" ") || "—"}</p>
+                                <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{vehicleTypeLabel}</p>
                               </td>
+                              <td className="px-2 py-2 text-xs">{details}</td>
+                              <td className="px-2 py-2">{yearRange}</td>
+                              <td className="px-2 py-2">{row.price_from.trim() ? `${row.price_from} zł` : "—"}</td>
+                              <td className="px-2 py-2">{row.price_to.trim() ? `${row.price_to} zł` : "—"}</td>
+                              <td className="px-2 py-2">{row.duration_minutes.trim() ? `${row.duration_minutes} min` : "—"}</td>
                               <td className="px-2 py-2">
-                                <div className="space-y-1">
-                                  <input disabled={readOnly} value={row.engine} onChange={(e) => patchServiceVehiclePriceRow(row, { engine: e.target.value })} placeholder="Silnik" className={formInputClassName} />
-                                  <select disabled={readOnly} value={row.fuel} onChange={(e) => patchServiceVehiclePriceRow(row, { fuel: e.target.value })} className={formInputClassName}>
-                                    <option value="">Paliwo</option>
-                                    {fuels.map((fuel) => <option key={`${row.id ?? idx}-fuel-${fuel}`} value={fuel}>{fuel}</option>)}
-                                  </select>
-                                  <input disabled={readOnly} value={row.transmission} onChange={(e) => patchServiceVehiclePriceRow(row, { transmission: e.target.value })} placeholder="Skrzynia (opcjonalnie)" className={formInputClassName} />
-                                </div>
-                              </td>
-                              <td className="px-2 py-2">
-                                <div className="grid grid-cols-2 gap-1">
-                                  <select disabled={readOnly} value={row.year_from} onChange={(e) => patchServiceVehiclePriceRow(row, { year_from: e.target.value })} className={formInputClassName}>
-                                    <option value="">Od</option>
-                                    {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-yf-${year}`} value={year}>{year}</option>)}
-                                  </select>
-                                  <select disabled={readOnly} value={row.year_to} onChange={(e) => patchServiceVehiclePriceRow(row, { year_to: e.target.value })} className={formInputClassName}>
-                                    <option value="">Do</option>
-                                    {vehicleYearOptions.map((year) => <option key={`${row.id ?? idx}-yt-${year}`} value={year}>{year}</option>)}
-                                  </select>
-                                </div>
-                              </td>
-                              <td className="px-2 py-2"><input disabled={readOnly} value={row.price_from} onChange={(e) => patchServiceVehiclePriceRow(row, { price_from: e.target.value })} placeholder="Cena od" className={formInputClassName} /></td>
-                              <td className="px-2 py-2"><input disabled={readOnly} value={row.price_to} onChange={(e) => patchServiceVehiclePriceRow(row, { price_to: e.target.value })} placeholder="Cena do" className={formInputClassName} /></td>
-                              <td className="px-2 py-2"><input disabled={readOnly} value={row.duration_minutes} onChange={(e) => patchServiceVehiclePriceRow(row, { duration_minutes: e.target.value })} placeholder="Czas" className={formInputClassName} /></td>
-                              <td className="px-2 py-2">
-                                <label className="inline-flex items-center gap-2 text-xs">
-                                  <input className="accent-blue-600" type="checkbox" disabled={readOnly} checked={row.is_active} onChange={(e) => patchServiceVehiclePriceRow(row, { is_active: e.target.checked })} />
-                                  {row.is_active ? "Aktywna" : "Nieaktywna"}
-                                </label>
-                              </td>
-                              <td className="px-2 py-2">
-                                <button type="button" disabled={readOnly} onClick={() => removeServiceVehiclePriceRow(row)} className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-500 disabled:opacity-50">
-                                  Usuń
+                                <button
+                                  type="button"
+                                  disabled={readOnly || actionBusy}
+                                  onClick={() => void toggleVehiclePriceActive(row, !row.is_active)}
+                                  className={`inline-flex h-6 w-11 items-center rounded-full border p-0.5 transition disabled:opacity-50 ${
+                                    row.is_active
+                                      ? "border-blue-500 bg-blue-500"
+                                      : isDark
+                                        ? "border-zinc-600 bg-zinc-700"
+                                        : "border-zinc-300 bg-zinc-300"
+                                  }`}
+                                  aria-label={row.is_active ? "Ustaw jako nieaktywne" : "Ustaw jako aktywne"}
+                                >
+                                  <span className={`h-4 w-4 rounded-full bg-white transition ${row.is_active ? "translate-x-5" : "translate-x-0"}`} />
                                 </button>
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex flex-wrap gap-1">
+                                  <button type="button" disabled={readOnly || actionBusy} onClick={() => openEditVehiclePriceEditor(row)} className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50">Edytuj</button>
+                                  <button type="button" disabled={readOnly || actionBusy} onClick={() => void deleteVehiclePriceRow(row)} className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-500 disabled:opacity-50">Usuń</button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2760,18 +2997,8 @@ function WorkshopPanelPageContent() {
                 <div className={`mt-4 rounded-xl border px-3 py-2 text-xs ${isDark ? "border-blue-500/40 bg-blue-950/30 text-blue-100" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
                   Ceny ustawione tutaj mają pierwszeństwo dla wybranego auta.
                 </div>
-
-                <div className="mt-4 flex justify-end">
-                  <button
-                    type="button"
-                    disabled={readOnly || savingVehiclePrices}
-                    onClick={() => void saveServiceVehiclePrices()}
-                    className="rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  >
-                    {savingVehiclePrices ? "Zapisywanie…" : "Zapisz ceny dla konkretnych aut"}
-                  </button>
-                </div>
               </div>
+
             </div>
           </div>
         ) : null}
@@ -2784,8 +3011,61 @@ function WorkshopPanelPageContent() {
                 <button type="button" onClick={() => setShowAddCustomServiceModal(false)} className="rounded-lg border px-2 py-1 text-xs">Zamknij</button>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input disabled={readOnly} placeholder="Nazwa usługi" value={customServiceDraft.service_name} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, service_name: e.target.value }))} className="sm:col-span-2 rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
-                <input disabled={readOnly} placeholder="Kategoria" value={customServiceDraft.category} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, category: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
+                <input
+                  disabled={readOnly}
+                  placeholder="Nazwa usługi"
+                  value={customServiceDraft.service_name}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setCustomServiceDraft((d) => {
+                      const next = { ...d, service_name: name };
+                      if (!d.category_manual) {
+                        next.category = classifyServiceCategory(name.trim() || "").category;
+                      }
+                      return next;
+                    });
+                  }}
+                  className="sm:col-span-2 rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50"
+                />
+                <label className="flex flex-col gap-1 rounded-xl border border-zinc-300 px-3 py-2 dark:border-zinc-600">
+                  <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Kategoria</span>
+                  <select
+                    disabled={readOnly}
+                    value={
+                      SERVICE_MAIN_CATEGORIES.includes(customServiceDraft.category as ServiceMainCategory)
+                        ? customServiceDraft.category
+                        : customServiceDraft.category || "Inne"
+                    }
+                    onChange={(e) =>
+                      setCustomServiceDraft((d) => ({ ...d, category: e.target.value, category_manual: true }))
+                    }
+                    className="bg-transparent text-sm dark:text-zinc-100"
+                  >
+                    {SERVICE_MAIN_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  {!customServiceDraft.category_manual ? (
+                    <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
+                      Uzupełniane automatycznie z nazwy
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={readOnly}
+                      onClick={() =>
+                        setCustomServiceDraft((d) => ({
+                          ...d,
+                          category_manual: false,
+                          category: classifyServiceCategory(d.service_name.trim() || "").category,
+                        }))
+                      }
+                      className={`self-start text-left text-[11px] font-semibold text-blue-600 underline-offset-2 hover:underline dark:text-blue-400`}
+                    >
+                      Przywróć automatyczną kategorię
+                    </button>
+                  )}
+                </label>
                 <input disabled={readOnly} placeholder="Cena od" value={customServiceDraft.price_from} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, price_from: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
                 <input disabled={readOnly} placeholder="Cena do" value={customServiceDraft.price_to} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, price_to: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
                 <input disabled={readOnly} placeholder="Czas (min)" value={customServiceDraft.duration_minutes} onChange={(e) => setCustomServiceDraft((d) => ({ ...d, duration_minutes: e.target.value }))} className="rounded-xl border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-600 disabled:opacity-50" />
@@ -2804,12 +3084,18 @@ function WorkshopPanelPageContent() {
                   disabled={readOnly}
                   onClick={() => {
                     if (!customServiceDraft.service_name.trim()) return;
+                    const trimmed = customServiceDraft.service_name.trim();
+                    const inferred = classifyServiceCategory(trimmed);
+                    const categoryResolved = customServiceDraft.category_manual
+                      ? customServiceDraft.category.trim() || "Inne"
+                      : inferred.category;
                     setServiceDraftRows((prev) => [
                       ...prev,
                       {
                         service_key: null,
-                        service_name: customServiceDraft.service_name.trim(),
-                        category: customServiceDraft.category.trim() || "Inne",
+                        service_name: trimmed,
+                        category: categoryResolved,
+                        category_manual: customServiceDraft.category_manual,
                         description: customServiceDraft.description.trim(),
                         price_from: customServiceDraft.price_from.trim(),
                         price_to: customServiceDraft.price_to.trim(),
@@ -2821,6 +3107,7 @@ function WorkshopPanelPageContent() {
                     setCustomServiceDraft({
                       service_name: "",
                       category: "Inne",
+                      category_manual: false,
                       description: "",
                       price_from: "",
                       price_to: "",
@@ -2838,6 +3125,7 @@ function WorkshopPanelPageContent() {
           </div>
         ) : null}
       </main>
+      {vehiclePriceEditorModal}
     </ServyGoPageShell>
   );
 }

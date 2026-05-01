@@ -152,11 +152,13 @@ export default function WorkshopDetailsPage() {
       if (cancelled) return;
       const rows = (data as { id: string; first_name: string; last_name: string; role: string }[] | null) ?? [];
       setEmployeeOptions(
-        rows.map((row) => ({
-          id: row.id,
-          role: row.role,
-          label: `${row.first_name} ${row.last_name} (${row.role})`,
-        })),
+        rows
+          .map((row) => ({
+            id: row.id,
+            role: row.role,
+            label: `${row.first_name} ${row.last_name} (${row.role})`,
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label, "pl", { sensitivity: "base" })),
       );
     })();
     return () => {

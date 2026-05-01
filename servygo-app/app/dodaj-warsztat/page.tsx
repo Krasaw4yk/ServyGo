@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import AutocompleteSelect from "@/components/AutocompleteSelect";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { polishCityOptions } from "@/lib/locationData";
+import { sortAlphabetically } from "@/lib/vehicleData";
 import { createTranslator, LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { createWorkshopLead, isValidWorkshopGoogleMapsUrl } from "@/lib/workshopApi";
@@ -102,7 +103,7 @@ export default function AddWorkshopPage() {
   const t = useMemo(() => createTranslator(language), [language]);
   const currentFieldClassName = isDark ? fieldClassName : lightFieldClassName;
   const cityOptions = useMemo(
-    () => polishCityOptions.map((option) => ({ value: option, label: option })),
+    () => sortAlphabetically(polishCityOptions).map((option) => ({ value: option, label: option })),
     [],
   );
 

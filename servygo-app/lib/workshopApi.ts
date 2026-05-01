@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
+import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 
 export type Workshop = {
   id: string;
@@ -201,35 +202,65 @@ export async function getWorkshopServices(workshopId: string): Promise<WorkshopS
   return (data as WorkshopService[] | null) ?? [];
 }
 
+/**
+ * @deprecated Prefer owner panel APIs from `workshopOwnerApi`.
+ * Kept for backward compatibility, but implemented as safe merge (no hard delete).
+ */
 export async function updateWorkshopServices(workshopId: string, serviceNames: string[]) {
   if (!supabase) throw new Error("Supabase client not available.");
   const normalized = Array.from(new Set(serviceNames.map((name) => name.trim()).filter(Boolean)));
+  const normalizedKey = (value: string) => value.trim().toLocaleLowerCase("pl");
 
   const { data: existing, error: existingError } = await supabase
     .from("workshop_services")
-    .select("id, service_name")
+    .select("id, service_name, is_active")
     .eq("workshop_id", workshopId);
   if (existingError) throw new Error(formatSupabaseError(existingError));
 
-  const existingRows = (existing as Array<{ id: string; service_name: string }> | null) ?? [];
-  const existingNames = new Set(existingRows.map((row) => row.service_name));
+  const existingRows = (existing as Array<{ id: string; service_name: string; is_active: boolean | null }> | null) ?? [];
+  const existingByName = new Map(existingRows.map((row) => [normalizedKey(row.service_name), row]));
 
-  const toInsert = normalized.filter((name) => !existingNames.has(name));
-  const toDelete = existingRows.filter((row) => !normalized.includes(row.service_name));
-
-  if (toInsert.length > 0) {
-    const { error: insertError } = await supabase.from("workshop_services").insert(
-      toInsert.map((serviceName) => ({
+  const toUpsert = normalized.map((serviceName) => {
+    const existingRow = existingByName.get(normalizedKey(serviceName));
+    if (existingRow) {
+      return {
+        id: existingRow.id,
         workshop_id: workshopId,
         service_name: serviceName,
-      })),
-    );
-    if (insertError) throw new Error(formatSupabaseError(insertError));
+        is_active: true,
+      };
+    }
+    const { category } = classifyServiceCategory(serviceName);
+    return {
+      workshop_id: workshopId,
+      service_name: serviceName,
+      category,
+      category_manual: false,
+      is_active: true,
+      is_custom: false,
+    };
+  });
+
+  if (toUpsert.length > 0) {
+    const { error: upsertError } = await supabase.from("workshop_services").upsert(toUpsert, {
+      onConflict: "id",
+      ignoreDuplicates: false,
+    });
+    if (upsertError) throw new Error(formatSupabaseError(upsertError));
   }
 
-  if (toDelete.length > 0) {
-    const ids = toDelete.map((row) => row.id);
-    const { error: deleteError } = await supabase.from("workshop_services").delete().in("id", ids);
-    if (deleteError) throw new Error(formatSupabaseError(deleteError));
+  const incomingNameSet = new Set(normalized.map((item) => normalizedKey(item)));
+  const toDeactivateIds = existingRows
+    .filter((row) => !incomingNameSet.has(normalizedKey(row.service_name)) && row.is_active !== false)
+    .map((row) => row.id);
+
+  if (toDeactivateIds.length > 0) {
+    // Do not delete workshop_services directly because vehicle prices may reference them.
+    const { error: deactivateError } = await supabase
+      .from("workshop_services")
+      .update({ is_active: false })
+      .eq("workshop_id", workshopId)
+      .in("id", toDeactivateIds);
+    if (deactivateError) throw new Error(formatSupabaseError(deactivateError));
   }
 }

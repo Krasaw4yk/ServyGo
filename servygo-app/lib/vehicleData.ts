@@ -161,32 +161,57 @@ export const vehicleData: Record<VehicleTypeKey, VehicleConfig> = {
   },
 };
 
+const PRIORITY_LABELS = ["Wszystkie", "Wpisz ręcznie", "Dowolne", "Inne"] as const;
+
+function getPriorityIndex(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return PRIORITY_LABELS.findIndex((label) => normalized === label.toLowerCase() || normalized.startsWith(`${label.toLowerCase()} `));
+}
+
+export function sortAlphabetically(items: string[]) {
+  return [...items].sort((a, b) => {
+    const aPriority = getPriorityIndex(a);
+    const bPriority = getPriorityIndex(b);
+    if (aPriority !== -1 || bPriority !== -1) {
+      if (aPriority === -1) return 1;
+      if (bPriority === -1) return -1;
+      return aPriority - bPriority;
+    }
+    return a.localeCompare(b, "pl", { sensitivity: "base" });
+  });
+}
+
+export function sortYearsDesc(years: Array<string | number>) {
+  return [...years].sort((a, b) => Number(b) - Number(a));
+}
+
 export function getVehicleTypeLabel(vehicleType: string) {
   return vehicleTypeOptions.find((item) => item.key === vehicleType)?.label ?? vehicleType;
 }
 
 export function getVehicleBrands(vehicleType: string) {
-  return vehicleData[vehicleType as VehicleTypeKey]?.brands ?? [];
+  return sortAlphabetically(vehicleData[vehicleType as VehicleTypeKey]?.brands ?? []);
 }
 
 export function getVehicleModels(vehicleType: string, brand: string) {
   const models = vehicleData[vehicleType as VehicleTypeKey]?.models[brand] ?? [];
-  return models.includes("Inny model") ? models : [...models, "Inny model"];
+  const modelsWithFallback = models.includes("Inny model") ? models : [...models, "Inny model"];
+  return sortAlphabetically(modelsWithFallback);
 }
 
 export function getVehicleFuels(vehicleType: string) {
-  return vehicleData[vehicleType as VehicleTypeKey]?.fuels ?? [];
+  return sortAlphabetically(vehicleData[vehicleType as VehicleTypeKey]?.fuels ?? []);
 }
 
 export function getVehicleServices(vehicleType: string) {
-  return vehicleData[vehicleType as VehicleTypeKey]?.services ?? [];
+  return sortAlphabetically(vehicleData[vehicleType as VehicleTypeKey]?.services ?? []);
 }
 
 export function getAllServiceOptions() {
   const allServices = Object.values(vehicleData).flatMap((config) => config.services);
-  return Array.from(new Set(allServices)).sort((a, b) => a.localeCompare(b, "pl"));
+  return sortAlphabetically(Array.from(new Set(allServices)));
 }
 
 export function getVehicleYears(maxYear = new Date().getFullYear() + 1, minYear = 1955) {
-  return Array.from({ length: maxYear - minYear + 1 }, (_, i) => String(maxYear - i));
+  return sortYearsDesc(Array.from({ length: maxYear - minYear + 1 }, (_, i) => String(minYear + i))).map(String);
 }

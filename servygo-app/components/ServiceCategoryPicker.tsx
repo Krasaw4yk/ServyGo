@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ServiceCategory } from "@/lib/serviceCatalog";
+import {
+  SERVICE_MAIN_CATEGORIES,
+  normalizeServiceTextForMatch,
+} from "@/lib/serviceCategoryClassifier";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 
 type ServiceCategoryPickerProps = {
@@ -24,12 +28,7 @@ type SearchResult = {
 };
 
 function normalizeSearchText(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeServiceTextForMatch(value);
 }
 
 function rankSearchMatch(label: string, query: string) {
@@ -38,6 +37,20 @@ function rankSearchMatch(label: string, query: string) {
   if (normalizedLabel.startsWith(query)) return 1;
   if (normalizedLabel.includes(query)) return 2;
   return Number.POSITIVE_INFINITY;
+}
+
+function sortByLabel<T extends { name: string }>(items: T[]) {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name, "pl", { sensitivity: "base" }));
+}
+
+function sortCategoriesByMainOrder<T extends { name: string }>(categories: T[]) {
+  const order = new Map(SERVICE_MAIN_CATEGORIES.map((name, idx) => [name, idx]));
+  return [...categories].sort((a, b) => {
+    const ao = order.get(a.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
+    const bo = order.get(b.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
+    if (ao !== bo) return ao - bo;
+    return a.name.localeCompare(b.name, "pl", { sensitivity: "base" });
+  });
 }
 
 export default function ServiceCategoryPicker({
@@ -61,6 +74,17 @@ export default function ServiceCategoryPicker({
   const prevSheetOpenRef = useRef(false);
 
   const displayValue = isOpen ? query : value;
+  const sortedCategories = useMemo(
+    () =>
+      sortCategoriesByMainOrder(categories).map((category) => ({
+        ...category,
+        subcategories: sortByLabel(category.subcategories).map((subcategory) => ({
+          ...subcategory,
+          services: sortByLabel(subcategory.services),
+        })),
+      })),
+    [categories],
+  );
 
   useEffect(() => {
     function updateViewportMode() {
@@ -99,8 +123,8 @@ export default function ServiceCategoryPicker({
   }, [isOpen, isMobile]);
 
   const selectedCategory = useMemo(
-    () => categories.find((category) => category.name === activeCategory) ?? null,
-    [activeCategory, categories],
+    () => sortedCategories.find((category) => category.name === activeCategory) ?? null,
+    [activeCategory, sortedCategories],
   );
   const selectedSubcategory = useMemo(
     () =>
@@ -116,7 +140,7 @@ export default function ServiceCategoryPicker({
     if (!normalizedQuery) return [];
 
     const flattened: SearchResult[] = [];
-    for (const category of categories) {
+    for (const category of sortedCategories) {
       flattened.push({
         type: "category",
         label: category.name,
@@ -146,9 +170,9 @@ export default function ServiceCategoryPicker({
       .filter((item) => Number.isFinite(item.rank))
       .sort((a, b) => {
         if (a.rank !== b.rank) return a.rank - b.rank;
-        return a.label.localeCompare(b.label, "pl");
+        return a.label.localeCompare(b.label, "pl", { sensitivity: "base" });
       });
-  }, [categories, query]);
+  }, [query, sortedCategories]);
 
   return (
     <div ref={rootRef} className="relative w-full">
@@ -400,7 +424,7 @@ export default function ServiceCategoryPicker({
                       ))}
                     </>
                   ) : (
-                    categories.map((category) => (
+                    sortedCategories.map((category) => (
                       <button
                         key={category.name}
                         type="button"
@@ -543,7 +567,7 @@ export default function ServiceCategoryPicker({
               ))}
             </>
           ) : (
-            categories.map((category) => (
+            sortedCategories.map((category) => (
               <button
                 key={category.name}
                 type="button"

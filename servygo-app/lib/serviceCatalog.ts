@@ -1,4 +1,9 @@
 import type { VehicleTypeKey } from "@/lib/vehicleData";
+import {
+  classifyServiceCategory,
+  SERVICE_MAIN_CATEGORIES,
+  type ServiceMainCategory,
+} from "@/lib/serviceCategoryClassifier";
 
 export type ServiceLeaf = {
   name: string;
@@ -351,5 +356,65 @@ export function getServiceCatalogByVehicleType(vehicleType: string): ServiceCate
     return [...baseCatalog, vanExtras];
   }
   return baseCatalog;
+}
+
+/**
+ * Katalog usług pogrupowany wg głównych kategorii (klasyfikacja po słowach kluczowych —
+ * bez AI), kolejność kategorii stała jak w `SERVICE_MAIN_CATEGORIES`.
+ */
+export function getServiceCatalogGroupedByMainCategory(vehicleType: string): ServiceCategory[] {
+  const flat = getServiceCatalogByVehicleType(vehicleType);
+  const dedupByLower = new Map<string, ServiceLeaf>();
+
+  for (const cat of flat) {
+    for (const sub of cat.subcategories) {
+      for (const svc of sub.services) {
+        const trimmed = svc.name.trim();
+        if (!trimmed) continue;
+        const lk = trimmed.toLocaleLowerCase("pl");
+        if (!dedupByLower.has(lk)) dedupByLower.set(lk, { name: trimmed });
+      }
+    }
+  }
+
+  const byMain = new Map<ServiceMainCategory, ServiceLeaf[]>();
+  const other: ServiceLeaf[] = [];
+
+  for (const main of SERVICE_MAIN_CATEGORIES) {
+    if (main !== "Inne") byMain.set(main, []);
+  }
+
+  for (const leaf of dedupByLower.values()) {
+    const { category } = classifyServiceCategory(leaf.name);
+    if (category !== "Inne") {
+      byMain.get(category)?.push(leaf);
+    } else {
+      other.push(leaf);
+    }
+  }
+
+  const plSort = (a: ServiceLeaf, b: ServiceLeaf) => a.name.localeCompare(b.name, "pl", { sensitivity: "base" });
+  const out: ServiceCategory[] = [];
+
+  for (const main of SERVICE_MAIN_CATEGORIES) {
+    if (main === "Inne") continue;
+    const list = byMain.get(main) ?? [];
+    if (list.length === 0) continue;
+    list.sort(plSort);
+    out.push({
+      name: main,
+      subcategories: [{ name: "Wszystkie usługi", services: list }],
+    });
+  }
+
+  other.sort(plSort);
+  if (other.length > 0) {
+    out.push({
+      name: "Inne",
+      subcategories: [{ name: "Wszystkie usługi", services: other }],
+    });
+  }
+
+  return out;
 }
 

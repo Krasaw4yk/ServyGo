@@ -70,6 +70,7 @@ export type WorkshopServiceConfigRow = {
   service_key: string | null;
   service_name: string;
   category: string | null;
+  category_manual?: boolean | null;
   description: string | null;
   price_from: number | null;
   price_to: number | null;
@@ -416,7 +417,7 @@ export async function listWorkshopServiceConfigsForOwner(workshopId: string): Pr
   if (!supabase) throw new Error("Supabase client not available.");
   const { data, error } = await supabase
     .from("workshop_services")
-    .select("id, workshop_id, service_key, service_name, category, description, price_from, price_to, duration_minutes, is_active, is_custom, created_at, updated_at")
+    .select("id, workshop_id, service_key, service_name, category, category_manual, description, price_from, price_to, duration_minutes, is_active, is_custom, created_at, updated_at")
     .eq("workshop_id", workshopId)
     .order("service_name", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
@@ -430,6 +431,7 @@ export async function upsertWorkshopServiceConfigsForOwner(
     service_key?: string | null;
     service_name: string;
     category?: string | null;
+    category_manual?: boolean;
     description?: string | null;
     price_from?: number | null;
     price_to?: number | null;
@@ -445,6 +447,7 @@ export async function upsertWorkshopServiceConfigsForOwner(
     service_key: r.service_key ?? null,
     service_name: r.service_name.trim(),
     category: r.category?.trim() || null,
+    category_manual: Boolean(r.category_manual),
     description: r.description?.trim() || null,
     price_from: r.price_from ?? null,
     price_to: r.price_to ?? null,

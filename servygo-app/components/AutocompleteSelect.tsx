@@ -30,6 +30,32 @@ function normalizeOption(option: string | AutocompleteOption): AutocompleteOptio
   return option;
 }
 
+const PRIORITY_LABELS = ["Wszystkie", "Wpisz ręcznie", "Dowolne", "Inne"] as const;
+
+function getPriorityIndex(label: string) {
+  const normalized = label.trim().toLowerCase();
+  return PRIORITY_LABELS.findIndex((priorityLabel) => {
+    const normalizedPriorityLabel = priorityLabel.toLowerCase();
+    return normalized === normalizedPriorityLabel || normalized.startsWith(`${normalizedPriorityLabel} `);
+  });
+}
+
+function compareOptionLabels(a: AutocompleteOption, b: AutocompleteOption) {
+  const isANumeric = /^\d+$/.test(a.label.trim());
+  const isBNumeric = /^\d+$/.test(b.label.trim());
+  if (isANumeric && isBNumeric) {
+    return Number(b.label) - Number(a.label);
+  }
+  const aPriority = getPriorityIndex(a.label);
+  const bPriority = getPriorityIndex(b.label);
+  if (aPriority !== -1 || bPriority !== -1) {
+    if (aPriority === -1) return 1;
+    if (bPriority === -1) return -1;
+    return aPriority - bPriority;
+  }
+  return a.label.localeCompare(b.label, "pl", { sensitivity: "base" });
+}
+
 export default function AutocompleteSelect({
   name,
   value,
@@ -49,7 +75,10 @@ export default function AutocompleteSelect({
   const [isMobile, setIsMobile] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const normalizedOptions = useMemo(() => options.map(normalizeOption), [options]);
+  const normalizedOptions = useMemo(
+    () => options.map(normalizeOption).sort(compareOptionLabels),
+    [options],
+  );
 
   const selectedOption = useMemo(
     () => normalizedOptions.find((option) => option.value === value) ?? null,
@@ -71,7 +100,7 @@ export default function AutocompleteSelect({
       const aIndex = aLabel.indexOf(needle);
       const bIndex = bLabel.indexOf(needle);
       if (aIndex !== bIndex) return aIndex - bIndex;
-      return aLabel.localeCompare(bLabel, "pl");
+      return aLabel.localeCompare(bLabel, "pl", { sensitivity: "base" });
     });
   }, [normalizedOptions, query]);
 
