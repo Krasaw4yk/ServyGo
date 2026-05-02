@@ -1654,9 +1654,11 @@ function HomePageContent() {
         >
           <div
             ref={headerRef}
-            className={headerShellClass}
+            className={`${headerShellClass}${currentUser ? " max-sm:py-3" : ""}`}
           >
-            <div className="flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1 overflow-hidden sm:gap-2 xl:gap-6">
+            <div
+              className={`flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1 overflow-hidden sm:gap-2 xl:gap-6${currentUser ? " max-sm:gap-2" : ""}`}
+            >
               <Image
                 src={
                   isDark
@@ -1667,7 +1669,7 @@ function HomePageContent() {
                 width={256}
                 height={96}
                 priority
-                className="h-8 w-auto max-w-[min(36vw,132px)] shrink-0 object-contain sm:h-12 sm:max-w-none md:mr-6 md:h-16 md:max-w-[256px]"
+                className={`h-8 w-auto max-w-[min(36vw,132px)] shrink-0 object-contain${currentUser ? " max-sm:h-10 max-sm:max-w-[min(44vw,168px)]" : ""} sm:h-12 sm:max-w-none md:mr-6 md:h-16 md:max-w-[256px]`}
               />
 
               <nav className="mx-auto hidden min-w-0 flex-1 justify-center gap-6 xl:flex">
@@ -1684,16 +1686,24 @@ function HomePageContent() {
                 ))}
               </nav>
 
-              <div className="relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-hidden sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 md:gap-3 xl:ml-0">
+              <div
+                className={`relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-hidden sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 md:gap-3 xl:ml-0${currentUser ? " max-sm:gap-2" : ""}`}
+              >
                 <div className="relative z-[1002] min-w-0 shrink">
                   <button
                     type="button"
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "user" ? null : "user"))
                     }
-                    className={userTriggerButtonClass}
+                    className={`${userTriggerButtonClass}${currentUser ? " max-sm:h-10 max-sm:min-h-[40px] max-sm:w-10 max-sm:min-w-[40px] max-sm:justify-center max-sm:px-0 max-sm:py-0 max-sm:gap-0" : ""}`}
                   >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5${currentUser ? " max-sm:h-5 max-sm:w-5" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
                       <circle cx="12" cy="8" r="3.5" />
                       <path d="M5 19a7 7 0 0 1 14 0" />
                     </svg>
@@ -1883,11 +1893,21 @@ function HomePageContent() {
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "lang" ? null : "lang"))
                     }
-                    className={triggerButtonClass}
+                    className={`${triggerButtonClass}${currentUser ? " max-sm:h-10 max-sm:min-h-[40px] max-sm:px-3 max-sm:text-xs max-sm:gap-2" : ""}`}
                   >
                     <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9S14.4 18.5 12 21M12 3c-2.4 2.5-3.6 5.5-3.6 9S9.6 18.5 12 21" /></svg>
                     {language.toUpperCase()}
-                    <svg viewBox="0 0 20 20" className="hidden h-3 w-3 shrink-0 sm:block sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg
+                      viewBox="0 0 20 20"
+                      className={
+                        currentUser
+                          ? "h-3 w-3 shrink-0 max-sm:inline-block sm:inline-block sm:h-4 sm:w-4"
+                          : "hidden h-3 w-3 shrink-0 sm:block sm:h-4 sm:w-4"
+                      }
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
                       <path d="m5 7 5 6 5-6" />
                     </svg>
                   </button>
@@ -1926,14 +1946,30 @@ function HomePageContent() {
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "theme" ? null : "theme"))
                     }
-                    className={triggerButtonClass}
+                    className={`${triggerButtonClass}${currentUser ? " max-sm:h-10 max-sm:min-h-[40px] max-sm:px-3 max-sm:text-xs max-sm:gap-2" : ""}`}
                     aria-label={isDark ? t("header.themeDark") : t("header.themeLight")}
                   >
                     <span aria-hidden>{isDark ? "🌙" : "☀️"}</span>
-                    <span className="ml-0.5 hidden max-w-[3.25rem] truncate text-xs sm:inline sm:ml-1 sm:max-w-none md:text-base">
+                    <span
+                      className={
+                        currentUser
+                          ? "ml-0.5 inline max-w-[3.25rem] shrink truncate text-[10px] leading-tight sm:ml-1 sm:max-w-none sm:text-xs md:text-base"
+                          : "ml-0.5 hidden max-w-[3.25rem] truncate text-xs sm:ml-1 sm:inline sm:max-w-none md:text-base"
+                      }
+                    >
                       {isDark ? t("header.themeDark") : t("header.themeLight")}
                     </span>
-                    <svg viewBox="0 0 20 20" className="hidden h-3 w-3 shrink-0 sm:block sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg
+                      viewBox="0 0 20 20"
+                      className={
+                        currentUser
+                          ? "h-3 w-3 shrink-0 max-sm:inline-block sm:inline-block sm:h-4 sm:w-4"
+                          : "hidden h-3 w-3 shrink-0 sm:block sm:h-4 sm:w-4"
+                      }
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
                       <path d="m5 7 5 6 5-6" />
                     </svg>
                   </button>
@@ -1966,7 +2002,11 @@ function HomePageContent() {
 
                 {currentUser ? (
                   <div className="relative z-[1002] min-w-0 shrink">
-                    <ClientNotificationBell isDark={isDark} unreadCount={accountUnreadMessages} buttonClassName={triggerButtonClass} />
+                    <ClientNotificationBell
+                      isDark={isDark}
+                      unreadCount={accountUnreadMessages}
+                      buttonClassName={`${triggerButtonClass} max-sm:h-10 max-sm:min-h-[40px] max-sm:w-10 max-sm:min-w-[40px] max-sm:justify-center max-sm:px-0 max-sm:py-0`}
+                    />
                   </div>
                 ) : null}
 
