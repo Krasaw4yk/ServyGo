@@ -9,6 +9,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
   pl: {
     header: {
       login: "Zaloguj się",
+      loginShort: "Zaloguj",
       welcomeBack: "Witaj ponownie!",
       register: "Zarejestruj się",
       createAccount: "Utwórz nowe konto",
@@ -391,6 +392,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
   en: {
     header: {
       login: "Log in",
+      loginShort: "Log in",
       welcomeBack: "Welcome back!",
       register: "Sign up",
       createAccount: "Create a new account",
@@ -773,6 +775,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
   ua: {
     header: {
       login: "Увійти",
+      loginShort: "Увійти",
       welcomeBack: "З поверненням!",
       register: "Зареєструватися",
       createAccount: "Створити новий акаунт",

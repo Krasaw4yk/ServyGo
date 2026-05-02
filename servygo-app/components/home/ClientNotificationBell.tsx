@@ -18,7 +18,7 @@ export default function ClientNotificationBell({
     isDark ? "border-zinc-600 text-zinc-100 hover:bg-zinc-800" : "border-blue-200 text-blue-800 hover:bg-blue-50"
   }`;
   const bellBtnClass = buttonClassName?.trim()
-    ? `relative shrink-0 ${buttonClassName}`
+    ? `relative min-w-0 max-sm:shrink sm:shrink-0 ${buttonClassName}`
     : compactBellBtnClass;
   const bellIconClass = buttonClassName?.trim() ? "h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:h-6 shrink-0" : "h-5 w-5 shrink-0";
 

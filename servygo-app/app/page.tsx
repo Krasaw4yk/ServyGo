@@ -698,17 +698,17 @@ function HomePageContent() {
   const sortedYears = useMemo(() => sortYearsDesc(years).map(String), [years]);
   const currentFieldClassName = isDark ? fieldClassName : lightFieldClassName;
   const headerShellClass = isDark
-    ? "sticky top-0 z-[1000] isolate mb-7 w-full max-w-[100vw] overflow-x-hidden overflow-y-visible border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2.5 backdrop-blur-xl sm:px-3 sm:py-3 md:px-4"
-    : "sticky top-0 z-[1000] isolate mb-7 w-full max-w-[100vw] overflow-x-hidden overflow-y-visible border-b border-blue-100/90 bg-white/92 px-2 py-2.5 backdrop-blur-xl sm:px-3 sm:py-3 md:px-4";
+    ? "sticky top-0 z-[1000] isolate mb-7 box-border w-full max-w-full overflow-hidden border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2 backdrop-blur-xl sm:px-3 sm:py-2.5 md:px-4"
+    : "sticky top-0 z-[1000] isolate mb-7 box-border w-full max-w-full overflow-hidden border-b border-blue-100/90 bg-white/92 px-2 py-2 backdrop-blur-xl sm:px-3 sm:py-2.5 md:px-4";
   const triggerButtonClass = isDark
-    ? "inline-flex h-9 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-700/80 bg-zinc-900/78 px-2 text-xs font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:rounded-2xl md:px-5 md:text-base"
-    : "inline-flex h-9 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-200/75 bg-white/82 px-2 text-xs font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:rounded-2xl md:px-5 md:text-base";
+    ? "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-1.5 text-[11px] font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-1.5 text-[11px] font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const userTriggerButtonClass = isDark
-    ? "inline-flex h-9 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-700/80 bg-zinc-900/78 px-2 text-xs text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:rounded-2xl md:px-4 md:text-base"
-    : "inline-flex h-9 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-200/75 bg-white/82 px-2 text-xs text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:rounded-2xl md:px-4 md:text-base";
+    ? "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-1.5 text-[11px] text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base"
+    : "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-1.5 text-[11px] text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base";
   const ctaButtonClass = isDark
-    ? "inline-flex h-9 max-w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:rounded-2xl md:px-5 md:text-base"
-    : "inline-flex h-9 max-w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:rounded-2xl md:px-5 md:text-base";
+    ? "inline-flex h-8 max-w-full min-w-0 shrink items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-1.5 text-[11px] font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-8 max-w-full min-w-0 shrink items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-1.5 text-[11px] font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const dropdownPanelClass = isDark
     ? "isolate rounded-2xl border border-blue-500/25 bg-zinc-900/98 p-2 shadow-[0_26px_60px_rgba(2,6,23,0.78)] backdrop-blur-xl"
     : "isolate rounded-2xl border border-blue-200/85 bg-white p-2 shadow-[0_26px_60px_rgba(15,23,42,0.24)] ring-1 ring-orange-200/45 backdrop-blur-xl";
@@ -1656,7 +1656,7 @@ function HomePageContent() {
             ref={headerRef}
             className={headerShellClass}
           >
-            <div className="flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1.5 sm:gap-2 xl:gap-6">
+            <div className="flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1 overflow-hidden sm:gap-2 xl:gap-6">
               <Image
                 src={
                   isDark
@@ -1667,7 +1667,7 @@ function HomePageContent() {
                 width={256}
                 height={96}
                 priority
-                className="h-9 w-auto max-w-[min(42vw,168px)] shrink-0 object-contain sm:h-12 sm:max-w-none md:mr-6 md:h-16 md:max-w-[256px]"
+                className="h-8 w-auto max-w-[min(36vw,132px)] shrink-0 object-contain sm:h-12 sm:max-w-none md:mr-6 md:h-16 md:max-w-[256px]"
               />
 
               <nav className="mx-auto hidden min-w-0 flex-1 justify-center gap-6 xl:flex">
@@ -1684,8 +1684,8 @@ function HomePageContent() {
                 ))}
               </nav>
 
-              <div className="relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 shrink flex-row flex-nowrap items-center justify-end gap-1.5 overflow-x-hidden sm:max-w-none sm:flex-none sm:gap-2 md:gap-3 xl:ml-0">
-                <div className="relative z-[1002] shrink-0">
+              <div className="relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-hidden sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 md:gap-3 xl:ml-0">
+                <div className="relative z-[1002] min-w-0 shrink">
                   <button
                     type="button"
                     onClick={() =>
@@ -1877,7 +1877,7 @@ function HomePageContent() {
                   </div>
                 </div>
 
-                <div className="relative z-[1002] shrink-0">
+                <div className="relative z-[1002] min-w-0 shrink">
                   <button
                     type="button"
                     onClick={() =>
@@ -1887,7 +1887,7 @@ function HomePageContent() {
                   >
                     <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9S14.4 18.5 12 21M12 3c-2.4 2.5-3.6 5.5-3.6 9S9.6 18.5 12 21" /></svg>
                     {language.toUpperCase()}
-                    <svg viewBox="0 0 20 20" className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg viewBox="0 0 20 20" className="hidden h-3 w-3 shrink-0 sm:block sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="m5 7 5 6 5-6" />
                     </svg>
                   </button>
@@ -1920,7 +1920,7 @@ function HomePageContent() {
                   </div>
                 </div>
 
-                <div className="relative z-[1002] shrink-0">
+                <div className="relative z-[1002] min-w-0 shrink">
                   <button
                     type="button"
                     onClick={() =>
@@ -1930,10 +1930,10 @@ function HomePageContent() {
                     aria-label={isDark ? t("header.themeDark") : t("header.themeLight")}
                   >
                     <span aria-hidden>{isDark ? "🌙" : "☀️"}</span>
-                    <span className="ml-0.5 inline max-w-[3.25rem] truncate text-[10px] leading-tight sm:ml-1 sm:max-w-none sm:text-xs md:text-base">
+                    <span className="ml-0.5 hidden max-w-[3.25rem] truncate text-xs sm:inline sm:ml-1 sm:max-w-none md:text-base">
                       {isDark ? t("header.themeDark") : t("header.themeLight")}
                     </span>
-                    <svg viewBox="0 0 20 20" className="h-3 w-3 shrink-0 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg viewBox="0 0 20 20" className="hidden h-3 w-3 shrink-0 sm:block sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="m5 7 5 6 5-6" />
                     </svg>
                   </button>
@@ -1965,7 +1965,7 @@ function HomePageContent() {
                 </div>
 
                 {currentUser ? (
-                  <div className="relative z-[1002] shrink-0">
+                  <div className="relative z-[1002] min-w-0 shrink">
                     <ClientNotificationBell isDark={isDark} unreadCount={accountUnreadMessages} buttonClassName={triggerButtonClass} />
                   </div>
                 ) : null}
@@ -1977,14 +1977,15 @@ function HomePageContent() {
                       onClick={openLoginModal}
                       className={triggerButtonClass}
                     >
-                      <span className="max-sm:max-w-[5.5rem] max-sm:truncate sm:max-w-none">{t("header.login")}</span>
+                      <span className="inline sm:hidden">{t("header.loginShort")}</span>
+                      <span className="hidden sm:inline">{t("header.login")}</span>
                     </button>
                     <button
                       type="button"
                       onClick={openRegisterModal}
                       className={ctaButtonClass}
                     >
-                      <span className="inline max-sm:max-w-[5.75rem] max-sm:truncate sm:hidden">{t("header.registerShort")}</span>
+                      <span className="inline sm:hidden">{t("header.registerShort")}</span>
                       <span className="hidden sm:inline">{t("header.register")}</span>
                     </button>
                   </>
