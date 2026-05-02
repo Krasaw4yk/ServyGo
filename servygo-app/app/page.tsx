@@ -1695,11 +1695,11 @@ function HomePageContent() {
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "user" ? null : "user"))
                     }
-                    className={`${userTriggerButtonClass}${currentUser ? " max-sm:h-10 max-sm:min-h-[40px] max-sm:w-10 max-sm:min-w-[40px] max-sm:justify-center max-sm:px-0 max-sm:py-0 max-sm:gap-0" : ""}`}
+                    className={`${userTriggerButtonClass}${currentUser ? " max-sm:h-[34px] max-sm:min-h-[34px] max-sm:w-[34px] max-sm:min-w-[34px] max-sm:justify-center max-sm:px-0 max-sm:py-0 max-sm:gap-0" : ""}`}
                   >
                     <svg
                       viewBox="0 0 24 24"
-                      className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5${currentUser ? " max-sm:h-5 max-sm:w-5" : ""}`}
+                      className={`h-4 w-4 shrink-0 sm:h-5 sm:w-5${currentUser ? " max-sm:h-[17px] max-sm:w-[17px]" : ""}`}
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="1.8"
@@ -1893,7 +1893,7 @@ function HomePageContent() {
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "lang" ? null : "lang"))
                     }
-                    className={`${triggerButtonClass}${currentUser ? " max-sm:h-10 max-sm:min-h-[40px] max-sm:px-3 max-sm:text-xs max-sm:gap-2" : ""}`}
+                    className={`${triggerButtonClass}${currentUser ? " max-sm:h-[34px] max-sm:min-h-[34px] max-sm:px-[10px] max-sm:text-[11px] max-sm:gap-[7px]" : ""}`}
                   >
                     <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9S14.4 18.5 12 21M12 3c-2.4 2.5-3.6 5.5-3.6 9S9.6 18.5 12 21" /></svg>
                     {language.toUpperCase()}
@@ -1946,14 +1946,14 @@ function HomePageContent() {
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "theme" ? null : "theme"))
                     }
-                    className={`${triggerButtonClass}${currentUser ? " max-sm:h-10 max-sm:min-h-[40px] max-sm:px-3 max-sm:text-xs max-sm:gap-2" : ""}`}
+                    className={`${triggerButtonClass}${currentUser ? " max-sm:h-[34px] max-sm:min-h-[34px] max-sm:px-[10px] max-sm:text-[11px] max-sm:gap-[7px]" : ""}`}
                     aria-label={isDark ? t("header.themeDark") : t("header.themeLight")}
                   >
                     <span aria-hidden>{isDark ? "🌙" : "☀️"}</span>
                     <span
                       className={
                         currentUser
-                          ? "ml-0.5 inline max-w-[3.25rem] shrink truncate text-[10px] leading-tight sm:ml-1 sm:max-w-none sm:text-xs md:text-base"
+                          ? "ml-0.5 inline max-w-[2.75rem] shrink truncate text-[9px] leading-tight sm:ml-1 sm:max-w-none sm:text-xs md:text-base"
                           : "ml-0.5 hidden max-w-[3.25rem] truncate text-xs sm:ml-1 sm:inline sm:max-w-none md:text-base"
                       }
                     >
@@ -2005,7 +2005,7 @@ function HomePageContent() {
                     <ClientNotificationBell
                       isDark={isDark}
                       unreadCount={accountUnreadMessages}
-                      buttonClassName={`${triggerButtonClass} max-sm:h-10 max-sm:min-h-[40px] max-sm:w-10 max-sm:min-w-[40px] max-sm:justify-center max-sm:px-0 max-sm:py-0`}
+                      buttonClassName={`${triggerButtonClass} max-sm:h-[34px] max-sm:min-h-[34px] max-sm:w-[34px] max-sm:min-w-[34px] max-sm:justify-center max-sm:px-0 max-sm:py-0`}
                     />
                   </div>
                 ) : null}
