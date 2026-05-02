@@ -19,6 +19,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       chooseTheme: "Wybierz motyw",
       themeLight: "Jasny",
       themeDark: "Ciemny",
+      registerShort: "Rejestracja",
     },
     language: {
       pl: "Polski",
@@ -400,6 +401,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       chooseTheme: "Choose theme",
       themeLight: "Light",
       themeDark: "Dark",
+      registerShort: "Register",
     },
     language: {
       pl: "Polish",
@@ -781,6 +783,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       chooseTheme: "Оберіть тему",
       themeLight: "Світла",
       themeDark: "Темна",
+      registerShort: "Реєстрація",
     },
     language: {
       pl: "Польська",
