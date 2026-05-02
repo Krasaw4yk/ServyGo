@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import BookingConversationModal from "@/components/booking/BookingConversationModal";
 import ClientRescheduleModal from "@/components/booking/ClientRescheduleModal";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
 import { quoteDecisionLabel, notifyWorkshopOwnerQuoteResponded } from "@/lib/bookingQuoteNotifications";
 import {
@@ -295,26 +296,17 @@ function MojeRezerwacjePageContent() {
   return (
     <ServyGoPageShell isDark={isDark}>
       <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+        <ServyGoSubpageNavBar isDark={isDark} />
         <section
           className={`rounded-3xl border p-5 shadow-[0_20px_50px_rgba(37,99,235,0.12)] sm:p-7 ${
             isDark ? "border-blue-500/25 bg-zinc-900/80 text-zinc-100" : "border-blue-200/80 bg-white/90 text-zinc-900"
           }`}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-bold sm:text-3xl">Moje rezerwacje</h1>
-              <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
-                Aktualne i poprzednie wizyty w warsztatach ServyGo.
-              </p>
-            </div>
-            <Link
-              href="/"
-              className={`inline-flex rounded-xl border px-4 py-2 text-sm font-semibold transition ${
-                isDark ? "border-blue-400/50 text-zinc-100 hover:border-orange-400/70" : "border-blue-300 text-zinc-800 hover:border-orange-400"
-              }`}
-            >
-              Wróć na stronę główną
-            </Link>
+          <div>
+            <h1 className="text-2xl font-bold sm:text-3xl">Moje rezerwacje</h1>
+            <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+              Aktualne i poprzednie wizyty w warsztatach ServyGo.
+            </p>
           </div>
         </section>
 
@@ -422,7 +414,7 @@ function MojeRezerwacjePageContent() {
                     }`}
                   >
                     <div>
-                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Pojazd (z zapytania)</p>
+                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Auto (z zapytania)</p>
                       <p className="mt-1 font-medium">{dash([vd.brand, vd.model].filter(Boolean).join(" "))}</p>
                       <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                         {dash(vd.vehicleType)} · rocznik {dash(vd.year)} · {dash(vd.fuel)}

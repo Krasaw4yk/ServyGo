@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import {
   deleteUserCalendarEvent,
@@ -333,18 +334,24 @@ export default function MojKalendarzPage() {
   if (!isSupabaseConfigured || !supabase) {
     return (
       <ServyGoPageShell isDark={false}>
-        <main className="mx-auto max-w-lg px-4 py-10 text-center text-sm">Brak konfiguracji Supabase.</main>
+        <main className="mx-auto max-w-lg px-4 py-6 text-center text-sm">
+          <ServyGoSubpageNavBar isDark={false} variant="calendar" />
+          <p className="mt-4">Brak konfiguracji Supabase.</p>
+        </main>
       </ServyGoPageShell>
     );
   }
   if (!user) {
     return (
       <ServyGoPageShell isDark={isDark}>
-        <main className="mx-auto max-w-lg px-4 py-10 text-center">
-          <p className="text-sm">Zaloguj się, aby korzystać z kalendarza.</p>
-          <Link href="/?auth=login" className="mt-4 inline-block text-blue-600 underline">
-            Logowanie
-          </Link>
+        <main className="mx-auto max-w-lg px-4 py-8">
+          <ServyGoSubpageNavBar isDark={isDark} variant="calendar" />
+          <div className="mt-8 text-center text-sm">
+            <p>Zaloguj się, aby korzystać z kalendarza.</p>
+            <Link href="/?auth=login" className="mt-4 inline-block text-blue-600 underline">
+              Logowanie
+            </Link>
+          </div>
         </main>
       </ServyGoPageShell>
     );
@@ -359,6 +366,7 @@ export default function MojKalendarzPage() {
           isDark ? "text-zinc-100" : "text-zinc-900"
         }`}
       >
+        <ServyGoSubpageNavBar isDark={isDark} variant="calendar" />
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold sm:text-3xl">Mój kalendarz</h1>
@@ -367,12 +375,6 @@ export default function MojKalendarzPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/ustawienia"
-              className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-zinc-600 hover:bg-zinc-800" : "border-blue-200 hover:bg-blue-50"}`}
-            >
-              Ustawienia
-            </Link>
             <Link
               href="/moje-rezerwacje"
               className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-zinc-600 hover:bg-zinc-800" : "border-blue-200 hover:bg-blue-50"}`}

@@ -8,6 +8,11 @@ import {
 } from "@/lib/serviceCategoryClassifier";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 
+type FinalServiceAvailability = {
+  available: boolean;
+  priceHint?: string;
+};
+
 type ServiceCategoryPickerProps = {
   value: string;
   onChange: (value: string) => void;
@@ -17,6 +22,8 @@ type ServiceCategoryPickerProps = {
   inputClassName?: string;
   placeholder?: string;
   noResultsText?: string;
+  /** Gdy zwraca obiekt: `available: false` = usługa niedostępna w wybranym warsztacie (wyszarzenie, brak wyboru). */
+  getFinalServiceAvailability?: (serviceName: string) => FinalServiceAvailability | null;
 };
 
 type SearchResult = {
@@ -69,6 +76,7 @@ export default function ServiceCategoryPicker({
   inputClassName = "",
   placeholder = "Wybierz kategorię",
   noResultsText = "Brak wyników",
+  getFinalServiceAvailability,
 }: ServiceCategoryPickerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -95,7 +103,13 @@ export default function ServiceCategoryPicker({
     }
   }
 
+  function finalAvailability(name: string): FinalServiceAvailability | null {
+    return getFinalServiceAvailability?.(name) ?? null;
+  }
+
   function handleFinalServiceSelection(serviceName: string) {
+    const av = finalAvailability(serviceName);
+    if (av && !av.available) return;
     onChange(serviceName);
     closePicker(true);
   }
@@ -234,7 +248,10 @@ export default function ServiceCategoryPicker({
       keepPickerOpen();
       return;
     }
-    handleFinalServiceSelection(result.serviceName ?? "");
+    const name = result.serviceName ?? "";
+    const av = finalAvailability(name);
+    if (av && !av.available) return;
+    handleFinalServiceSelection(name);
   }
 
   const browseRows = useMemo((): BrowseRow[] => {
@@ -412,10 +429,10 @@ export default function ServiceCategoryPicker({
           }}
           title={placeholder}
           isDark={isDark}
-          fixedHeight
+          tallList
         >
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="space-y-3 pb-3">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 space-y-3 pb-3">
               {!mobileCustomOpen ? (
                 <input
                   value={query}
@@ -524,24 +541,44 @@ export default function ServiceCategoryPicker({
             )}
             </div>
             {!mobileCustomOpen ? (
-              <div className="min-h-0 max-h-[min(260px,60vh)] flex-1 overflow-y-auto overscroll-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
+              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-8 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
                   {normalizeSearchText(query) ? (
                     searchResults.length === 0 ? (
                       <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
                     ) : (
-                      searchResults.map((result) => (
-                        <button
-                          key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
-                          type="button"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            applySearchResult(result);
-                          }}
-                          className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
-                        >
-                          <span className="block font-medium">{result.label}</span>
-                        </button>
-                      ))
+                      searchResults.map((result) => {
+                        const svcName = result.type === "service" ? (result.serviceName ?? result.label) : "";
+                        const av = result.type === "service" ? finalAvailability(svcName) : null;
+                        const blocked = Boolean(result.type === "service" && av && !av.available);
+                        return (
+                          <button
+                            key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
+                            type="button"
+                            disabled={blocked}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              if (blocked) return;
+                              applySearchResult(result);
+                            }}
+                            className={`w-full rounded-xl px-3 py-3 text-left text-sm ${
+                              blocked
+                                ? isDark
+                                  ? "cursor-not-allowed text-zinc-500 opacity-60"
+                                  : "cursor-not-allowed text-zinc-500 opacity-65"
+                                : isDark
+                                  ? "text-zinc-200 hover:bg-zinc-800/90"
+                                  : "text-zinc-700 hover:bg-blue-50"
+                            }`}
+                          >
+                            <span className="block font-medium">{result.label}</span>
+                            {blocked ? (
+                              <span className="mt-1 block text-xs font-medium text-red-600 dark:text-red-400">
+                                Niedostępne w tym warsztacie
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })
                     )
                   ) : selectedSubcategory ? (
                     <>
@@ -555,20 +592,43 @@ export default function ServiceCategoryPicker({
                       >
                         ← Wróć
                       </button>
-                      {selectedSubcategory.services.map((service) => (
-                        <button
-                          key={`${selectedSubcategory.name}-${service.name}`}
-                          type="button"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            handleFinalServiceSelection(service.name);
-                          }}
-                          className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
-                        >
-                          <span>{service.name}</span>
-                          {value === service.name ? <span>✓</span> : null}
-                        </button>
-                      ))}
+                      {selectedSubcategory.services.map((service) => {
+                        const av = finalAvailability(service.name);
+                        const blocked = Boolean(av && !av.available);
+                        return (
+                          <button
+                            key={`${selectedSubcategory.name}-${service.name}`}
+                            type="button"
+                            disabled={blocked}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              if (blocked) return;
+                              handleFinalServiceSelection(service.name);
+                            }}
+                            className={`flex w-full flex-col items-stretch gap-0.5 rounded-xl px-3 py-3 text-left text-sm ${
+                              blocked
+                                ? isDark
+                                  ? "cursor-not-allowed text-zinc-500 opacity-60"
+                                  : "cursor-not-allowed text-zinc-500 opacity-65"
+                                : isDark
+                                  ? "text-zinc-200 hover:bg-zinc-800/90"
+                                  : "text-zinc-700 hover:bg-blue-50"
+                            }`}
+                          >
+                            <span className="flex items-center justify-between gap-2">
+                              <span>{service.name}</span>
+                              {value === service.name ? <span>✓</span> : null}
+                            </span>
+                            {blocked ? (
+                              <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                                Niedostępne w tym warsztacie
+                              </span>
+                            ) : av?.priceHint ? (
+                              <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{av.priceHint}</span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
                     </>
                   ) : selectedCategory ? (
                     <>
@@ -640,17 +700,28 @@ export default function ServiceCategoryPicker({
 
               if (row.kind === "search") {
                 const result = row.result;
+                const svcName = result.type === "service" ? (result.serviceName ?? result.label) : "";
+                const av = result.type === "service" ? finalAvailability(svcName) : null;
+                const blocked = Boolean(result.type === "service" && av && !av.available);
                 return (
                   <button
                     key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
                     type="button"
                     data-browse-row-index={idx}
+                    disabled={blocked}
                     onPointerDown={(event) => {
                       event.preventDefault();
+                      if (blocked) return;
                       activateBrowseRow(row);
                     }}
                     className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                      isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
+                      blocked
+                        ? isDark
+                          ? "cursor-not-allowed text-zinc-500 opacity-60"
+                          : "cursor-not-allowed text-zinc-500 opacity-65"
+                        : isDark
+                          ? "text-zinc-200 hover:bg-zinc-800/90"
+                          : "text-zinc-700 hover:bg-blue-50"
                     } ${hiCls}`}
                   >
                     <span className="block font-medium">{result.label}</span>
@@ -661,6 +732,11 @@ export default function ServiceCategoryPicker({
                           ? `${result.categoryName} -> podkategoria`
                           : `${result.categoryName} -> ${result.subcategoryName ?? ""}`}
                     </span>
+                    {blocked ? (
+                      <span className="mt-1 block text-xs font-medium text-red-600 dark:text-red-400">
+                        Niedostępne w tym warsztacie
+                      </span>
+                    ) : null}
                   </button>
                 );
               }
@@ -689,30 +765,49 @@ export default function ServiceCategoryPicker({
               }
 
               if (row.kind === "service") {
+                const av = finalAvailability(row.serviceName);
+                const blocked = Boolean(av && !av.available);
                 return (
                   <button
                     key={`${selectedSubcategory?.name ?? "sub"}-${row.serviceName}-${idx}`}
                     type="button"
                     data-browse-row-index={idx}
+                    disabled={blocked}
                     onPointerDown={(event) => {
                       event.preventDefault();
+                      if (blocked) return;
                       activateBrowseRow(row);
                     }}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
-                      isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"
+                    className={`flex w-full flex-col items-stretch gap-0.5 rounded-lg px-3 py-2 text-left text-sm transition ${
+                      blocked
+                        ? isDark
+                          ? "cursor-not-allowed text-zinc-500 opacity-60"
+                          : "cursor-not-allowed text-zinc-500 opacity-65"
+                        : isDark
+                          ? "text-zinc-200 hover:bg-zinc-800/90"
+                          : "text-zinc-700 hover:bg-blue-50"
                     } ${hiCls}`}
                   >
-                    <span>{row.serviceName}</span>
-                    {value === row.serviceName ? (
-                      <svg
-                        viewBox="0 0 20 20"
-                        className={`h-4 w-4 ${isDark ? "text-blue-300" : "text-blue-600"}`}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path d="m4 10 4 4 8-8" />
-                      </svg>
+                    <span className="flex items-center justify-between gap-2">
+                      <span>{row.serviceName}</span>
+                      {value === row.serviceName ? (
+                        <svg
+                          viewBox="0 0 20 20"
+                          className={`h-4 w-4 shrink-0 ${isDark ? "text-blue-300" : "text-blue-600"}`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path d="m4 10 4 4 8-8" />
+                        </svg>
+                      ) : null}
+                    </span>
+                    {blocked ? (
+                      <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                        Niedostępne w tym warsztacie
+                      </span>
+                    ) : av?.priceHint ? (
+                      <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{av.priceHint}</span>
                     ) : null}
                   </button>
                 );

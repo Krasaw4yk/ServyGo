@@ -40,11 +40,11 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       title: "Znajdź najlepszą ofertę serwisową",
       selectSavedCar: "Wybierz moje auto",
       subtitle:
-        "Wypełnij dane pojazdu i opisz problem. ServyGo pomoże Ci zebrać oferty od warsztatów w Twojej okolicy.",
+        "Wypełnij dane auta i opisz problem. ServyGo pomoże Ci zebrać oferty od warsztatów w Twojej okolicy.",
       labels: {
-        vehicleType: "Typ pojazdu",
-        brand: "Marka pojazdu",
-        model: "Model pojazdu",
+        vehicleType: "Typ auta",
+        brand: "Marka",
+        model: "Model",
         year: "Rocznik",
         fuel: "Silnik / paliwo",
         service: "Czego potrzebujesz?",
@@ -61,7 +61,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         email: "twoj@email.com",
       },
       selects: {
-        vehicleType: "Wybierz typ pojazdu",
+        vehicleType: "Wybierz typ auta",
         brand: "Wybierz markę",
         model: "Wybierz model",
         year: "Wybierz rocznik",
@@ -69,21 +69,21 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         service: "Wybierz usługę",
         serviceCategory: "Wybierz kategorię",
         manual: "Inne / wpisz ręcznie",
-        chooseTypeFirst: "Najpierw wybierz typ pojazdu",
+        chooseTypeFirst: "Najpierw wybierz typ auta",
         chooseBrandFirst: "Najpierw wybierz markę",
         separator: "---",
         comingSoonSuffix: " - wkrótce",
       },
       manual: {
-        toggleShow: "Nie znalazłeś pojazdu? Dodaj ręcznie",
-        toggleHide: "Ukryj ręczne dodanie pojazdu",
-        title: "Wyślij brakujący pojazd",
+        toggleShow: "Nie znalazłeś auta? Dodaj ręcznie",
+        toggleHide: "Ukryj ręczne dodanie auta",
+        title: "Wyślij brakujące auto",
         subtitle:
-          "Nie znalazłeś swojego pojazdu na liście? Wpisz jego dane ręcznie. Dzięki temu pomożesz nam rozwijać bazę ServyGo.",
+          "Nie znalazłeś swojego auta na liście? Wpisz dane ręcznie. Dzięki temu pomożesz nam rozwijać bazę ServyGo.",
         labels: {
-          type: "Typ pojazdu",
-          brand: "Marka pojazdu",
-          model: "Model pojazdu",
+          type: "Typ auta",
+          brand: "Marka",
+          model: "Model",
           year: "Rocznik",
           description: "Dodatkowy opis",
         },
@@ -108,8 +108,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       messages: {
         requiredFields: "Uzupełnij wszystkie wymagane pola formularza.",
         chooseVehicle:
-          "Wybierz pojazd z listy albo uzupełnij sekcję ręcznego dodania pojazdu.",
-        fillFuelService: "Dla wybranego pojazdu uzupełnij paliwo i usługę.",
+          "Wybierz auto z listy albo uzupełnij sekcję ręcznego dodania.",
+        fillFuelService: "Dla wybranego auta uzupełnij paliwo i usługę.",
         supabaseConfig:
           "Brak konfiguracji Supabase. Ustaw NEXT_PUBLIC_SUPABASE_URL i NEXT_PUBLIC_SUPABASE_ANON_KEY.",
         success:
@@ -153,7 +153,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         save: "Zapisz zmiany",
       },
       vehicle: {
-        vehicleType: "Typ pojazdu",
+        vehicleType: "Typ auta",
         brand: "Marka",
         model: "Model",
         year: "Rocznik",
@@ -162,7 +162,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         city: "Miasto domyślne",
         fuel: "Paliwo / napęd",
         add: "Dodaj auto",
-        listTitle: "Twoje pojazdy",
+        listTitle: "Twoje auta",
         edit: "Edytuj",
         save: "Zapisz",
         cancel: "Anuluj",
@@ -190,7 +190,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       placeholders: {
         country: "Wybierz kraj",
         city: "Wybierz miasto",
-        vehicleType: "Wybierz typ pojazdu",
+        vehicleType: "Wybierz typ auta",
         brand: "Wybierz markę",
         model: "Wybierz model",
         year: "Wybierz rocznik",
@@ -543,7 +543,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         city: "Default city",
         fuel: "Fuel / drive",
         add: "Add car",
-        listTitle: "Your vehicles",
+        listTitle: "Your cars",
         edit: "Edit",
         save: "Save",
         cancel: "Cancel",

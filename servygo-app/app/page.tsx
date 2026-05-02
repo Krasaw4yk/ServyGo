@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AutocompleteSelect from "@/components/AutocompleteSelect";
 import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
@@ -36,6 +36,27 @@ import {
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
 import { trackEvent } from "@/lib/analytics";
+import {
+  fetchUserFavoriteWorkshops,
+  isWorkshopStatusPublicVisible,
+} from "@/lib/favoriteWorkshopsDb";
+import {
+  buildFavoriteMatchCriteria,
+  getCatalogServiceMatchesInWorkshop,
+  isCatalogServiceAvailableInWorkshopOffers,
+  priceHintFromMatches,
+} from "@/lib/favoriteWorkshopServiceMatch";
+import type { WorkshopServiceOffer } from "@/lib/mockWorkshops";
+import { fetchPublicWorkshopByIdAsMock } from "@/lib/publicWorkshopsFromDb";
+import {
+  deleteUserCarRow,
+  fetchUserCars,
+  insertUserCar,
+  mapCarToStored,
+  setUserPrimaryCar,
+  type StoredVehicle,
+  updateUserCarRow,
+} from "@/lib/userCarsDb";
 import { resolveMessageViewerContext } from "@/lib/messagesApi";
 import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 type ActiveDropdown = "user" | "lang" | "theme" | null;
@@ -49,19 +70,6 @@ type UserProfileDraft = {
   phone: string;
   country: string;
   city: string;
-};
-
-type StoredVehicle = {
-  id: string;
-  vehicleType: string;
-  brand: string;
-  model: string;
-  year: string;
-  registration: string;
-  fuel: string;
-  vin: string;
-  city: string;
-  isPrimary: boolean;
 };
 
 type SavedCarOption = {
@@ -82,22 +90,6 @@ type Profile = {
   phone: string | null;
   country: string | null;
   city: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-type Car = {
-  id: string;
-  user_id: string;
-  vehicle_type: string | null;
-  brand: string | null;
-  model: string | null;
-  year: number | null;
-  fuel: string | null;
-  plate_number: string | null;
-  vin: string | null;
-  city: string | null;
-  is_primary: boolean | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -123,8 +115,9 @@ function toLocalDateKey(value: Date) {
 
 const LOCAL_CLEANUP_VERSION_KEY = "servygo_local_cleanup_v1";
 
-export default function Home() {
+function HomePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [message, setMessage] = useState("");
@@ -160,6 +153,7 @@ export default function Home() {
   const [accountError, setAccountError] = useState("");
   const [accountUnreadMessages, setAccountUnreadMessages] = useState(0);
   const [accountViewerRole, setAccountViewerRole] = useState<"client" | "workshop" | "admin">("client");
+  const [accountIncludeAllForAdmin, setAccountIncludeAllForAdmin] = useState(false);
   const [profileDraft, setProfileDraft] = useState<UserProfileDraft>({
     firstName: "",
     lastName: "",
@@ -197,6 +191,13 @@ export default function Home() {
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [hasWorkshopPanelAccess, setHasWorkshopPanelAccess] = useState(false);
   const [dashboardBookingsCount, setDashboardBookingsCount] = useState(0);
+  const [favoriteWorkshopChoices, setFavoriteWorkshopChoices] = useState<Array<{ workshopId: string; name: string }>>(
+    [],
+  );
+  const [favoriteWorkshopsCount, setFavoriteWorkshopsCount] = useState(0);
+  const [selectedFavoriteWorkshopId, setSelectedFavoriteWorkshopId] = useState<string | null>(null);
+  const [favoriteWorkshopOffers, setFavoriteWorkshopOffers] = useState<WorkshopServiceOffer[] | null>(null);
+  const [favoriteWorkshopBanner, setFavoriteWorkshopBanner] = useState("");
   const [dashboardUpcomingBooking, setDashboardUpcomingBooking] = useState<{
     id: string;
     workshop: string;
@@ -454,6 +455,7 @@ export default function Home() {
     if (!currentUser) {
       setAccountUnreadMessages(0);
       setAccountViewerRole("client");
+      setAccountIncludeAllForAdmin(false);
       return;
     }
     let cancelled = false;
@@ -464,6 +466,7 @@ export default function Home() {
         if (cancelled) return;
         setAccountUnreadMessages(unread);
         setAccountViewerRole(context.role);
+        setAccountIncludeAllForAdmin(context.isAdminOrOwner);
       } catch {
         if (!cancelled) setAccountUnreadMessages(0);
       }
@@ -482,7 +485,7 @@ export default function Home() {
     let cancelled = false;
     void (async () => {
       try {
-        const cars = await getUserCars(currentUser.id);
+        const cars = await fetchUserCars(supabase, currentUser.id);
         if (cancelled) return;
         const mapped = cars.map(mapCarToStored);
         setVehicles(mapped);
@@ -571,6 +574,38 @@ export default function Home() {
     () => (vehicleType ? getServiceCatalogGroupedByMainCategory(vehicleType) : []),
     [vehicleType],
   );
+  const favoriteMatchCriteria = useMemo(
+    () => buildFavoriteMatchCriteria(vehicleType, brand, model, year, fuel),
+    [vehicleType, brand, model, year, fuel],
+  );
+  const getFinalServiceAvailabilityFromFavorite = useCallback(
+    (serviceName: string) => {
+      if (!selectedFavoriteWorkshopId || !favoriteWorkshopOffers) return null;
+      const available = isCatalogServiceAvailableInWorkshopOffers(
+        favoriteWorkshopOffers,
+        favoriteMatchCriteria,
+        serviceName,
+      );
+      const matches = getCatalogServiceMatchesInWorkshop(
+        favoriteWorkshopOffers,
+        favoriteMatchCriteria,
+        serviceName,
+      );
+      return {
+        available,
+        priceHint: available ? priceHintFromMatches(matches) : undefined,
+      };
+    },
+    [selectedFavoriteWorkshopId, favoriteWorkshopOffers, favoriteMatchCriteria],
+  );
+  const favoriteServiceBlocked = useMemo(() => {
+    if (!selectedFavoriteWorkshopId || !favoriteWorkshopOffers?.length || !service.trim()) return false;
+    return !isCatalogServiceAvailableInWorkshopOffers(
+      favoriteWorkshopOffers,
+      favoriteMatchCriteria,
+      service,
+    );
+  }, [selectedFavoriteWorkshopId, favoriteWorkshopOffers, service, favoriteMatchCriteria]);
   const fuelLabel = currentVehicleConfig?.fuelLabel ?? "Silnik / paliwo";
   const serviceLabel = currentVehicleConfig?.serviceLabel ?? "Czego potrzebujesz?";
   const t = useMemo(() => createTranslator(language), [language]);
@@ -603,6 +638,18 @@ export default function Home() {
     (getTranslationNode("sections.workshopBenefits", "pl") as string[] | undefined) ??
     [];
 
+  const landingHeaderNavLinks = useMemo(
+    () =>
+      [
+        { label: "Jak to działa", href: "/#jak-to-dziala" },
+        { label: "Dla kierowców", href: "/#dla-kierowcow" },
+        { label: "Dla warsztatów", href: "/#dla-warsztatow" },
+        { label: "O nas", href: "/#o-nas" },
+        { label: "Kontakt", href: "/#kontakt" },
+      ] as const,
+    [],
+  );
+
   const modelsForBrand = useMemo(() => {
     if (!brand || !vehicleType) return [];
     const normalizedBrand = brand.trim().toLowerCase();
@@ -614,6 +661,11 @@ export default function Home() {
   }, [brand, vehicleType, brandsForVehicleType]);
 
   const isDark = mounted ? theme === "dark" : false;
+  const mobileAccountSheetRowClass =
+    "flex min-h-[44px] w-full items-center rounded-xl px-4 py-3 text-left text-base font-medium leading-snug transition active:opacity-90 " +
+    (isDark ? "text-zinc-100 hover:bg-zinc-800/85" : "text-zinc-900 hover:bg-blue-50/95");
+  const mobileAccountSheetSectionLabelClass = isDark ? "text-zinc-500" : "text-zinc-600";
+  const mobileAccountSheetDividerClass = isDark ? "mx-3 my-2 h-px shrink-0 bg-zinc-700" : "mx-3 my-2 h-px shrink-0 bg-slate-200";
   const maxManualYear = years[0];
   const accountVehicleBrands = useMemo(
     () => getVehicleBrands(vehicleTypeDraft),
@@ -649,14 +701,14 @@ export default function Home() {
     ? "sticky top-0 z-[1000] isolate mb-7 w-full max-w-full overflow-visible border-b border-blue-500/20 bg-zinc-950/78 px-2 py-3 backdrop-blur-xl sm:px-3 md:px-4"
     : "sticky top-0 z-[1000] isolate mb-7 w-full max-w-full overflow-visible border-b border-blue-100/90 bg-white/92 px-2 py-3 backdrop-blur-xl sm:px-3 md:px-4";
   const triggerButtonClass = isDark
-    ? "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2.5 text-xs font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
-    : "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-blue-200/75 bg-white/82 px-2.5 text-xs font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
+    ? "inline-flex h-10 max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2 text-xs font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-10 max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-2 text-xs font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const userTriggerButtonClass = isDark
-    ? "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2.5 text-xs text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base"
-    : "inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl border border-blue-200/75 bg-white/82 px-2.5 text-xs text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base";
+    ? "inline-flex h-10 max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2 text-xs text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base"
+    : "inline-flex h-10 max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-2 text-xs text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base";
   const ctaButtonClass = isDark
-    ? "inline-flex h-10 max-w-full items-center justify-center gap-1.5 rounded-xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
-    : "inline-flex h-10 max-w-full items-center justify-center gap-1.5 rounded-xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
+    ? "inline-flex h-10 max-w-full shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-10 max-w-full shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const dropdownPanelClass = isDark
     ? "isolate rounded-2xl border border-blue-500/25 bg-zinc-900/98 p-2 shadow-[0_26px_60px_rgba(2,6,23,0.78)] backdrop-blur-xl"
     : "isolate rounded-2xl border border-blue-200/85 bg-white p-2 shadow-[0_26px_60px_rgba(15,23,42,0.24)] ring-1 ring-orange-200/45 backdrop-blur-xl";
@@ -714,13 +766,29 @@ export default function Home() {
     const selectedService = String(formData.get("service") ?? "").trim();
 
     const errs: Partial<Record<SearchFieldKey, string>> = {};
-    if (!vehicleType) errs.vehicleType = "Wybierz typ pojazdu.";
+    if (!vehicleType) errs.vehicleType = "Wybierz typ auta.";
     if (!resolvedBrand) errs.brand = "Wybierz markę.";
     if (!resolvedModel) errs.model = "Wybierz model.";
     if (!resolvedYear) errs.year = "Wybierz rocznik.";
     if (!resolvedFuel) errs.fuel = "Wybierz paliwo.";
     if (!selectedService) errs.service = "Wybierz, czego potrzebujesz.";
     if (!searchCity.trim()) errs.city = "Podaj miasto.";
+    const critForFavorite = buildFavoriteMatchCriteria(
+      vehicleType,
+      resolvedBrand,
+      resolvedModel,
+      resolvedYear,
+      resolvedFuel,
+    );
+    if (
+      selectedFavoriteWorkshopId &&
+      Array.isArray(favoriteWorkshopOffers) &&
+      favoriteWorkshopOffers.length > 0 &&
+      !isCatalogServiceAvailableInWorkshopOffers(favoriteWorkshopOffers, critForFavorite, selectedService)
+    ) {
+      errs.service =
+        "Ta usługa nie jest dostępna w wybranym warsztacie. Wybierz inną usługę albo usuń filtr ulubionego warsztatu.";
+    }
     if (Object.keys(errs).length > 0) {
       setSearchFieldErrors(errs);
       setMessage(t("form.messages.requiredFields"));
@@ -771,6 +839,12 @@ export default function Home() {
       service: String(payload.service ?? ""),
     });
 
+    if (selectedFavoriteWorkshopId && favoriteWorkshopOffers === null) {
+      setMessage("Poczekaj chwilę — wczytujemy usługi wybranego warsztatu.");
+      setMessageType("error");
+      return;
+    }
+
     setIsSubmitting(true);
     const query = new URLSearchParams();
     query.set("vehicleType", String(payload.vehicleType ?? ""));
@@ -790,6 +864,19 @@ export default function Home() {
       query.set("problem", problemText);
     }
     setIsSubmitting(false);
+    if (
+      selectedFavoriteWorkshopId &&
+      favoriteWorkshopOffers &&
+      favoriteWorkshopOffers.length > 0 &&
+      isCatalogServiceAvailableInWorkshopOffers(
+        favoriteWorkshopOffers,
+        critForFavorite,
+        selectedService,
+      )
+    ) {
+      router.push(`/warsztat/${selectedFavoriteWorkshopId}?${query.toString()}`);
+      return;
+    }
     router.push(`/oferty?${query.toString()}`);
   }
 
@@ -856,108 +943,6 @@ export default function Home() {
     return data as Profile;
   }
 
-  async function getUserCars(userId: string): Promise<Car[]> {
-    if (!supabase) throw new Error("Supabase client not available.");
-    const { data, error } = await supabase
-      .from("cars")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .returns<Car[]>();
-    if (error) throw error;
-    return (data as Car[] | null) ?? [];
-  }
-
-  async function addUserCar(
-    userId: string,
-    vehicle: Omit<Car, "id" | "user_id" | "created_at" | "updated_at">,
-  ): Promise<Car> {
-    if (!supabase) throw new Error("Supabase client not available.");
-    const { data, error } = await supabase
-      .from("cars")
-      .insert({
-        user_id: userId,
-        vehicle_type: vehicle.vehicle_type,
-        brand: vehicle.brand,
-        model: vehicle.model,
-        year: vehicle.year,
-        fuel: vehicle.fuel,
-        plate_number: vehicle.plate_number,
-        vin: vehicle.vin,
-        city: vehicle.city,
-        is_primary: vehicle.is_primary ?? false,
-      })
-      .select("*")
-      .single();
-    if (error) throw error;
-    return data as Car;
-  }
-
-  async function deleteUserCar(carId: string) {
-    if (!supabase) throw new Error("Supabase client not available.");
-    const { error } = await supabase.from("cars").delete().eq("id", carId);
-    if (error) throw error;
-  }
-
-  async function updateUserCar(
-    userId: string,
-    carId: string,
-    vehicle: Omit<Car, "id" | "user_id" | "created_at" | "updated_at">,
-  ): Promise<Car> {
-    if (!supabase) throw new Error("Supabase client not available.");
-    const { data, error } = await supabase
-      .from("cars")
-      .update({
-        vehicle_type: vehicle.vehicle_type,
-        brand: vehicle.brand,
-        model: vehicle.model,
-        year: vehicle.year,
-        fuel: vehicle.fuel,
-        plate_number: vehicle.plate_number,
-        vin: vehicle.vin,
-        city: vehicle.city,
-        is_primary: vehicle.is_primary ?? false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", carId)
-      .eq("user_id", userId)
-      .select("*")
-      .single();
-    if (error) throw error;
-    return data as Car;
-  }
-
-  async function setPrimaryCar(userId: string, carId: string) {
-    if (!supabase) throw new Error("Supabase client not available.");
-    const { error: clearError } = await supabase
-      .from("cars")
-      .update({ is_primary: false, updated_at: new Date().toISOString() })
-      .eq("user_id", userId);
-    if (clearError) throw clearError;
-
-    const { error: setError } = await supabase
-      .from("cars")
-      .update({ is_primary: true, updated_at: new Date().toISOString() })
-      .eq("id", carId)
-      .eq("user_id", userId);
-    if (setError) throw setError;
-  }
-
-  function mapCarToStored(car: Car): StoredVehicle {
-    return {
-      id: car.id,
-      vehicleType: car.vehicle_type ?? "",
-      brand: car.brand ?? "",
-      model: car.model ?? "",
-      year: car.year ? String(car.year) : "",
-      registration: car.plate_number ?? "",
-      fuel: car.fuel ?? "",
-      vin: car.vin ?? "",
-      city: car.city ?? "",
-      isPrimary: Boolean(car.is_primary),
-    };
-  }
-
   const loadAccountData = useCallback(async (forUser?: User | null) => {
     const user = forUser ?? currentUser;
     if (!supabase || !user) return;
@@ -986,7 +971,7 @@ export default function Home() {
         });
       }
 
-      const cars = await getUserCars(user.id);
+      const cars = await fetchUserCars(supabase, user.id);
       setProfileDraft({
         firstName: pickFirstNonEmpty(profile.first_name ?? undefined, metadataFirstName, fullNameFirst),
         lastName: pickFirstNonEmpty(profile.last_name ?? undefined, metadataLastName, fullNameLast),
@@ -1026,16 +1011,75 @@ export default function Home() {
         return;
       }
       vehiclesDeepLinkHandledRef.current = true;
-      setCurrentUser(data.user);
-      setAccountModalOpen(true);
-      setAccountTab("vehicles");
-      setAccountError("");
-      setAccountInfo("");
-      setActiveDropdown(null);
-      void loadAccountDataRef.current(data.user);
-      router.replace("/", { scroll: false });
+      router.replace("/moje-auta", { scroll: false });
     })();
   }, [mounted, router]);
+
+  useEffect(() => {
+    if (!mounted || !supabase || !currentUser || !isSupabaseConfigured) {
+      setFavoriteWorkshopChoices([]);
+      setFavoriteWorkshopsCount(0);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await fetchUserFavoriteWorkshops(supabase, currentUser.id);
+        if (cancelled) return;
+        const choices = rows
+          .filter((r) => isWorkshopStatusPublicVisible(r.workshop.status))
+          .map((r) => ({ workshopId: r.workshop.id, name: r.workshop.name }));
+        setFavoriteWorkshopChoices(choices);
+        setFavoriteWorkshopsCount(choices.length);
+      } catch {
+        if (!cancelled) {
+          setFavoriteWorkshopChoices([]);
+          setFavoriteWorkshopsCount(0);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, currentUser]);
+
+  useEffect(() => {
+    if (!selectedFavoriteWorkshopId) {
+      setFavoriteWorkshopOffers(null);
+      setFavoriteWorkshopBanner("");
+      return;
+    }
+    let cancelled = false;
+    setFavoriteWorkshopBanner("");
+    void (async () => {
+      try {
+        const mock = await fetchPublicWorkshopByIdAsMock(selectedFavoriteWorkshopId);
+        if (cancelled) return;
+        if (!mock) {
+          setFavoriteWorkshopOffers([]);
+          setFavoriteWorkshopBanner("Nie udało się wczytać oferty tego warsztatu.");
+          return;
+        }
+        setFavoriteWorkshopOffers(mock.services ?? []);
+      } catch (e) {
+        if (!cancelled) {
+          setFavoriteWorkshopOffers([]);
+          setFavoriteWorkshopBanner(e instanceof Error ? e.message : "Błąd wczytywania warsztatu.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFavoriteWorkshopId]);
+
+  useEffect(() => {
+    const fid = searchParams.get("favoriteWorkshopId")?.trim() ?? "";
+    if (!fid || favoriteWorkshopChoices.length === 0) return;
+    if (favoriteWorkshopChoices.some((x) => x.workshopId === fid)) {
+      setSelectedFavoriteWorkshopId(fid);
+    }
+  }, [searchParams, favoriteWorkshopChoices]);
 
   useEffect(() => {
     if (!mounted || !currentUser) return;
@@ -1141,7 +1185,7 @@ export default function Home() {
 
     setAccountSaving(true);
     try {
-      const inserted = await addUserCar(currentUser.id, {
+      const inserted = await insertUserCar(supabase, currentUser.id, {
         vehicle_type: vehicleTypeDraft.trim() || null,
         brand: vehicleBrandDraft.trim(),
         model: vehicleModelDraft.trim(),
@@ -1174,10 +1218,10 @@ export default function Home() {
 
     setAccountSaving(true);
     try {
-      await deleteUserCar(vehicleId);
+      await deleteUserCarRow(supabase, vehicleId);
       const nextVehicles = vehicles.filter((vehicle) => vehicle.id !== vehicleId);
       if (!nextVehicles.some((vehicle) => vehicle.isPrimary) && nextVehicles.length > 0) {
-        await setPrimaryCar(currentUser.id, nextVehicles[0].id);
+        await setUserPrimaryCar(supabase, currentUser.id, nextVehicles[0].id);
         nextVehicles[0] = { ...nextVehicles[0], isPrimary: true };
       }
       setVehicles(nextVehicles);
@@ -1228,7 +1272,7 @@ export default function Home() {
     }
     setAccountSaving(true);
     try {
-      const updated = await updateUserCar(currentUser.id, editingVehicleId, {
+      const updated = await updateUserCarRow(supabase, currentUser.id, editingVehicleId, {
         vehicle_type: editVehicleDraft.vehicleType.trim() || null,
         brand: editVehicleDraft.brand.trim(),
         model: editVehicleDraft.model.trim(),
@@ -1260,7 +1304,7 @@ export default function Home() {
 
     setAccountSaving(true);
     try {
-      await setPrimaryCar(currentUser.id, vehicleId);
+      await setUserPrimaryCar(supabase, currentUser.id, vehicleId);
       const nextVehicles = vehicles.map((vehicle) => ({
         ...vehicle,
         isPrimary: vehicle.id === vehicleId,
@@ -1612,7 +1656,7 @@ export default function Home() {
             ref={headerRef}
             className={headerShellClass}
           >
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex w-full min-w-0 flex-row items-center gap-2 xl:gap-6">
               <Image
                 src={
                   isDark
@@ -1623,25 +1667,25 @@ export default function Home() {
                 width={256}
                 height={96}
                 priority
-                className="h-10 w-auto max-w-[160px] self-start object-contain sm:h-12 sm:max-w-[190px] md:mr-6 md:h-16 md:max-w-[256px]"
+                className="h-11 w-auto shrink-0 object-contain sm:h-12 md:mr-6 md:h-16 md:max-w-[256px]"
               />
 
-              <nav className="hidden flex-1 items-center justify-center gap-6 xl:flex">
-                {["Jak to działa", "Dla kierowców", "Dla warsztatów", "O nas", "Kontakt"].map((item) => (
+              <nav className="mx-auto hidden min-w-0 flex-1 justify-center gap-6 xl:flex">
+                {landingHeaderNavLinks.map((item) => (
                   <a
-                    key={item}
-                    href="#"
+                    key={item.href}
+                    href={item.href}
                     className={`text-sm font-medium transition ${
                       isDark ? "text-zinc-200 hover:text-blue-300" : "text-zinc-700 hover:text-blue-600"
                     }`}
                   >
-                    {item}
+                    {item.label}
                   </a>
                 ))}
               </nav>
 
-              <div className="relative z-[1001] flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3 md:gap-4">
-                <div className="relative z-[1002]">
+              <div className="relative z-[1001] ml-auto flex min-w-0 shrink-0 flex-row flex-nowrap items-center justify-end gap-1.5 overflow-visible sm:gap-2 xl:ml-0 xl:gap-3 md:gap-4">
+                <div className="relative z-[1002] shrink-0">
                   <button
                     type="button"
                     onClick={() =>
@@ -1649,11 +1693,11 @@ export default function Home() {
                     }
                     className={userTriggerButtonClass}
                   >
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <circle cx="12" cy="8" r="3.5" />
                       <path d="M5 19a7 7 0 0 1 14 0" />
                     </svg>
-                    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg viewBox="0 0 20 20" className="hidden h-4 w-4 shrink-0 sm:block" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="m5 7 5 6 5-6" />
                     </svg>
                   </button>
@@ -1679,20 +1723,6 @@ export default function Home() {
                             <span className={dropdownSubtextClass}>{currentUser.email ?? t("auth.userFallback")}</span>
                           </span>
                         </button>
-                        {hasWorkshopPanelAccess ? (
-                          <Link
-                            href="/workshop-panel"
-                            onClick={() => setActiveDropdown(null)}
-                            className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
-                          >
-                            <span className="mt-1 text-blue-400">
-                              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6.75A1.75 1.75 0 0 1 4.75 5h14.5A1.75 1.75 0 0 1 21 6.75v10.5A1.75 1.75 0 0 1 19.25 19H4.75A1.75 1.75 0 0 1 3 17.25V6.75Z"/><path d="M8 15h8M8 11h5"/></svg>
-                            </span>
-                            <span>
-                              <span className="block text-sm font-semibold">{t("workshop.panelTitle")}</span>
-                            </span>
-                          </Link>
-                        ) : null}
                         <Link
                           href="/moje-rezerwacje"
                           onClick={() => setActiveDropdown(null)}
@@ -1706,6 +1736,21 @@ export default function Home() {
                           </span>
                         </Link>
                         <Link
+                          href="/moje-auta"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
+                        >
+                          <span className="mt-1 text-blue-400">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                              <path d="M5 11h14M5 16h10M5 6h14" />
+                              <path d="M3 19h18" />
+                            </svg>
+                          </span>
+                          <span>
+                            <span className="block text-sm font-semibold">Moje auta</span>
+                          </span>
+                        </Link>
+                        <Link
                           href="/moj-kalendarz"
                           onClick={() => setActiveDropdown(null)}
                           className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
@@ -1715,6 +1760,21 @@ export default function Home() {
                           </span>
                           <span>
                             <span className="block text-sm font-semibold">Mój kalendarz</span>
+                          </span>
+                        </Link>
+                        <Link
+                          href="/moje-wiadomosci"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
+                        >
+                          <span className="mt-1 text-blue-400">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                              <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                            </svg>
+                          </span>
+                          <span>
+                            <span className="block text-sm font-semibold">Moje wiadomości</span>
                           </span>
                         </Link>
                         <Link
@@ -1740,6 +1800,20 @@ export default function Home() {
                             </span>
                             <span>
                               <span className="block text-sm font-semibold">Panel admina</span>
+                            </span>
+                          </Link>
+                        ) : null}
+                        {hasWorkshopPanelAccess ? (
+                          <Link
+                            href="/workshop-panel"
+                            onClick={() => setActiveDropdown(null)}
+                            className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
+                          >
+                            <span className="mt-1 text-blue-400">
+                              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6.75A1.75 1.75 0 0 1 4.75 5h14.5A1.75 1.75 0 0 1 21 6.75v10.5A1.75 1.75 0 0 1 19.25 19H4.75A1.75 1.75 0 0 1 3 17.25V6.75Z"/><path d="M8 15h8M8 11h5"/></svg>
+                            </span>
+                            <span>
+                              <span className="block text-sm font-semibold">{t("workshop.panelTitle")}</span>
                             </span>
                           </Link>
                         ) : null}
@@ -1803,7 +1877,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="relative z-[1002]">
+                <div className="relative z-[1002] shrink-0">
                   <button
                     type="button"
                     onClick={() =>
@@ -1811,9 +1885,9 @@ export default function Home() {
                     }
                     className={triggerButtonClass}
                   >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9S14.4 18.5 12 21M12 3c-2.4 2.5-3.6 5.5-3.6 9S9.6 18.5 12 21" /></svg>
+                    <svg viewBox="0 0 24 24" className="hidden h-4 w-4 shrink-0 sm:block" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9S14.4 18.5 12 21M12 3c-2.4 2.5-3.6 5.5-3.6 9S9.6 18.5 12 21" /></svg>
                     {language.toUpperCase()}
-                    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg viewBox="0 0 20 20" className="hidden h-4 w-4 shrink-0 sm:block" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="m5 7 5 6 5-6" />
                     </svg>
                   </button>
@@ -1846,16 +1920,20 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="relative z-[1002]">
+                <div className="relative z-[1002] shrink-0">
                   <button
                     type="button"
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "theme" ? null : "theme"))
                     }
                     className={triggerButtonClass}
+                    aria-label={isDark ? t("header.themeDark") : t("header.themeLight")}
                   >
-                    {isDark ? "🌙" : "☀️"} {isDark ? t("header.themeDark") : t("header.themeLight")}
-                    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <span aria-hidden>{isDark ? "🌙" : "☀️"}</span>
+                    <span className="hidden min-[380px]:inline min-[380px]:ml-1">
+                      {isDark ? t("header.themeDark") : t("header.themeLight")}
+                    </span>
+                    <svg viewBox="0 0 20 20" className="hidden h-4 w-4 shrink-0 sm:block" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="m5 7 5 6 5-6" />
                     </svg>
                   </button>
@@ -1887,16 +1965,8 @@ export default function Home() {
                 </div>
 
                 {currentUser ? (
-                  <div className="relative z-[1002]">
-                    <ClientNotificationBell
-                      userId={currentUser.id}
-                      userEmail={currentUser.email}
-                      isDark={isDark}
-                      unreadCount={accountUnreadMessages}
-                      messagesHref={accountViewerRole === "workshop" ? "/workshop-panel" : "/moje-wiadomosci"}
-                      buttonClassName={triggerButtonClass}
-                      onUnreadCountChange={setAccountUnreadMessages}
-                    />
+                  <div className="relative z-[1002] shrink-0">
+                    <ClientNotificationBell isDark={isDark} unreadCount={accountUnreadMessages} buttonClassName={triggerButtonClass} />
                   </div>
                 ) : null}
 
@@ -1931,46 +2001,104 @@ export default function Home() {
                 title="Konto"
                 isDark={isDark}
               >
-                <div className="space-y-1">
+                <div className="flex flex-col pb-[env(safe-area-inset-bottom,0px)]">
                   {currentUser ? (
                     <>
-                      <button type="button" onClick={openAccountModal} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
-                        {t("auth.account")} {currentUser.email ? `(${currentUser.email})` : ""}
+                      <p
+                        className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
+                      >
+                        Konto
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openAccountModal();
+                          setActiveDropdown(null);
+                        }}
+                        className={mobileAccountSheetRowClass}
+                      >
+                        <span className="flex min-w-0 flex-col items-start gap-0.5">
+                          <span>{t("auth.account")}</span>
+                          {currentUser.email ? (
+                            <span className={`text-sm font-normal ${mobileAccountSheetSectionLabelClass}`}>{currentUser.email}</span>
+                          ) : null}
+                        </span>
                       </button>
-                      {hasWorkshopPanelAccess ? (
-                        <Link href="/workshop-panel" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
-                          {t("workshop.panelTitle")}
-                        </Link>
-                      ) : null}
-                      <Link href="/moje-rezerwacje" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                      <Link href="/moje-rezerwacje" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
                         Moje rezerwacje
                       </Link>
-                      <Link href="/moj-kalendarz" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                      <Link href="/moje-auta" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                        Moje auta
+                      </Link>
+                      <Link href="/moj-kalendarz" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
                         Mój kalendarz
                       </Link>
-                      <Link href="/ustawienia" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                      <Link href="/moje-wiadomosci" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                        Moje wiadomości
+                      </Link>
+                      <Link href="/ustawienia" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
                         Ustawienia
                       </Link>
                       {isCurrentUserAdmin ? (
-                        <Link href="/admin" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                        <Link href="/admin" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
                           Panel admina
                         </Link>
                       ) : null}
-                      <button type="button" onClick={handleLogout} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                      {hasWorkshopPanelAccess ? (
+                        <Link href="/workshop-panel" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                          {t("workshop.panelTitle")}
+                        </Link>
+                      ) : null}
+                      <div className={mobileAccountSheetDividerClass} aria-hidden />
+                      <p
+                        className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
+                      >
+                        Strona
+                      </p>
+                      {landingHeaderNavLinks.map((link) => (
+                        <Link key={link.href} href={link.href} onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                          {link.label}
+                        </Link>
+                      ))}
+                      <div className={mobileAccountSheetDividerClass} aria-hidden />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDropdown(null);
+                          void handleLogout();
+                        }}
+                        className={mobileAccountSheetRowClass}
+                      >
                         {t("auth.logout")}
                       </button>
                     </>
                   ) : (
                     <>
-                      <button type="button" onClick={openLoginModal} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                      <p
+                        className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
+                      >
+                        Konto
+                      </p>
+                      <button type="button" onClick={openLoginModal} className={mobileAccountSheetRowClass}>
                         {t("header.login")}
                       </button>
-                      <button type="button" onClick={openRegisterModal} className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
+                      <button type="button" onClick={openRegisterModal} className={mobileAccountSheetRowClass}>
                         {t("header.register")}
                       </button>
-                      <Link href="/dodaj-warsztat" onClick={() => setActiveDropdown(null)} className="block w-full rounded-xl px-3 py-3 text-sm hover:bg-blue-500/10">
+                      <Link href="/dodaj-warsztat" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
                         {t("header.addWorkshop")}
                       </Link>
+                      <div className={mobileAccountSheetDividerClass} aria-hidden />
+                      <p
+                        className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
+                      >
+                        Strona
+                      </p>
+                      {landingHeaderNavLinks.map((link) => (
+                        <Link key={link.href} href={link.href} onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                          {link.label}
+                        </Link>
+                      ))}
                     </>
                   )}
                 </div>
@@ -2021,7 +2149,7 @@ export default function Home() {
             </>
           ) : null}
 
-          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
+          <div id="o-nas" className="scroll-mt-28 grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
             <div>
               <span
                 className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${
@@ -2190,6 +2318,44 @@ export default function Home() {
             >
               {t("form.subtitle")}
             </p>
+            {currentUser && favoriteWorkshopChoices.length > 0 ? (
+              <div
+                className={`mt-4 rounded-xl border px-4 py-3 ${
+                  isDark ? "border-blue-500/30 bg-zinc-900/80" : "border-blue-200 bg-white/90"
+                }`}
+              >
+                <label className="block text-xs font-semibold uppercase tracking-wide opacity-80">
+                  Wybierz ulubiony warsztat
+                </label>
+                <select
+                  value={selectedFavoriteWorkshopId ?? ""}
+                  onChange={(e) => setSelectedFavoriteWorkshopId(e.target.value || null)}
+                  className={`mt-2 w-full max-w-md rounded-xl border px-3 py-2 text-sm ${
+                    isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
+                  }`}
+                >
+                  <option value="">Szukaj we wszystkich warsztatach</option>
+                  {favoriteWorkshopChoices.map((w) => (
+                    <option key={w.workshopId} value={w.workshopId}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedFavoriteWorkshopId ? (
+                  <p className={`mt-2 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                    Tryb:{" "}
+                    <span className="font-semibold">
+                      {favoriteWorkshopChoices.find((x) => x.workshopId === selectedFavoriteWorkshopId)?.name ??
+                        "wybrany warsztat"}
+                    </span>
+                    . Usługi są weryfikowane względem jego aktualnej oferty.
+                  </p>
+                ) : null}
+                {favoriteWorkshopBanner ? (
+                  <p className="mt-2 text-sm text-orange-600 dark:text-orange-300">{favoriteWorkshopBanner}</p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
               {vehicleTypeOptions.map((type) => {
                 const active = vehicleType === type.key;
@@ -2361,10 +2527,29 @@ export default function Home() {
                     vehicleType ? t("form.selects.serviceCategory") : t("form.selects.chooseTypeFirst")
                   }
                   noResultsText={t("account.placeholders.noResults")}
+                  getFinalServiceAvailability={getFinalServiceAvailabilityFromFavorite}
                 />
                 <input type="hidden" name="service" value={service} />
                 {searchFieldErrors.service ? (
                   <p className={searchFieldErrorHintClass}>{searchFieldErrors.service}</p>
+                ) : null}
+                {selectedFavoriteWorkshopId && favoriteServiceBlocked ? (
+                  <div className="mt-2 space-y-2 rounded-xl border border-red-300/50 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-200">
+                    <p>
+                      Ta usługa nie jest dostępna w wybranym warsztacie. Wybierz inną usługę albo usuń filtr ulubionego
+                      warsztatu.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFavoriteWorkshopId(null);
+                        clearSearchFieldError("service");
+                      }}
+                      className="font-semibold underline decoration-red-600/60 hover:no-underline"
+                    >
+                      Szukaj we wszystkich warsztatach
+                    </button>
+                  </div>
                 ) : null}
               </div>
 
@@ -2425,7 +2610,7 @@ export default function Home() {
                       }}
                       className={`text-xs font-semibold ${isDark ? "text-blue-300 hover:text-orange-300" : "text-blue-700 hover:text-orange-600"}`}
                     >
-                      Nie znalazłeś pojazdu? Dodaj ręcznie
+                      {t("form.manual.toggleShow")}
                     </button>
                   </div>
                 </label>
@@ -2567,7 +2752,7 @@ export default function Home() {
         <UserCenterCards
           isDark={isDark}
           isLoggedIn={Boolean(currentUser)}
-          vehiclesCount={vehicles.length}
+          favoriteWorkshopsCount={favoriteWorkshopsCount}
           dashboardBookingsCount={dashboardBookingsCount}
           triggerButtonClass={triggerButtonClass}
           ctaButtonClass={ctaButtonClass}
@@ -2586,7 +2771,7 @@ export default function Home() {
         <LandingCtaFooter isDark={isDark} />
 
         {accountModalOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 max-md:p-0 max-md:items-stretch">
             <button
               type="button"
               onClick={closeAccountModal}
@@ -2594,13 +2779,13 @@ export default function Home() {
               aria-label={t("auth.closeModal")}
             />
             <div
-              className={`relative z-[1] max-h-[96vh] w-full max-w-[calc(100vw-16px)] overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-2xl sm:max-w-5xl ${
+              className={`relative z-[1] mx-auto flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-2xl max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:flex-1 max-md:rounded-none md:max-h-[96vh] md:max-w-5xl ${
                 isDark
                   ? "border-blue-500/25 bg-zinc-900/92 text-zinc-100"
                   : "border-blue-200/85 bg-white/92 text-zinc-900"
               }`}
             >
-              <div className="flex items-center justify-between border-b border-blue-300/20 px-4 py-3 sm:px-6">
+              <div className="flex shrink-0 items-center justify-between border-b border-blue-300/20 px-4 py-3 sm:px-6">
                 <h3 className="text-xl font-semibold sm:text-2xl">{t("account.title")}</h3>
                 <button
                   type="button"
@@ -2613,14 +2798,18 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]">
-                <aside className={`border-b border-blue-300/20 p-3 md:border-b-0 md:border-r ${isDark ? "border-zinc-800" : "border-blue-100"}`}>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 md:grid-cols-1">
+              <div className="flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-0">
+                <aside
+                  className={`shrink-0 border-b border-blue-300/20 p-3 max-md:max-h-[min(260px,36vh)] max-md:min-h-0 max-md:overflow-y-auto max-md:[-webkit-overflow-scrolling:touch] md:border-b-0 md:max-h-none md:overflow-visible md:border-r ${
+                    isDark ? "border-zinc-800" : "border-blue-100"
+                  }`}
+                >
+                  <div className="grid grid-cols-1 gap-2">
                     {([
                       { key: "profile", label: t("account.tabs.profile") },
                       { key: "vehicles", label: t("account.tabs.vehicles") },
                       { key: "security", label: t("account.tabs.security") },
-                      { key: "messages", label: `Powiadomienia${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
+                      { key: "messages", label: `Moje wiadomości${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
                     ] as { key: AccountTab; label: string }[]).map((tab) => (
                       <button
                         key={tab.key}
@@ -2646,7 +2835,7 @@ export default function Home() {
                   </div>
                 </aside>
 
-                <section className="max-h-[82vh] overflow-y-auto overflow-x-visible p-4 pb-10 sm:p-6 sm:pb-12">
+                <section className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 pb-28 [-webkit-overflow-scrolling:touch] sm:px-6 sm:pb-28 md:max-h-none md:pb-12">
                   {!currentUser ? (
                     <p className={`mb-4 rounded-xl border px-3 py-2 text-sm ${
                       isDark ? "border-orange-400/40 bg-orange-500/10 text-orange-200" : "border-orange-200 bg-orange-50 text-orange-700"
@@ -2731,6 +2920,17 @@ export default function Home() {
 
                   {accountTab === "vehicles" ? (
                     <div className="space-y-4">
+                      <p className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                        Pełna lista i zarządzanie autami:{" "}
+                        <Link
+                          href="/moje-auta"
+                          className={`font-semibold underline ${isDark ? "text-blue-300" : "text-blue-700"}`}
+                          onClick={() => setAccountModalOpen(false)}
+                        >
+                          Moje auta
+                        </Link>
+                        .
+                      </p>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <AutocompleteSelect
                           label={t("account.vehicle.vehicleType")}
@@ -2843,32 +3043,39 @@ export default function Home() {
                             sortedVehicles.map((vehicle) => (
                               <article
                                 key={vehicle.id}
-                                className={`rounded-xl border p-3 ${
+                                className={`rounded-xl border p-3 overflow-hidden ${
                                   isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-100 bg-white/80"
                                 }`}
                               >
-                                <p className="font-medium">
-                                  {vehicle.brand} {vehicle.model} ({vehicle.year})
-                                </p>
-                                <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                                  {vehicle.vehicleType ? getVehicleTypeLabel(vehicle.vehicleType) : "—"} · {vehicle.fuel || "—"} · {vehicle.registration || "—"}
-                                </p>
-                                {vehicle.vin ? (
-                                  <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                                    VIN: {vehicle.vin}
+                                <div className="flex flex-col gap-1">
+                                  <p className="text-base font-semibold leading-snug sm:text-[17px]">
+                                    {vehicle.brand} {vehicle.model}{" "}
+                                    <span className={`font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>({vehicle.year})</span>
                                   </p>
-                                ) : null}
-                                {vehicle.city ? (
-                                  <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                                    {t("account.vehicle.city")}: {vehicle.city}
+                                  <p className={`text-xs leading-relaxed sm:text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                    {vehicle.vehicleType ? getVehicleTypeLabel(vehicle.vehicleType) : "—"}
+                                    {" · "}
+                                    {vehicle.fuel || "—"}
+                                    {" · "}
+                                    {vehicle.registration || "—"}
                                   </p>
-                                ) : null}
+                                  {vehicle.vin ? (
+                                    <p className={`text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                      VIN: {vehicle.vin}
+                                    </p>
+                                  ) : null}
+                                  {vehicle.city ? (
+                                    <p className={`text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                      {t("account.vehicle.city")}: {vehicle.city}
+                                    </p>
+                                  ) : null}
+                                </div>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   <button
                                     type="button"
                                     onClick={() => handleSetPrimaryVehicle(vehicle.id)}
                                     disabled={accountSaving || accountLoading}
-                                    className={`rounded-lg px-3 py-1 text-sm ${
+                                    className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap sm:px-3 sm:py-1.5 sm:text-sm ${
                                       vehicle.isPrimary
                                         ? "bg-blue-500 text-white"
                                         : isDark
@@ -2882,7 +3089,7 @@ export default function Home() {
                                     type="button"
                                     onClick={() => beginVehicleEdit(vehicle)}
                                     disabled={accountSaving || accountLoading}
-                                    className={`rounded-lg px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
+                                    className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap sm:px-3 sm:py-1.5 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
                                       isDark ? "bg-zinc-800 text-zinc-200" : "bg-slate-100 text-zinc-700"
                                     }`}
                                   >
@@ -2892,7 +3099,7 @@ export default function Home() {
                                     type="button"
                                     onClick={() => handleVehicleDelete(vehicle.id)}
                                     disabled={accountSaving || accountLoading}
-                                    className="rounded-lg bg-orange-500/15 px-3 py-1 text-sm text-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="shrink-0 rounded-lg bg-orange-500/15 px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap text-orange-500 disabled:cursor-not-allowed disabled:opacity-60 sm:px-3 sm:py-1.5 sm:text-sm"
                                   >
                                     {t("account.vehicle.remove")}
                                   </button>
@@ -3034,7 +3241,10 @@ export default function Home() {
                       currentUserId={currentUser.id}
                       isDark={isDark}
                       viewerRole={accountViewerRole}
+                      includeAllForAdmin={accountIncludeAllForAdmin}
                       onUnreadCountChange={setAccountUnreadMessages}
+                      emptySidebarHint="Nie masz jeszcze wiadomości"
+                      embeddedInPage
                     />
                   ) : null}
                 </section>
@@ -3274,5 +3484,19 @@ export default function Home() {
         ) : null}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-zinc-600 dark:bg-zinc-950 dark:text-zinc-300">
+          Wczytywanie…
+        </div>
+      }
+    >
+      <HomePageContent />
+    </Suspense>
   );
 }

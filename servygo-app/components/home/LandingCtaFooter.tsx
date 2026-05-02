@@ -42,7 +42,10 @@ export default function LandingCtaFooter({ isDark }: LandingCtaFooterProps) {
             Zaproś teraz
           </button>
         </article>
-        <article className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/75" : "border-blue-200/80 bg-gradient-to-r from-blue-50 via-white to-sky-50 shadow-[0_14px_34px_rgba(37,99,235,0.12)]"}`}>
+        <article
+          id="kontakt"
+          className={`scroll-mt-28 rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/75" : "border-blue-200/80 bg-gradient-to-r from-blue-50 via-white to-sky-50 shadow-[0_14px_34px_rgba(37,99,235,0.12)]"}`}
+        >
           <h3 className="text-xl font-semibold">Potrzebujesz pomocy?</h3>
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
             {["FAQ", "Skontaktuj się z nami", "Zgłoś problem"].map((item) => (

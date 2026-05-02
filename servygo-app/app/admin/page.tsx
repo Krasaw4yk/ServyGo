@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import InternalInbox from "@/components/InternalInbox";
 import { sendSystemMessage } from "@/lib/messagesApi";
 import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
@@ -39,7 +40,7 @@ import { getAdminDashboardStats, type AdminDashboardStats } from "@/lib/adminSta
 
 const SIDEBAR_ITEMS = [
   "Dashboard",
-  "Powiadomienia",
+  "Moje wiadomości",
   "Zgłoszenia warsztatów",
   "Warsztaty",
   "Rezerwacje",
@@ -54,7 +55,7 @@ type SidebarBadgeState = Record<SidebarItem, number>;
 
 const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
   Dashboard: 0,
-  Powiadomienia: 0,
+  "Moje wiadomości": 0,
   "Zgłoszenia warsztatów": 0,
   Warsztaty: 0,
   Rezerwacje: 0,
@@ -163,7 +164,6 @@ export default function AdminPage() {
   const [savingResendWorkshopId, setSavingResendWorkshopId] = useState<string | null>(null);
   const [liveSidebarBadges, setLiveSidebarBadges] = useState<SidebarBadgeState>(EMPTY_SIDEBAR_BADGES);
   const [seenSidebarBadges, setSeenSidebarBadges] = useState<SidebarBadgeState>(EMPTY_SIDEBAR_BADGES);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [dashboardStatsData, setDashboardStatsData] = useState<AdminDashboardStats | null>(null);
   const [loadingDashboardStats, setLoadingDashboardStats] = useState(false);
   const [dashboardStatsError, setDashboardStatsError] = useState("");
@@ -261,7 +261,7 @@ export default function AdminPage() {
       ]);
       setLiveSidebarBadges((prev) => ({
         ...prev,
-        Powiadomienia: unreadMessages,
+        "Moje wiadomości": unreadMessages,
         "Zgłoszenia warsztatów": counts.pendingLeads,
         Rezerwacje: counts.newBookings,
         Użytkownicy: counts.newUsers24h,
@@ -681,10 +681,6 @@ export default function AdminPage() {
     }
     return next;
   }, [liveSidebarBadges, seenSidebarBadges]);
-  const totalUnreadCount = useMemo(
-    () => Object.values(unreadSidebarBadges).reduce((sum, n) => sum + n, 0),
-    [unreadSidebarBadges],
-  );
   const stats = dashboardStatsData;
   const dashboardStats = useMemo(
     () => [
@@ -740,8 +736,9 @@ export default function AdminPage() {
   if (accessLoading) {
     return (
       <ServyGoPageShell isDark={isDark}>
-        <main className={`min-h-screen w-full max-w-none px-6 py-10 sm:px-8 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
-          <div className="mx-auto w-full max-w-none">
+        <main className={`min-h-screen w-full max-w-none px-6 py-6 sm:px-8 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+          <ServyGoSubpageNavBar isDark={isDark} showMojeKonto={false} />
+          <div className="mx-auto mt-6 w-full max-w-none">
             <p className={isDark ? "text-zinc-300" : "text-zinc-700"}>Sprawdzanie uprawnień administratora...</p>
           </div>
         </main>
@@ -752,13 +749,16 @@ export default function AdminPage() {
   if (!currentUser) {
     return (
       <ServyGoPageShell isDark={isDark}>
-        <main className={`min-h-screen px-4 py-10 sm:px-6 md:px-10 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
-          <div className="mx-auto w-full max-w-4xl rounded-2xl border border-orange-400/30 bg-orange-500/10 p-6">
-            <h1 className="text-2xl font-bold">Panel administratora</h1>
-            <p className="mt-3">Przekierowanie do logowania...</p>
-            <Link href="/?auth=login" className="mt-4 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
-              Przejdź do logowania
-            </Link>
+        <main className={`min-h-screen px-4 py-6 sm:px-6 md:px-10 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+          <div className="mx-auto max-w-4xl">
+            <ServyGoSubpageNavBar isDark={isDark} showMojeKonto={false} />
+            <div className="mx-auto mt-6 w-full max-w-4xl rounded-2xl border border-orange-400/30 bg-orange-500/10 p-6">
+              <h1 className="text-2xl font-bold">Panel administratora</h1>
+              <p className="mt-3">Przekierowanie do logowania...</p>
+              <Link href="/?auth=login" className="mt-4 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
+                Przejdź do logowania
+              </Link>
+            </div>
           </div>
         </main>
       </ServyGoPageShell>
@@ -768,10 +768,13 @@ export default function AdminPage() {
   if (!isAdmin) {
     return (
       <ServyGoPageShell isDark={isDark}>
-        <main className={`min-h-screen px-4 py-10 sm:px-6 md:px-10 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
-          <div className="mx-auto w-full max-w-4xl rounded-2xl border border-orange-400/30 bg-orange-500/10 p-6">
-            <h1 className="text-2xl font-bold">Panel administratora</h1>
-            <p className="mt-3">Brak dostępu.</p>
+        <main className={`min-h-screen px-4 py-6 sm:px-6 md:px-10 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+          <div className="mx-auto max-w-4xl">
+            <ServyGoSubpageNavBar isDark={isDark} />
+            <div className="mx-auto mt-6 w-full rounded-2xl border border-orange-400/30 bg-orange-500/10 p-6">
+              <h1 className="text-2xl font-bold">Panel administratora</h1>
+              <p className="mt-3">Brak dostępu.</p>
+            </div>
           </div>
         </main>
       </ServyGoPageShell>
@@ -781,6 +784,7 @@ export default function AdminPage() {
   return (
     <ServyGoPageShell isDark={isDark}>
       <main className={`min-h-screen w-full max-w-none px-6 py-4 sm:px-8 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+        <ServyGoSubpageNavBar isDark={isDark} />
         <div className="mx-auto flex w-full max-w-none gap-4 lg:gap-6">
           <aside
             className={`${
@@ -813,7 +817,6 @@ export default function AdminPage() {
                     onClick={() => {
                       setActiveTab(item);
                       markTabSeen(item);
-                      setShowNotifications(false);
                       setMobileMenuOpen(false);
                     }}
                     className={`w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
@@ -828,7 +831,7 @@ export default function AdminPage() {
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-2">
-                        {item === "Powiadomienia" ? (
+                        {item === "Moje wiadomości" ? (
                           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                             <rect x="3" y="5" width="18" height="14" rx="2" />
                             <path d="m4 7 8 6 8-6" />
@@ -912,23 +915,22 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="relative flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowNotifications((prev) => !prev)}
+                  <Link
+                    href="/moje-wiadomosci"
                     className={`relative inline-flex rounded-xl border px-3 py-2 text-sm font-semibold transition ${
                       isDark
                         ? "border-blue-400/50 bg-zinc-900/70 text-zinc-200 hover:border-orange-300"
                         : "border-blue-200 bg-white/80 text-zinc-700 hover:border-orange-300"
                     }`}
-                    aria-label="Powiadomienia"
+                    aria-label="Moje wiadomości — otwórz skrzynkę"
                   >
                     🔔
-                    {totalUnreadCount > 0 ? (
+                    {(liveSidebarBadges["Moje wiadomości"] ?? 0) > 0 ? (
                       <span className="absolute -right-1.5 -top-1.5 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
-                        {formatBadgeNumber(totalUnreadCount)}
+                        {formatBadgeNumber(liveSidebarBadges["Moje wiadomości"] ?? 0)}
                       </span>
                     ) : null}
-                  </button>
+                  </Link>
                   <button
                     type="button"
                     onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
@@ -940,45 +942,6 @@ export default function AdminPage() {
                   >
                     {theme === "dark" ? "☀️ Jasny" : "🌙 Ciemny"}
                   </button>
-                  {showNotifications ? (
-                    <div
-                      className={`absolute right-0 top-12 z-30 w-80 rounded-2xl border p-3 text-xs shadow-xl ${
-                        isDark ? "border-zinc-700 bg-zinc-900 text-zinc-200" : "border-blue-200 bg-white text-zinc-700"
-                      }`}
-                    >
-                      <p className="mb-2 text-sm font-semibold">Najnowsze zdarzenia</p>
-                      <div className="space-y-1.5">
-                        {[
-                          { tab: "Zgłoszenia warsztatów" as SidebarItem, label: "Nowe zgłoszenia warsztatów" },
-                          { tab: "Rezerwacje" as SidebarItem, label: "Nowe rezerwacje" },
-                          { tab: "Użytkownicy" as SidebarItem, label: "Nowi użytkownicy (24h)" },
-                          { tab: "Opinie / Google Maps" as SidebarItem, label: "Nowe aktywności Google Maps" },
-                        ].map((item) => (
-                          <button
-                            key={item.tab}
-                            type="button"
-                            onClick={() => {
-                              setActiveTab(item.tab);
-                              markTabSeen(item.tab);
-                              setShowNotifications(false);
-                            }}
-                            className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition ${
-                              isDark ? "hover:bg-zinc-800" : "hover:bg-blue-50"
-                            }`}
-                          >
-                            <span>{item.label}</span>
-                            {unreadSidebarBadges[item.tab] > 0 ? (
-                              <span className="rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-950">
-                                {formatBadgeNumber(unreadSidebarBadges[item.tab])}
-                              </span>
-                            ) : (
-                              <span className={isDark ? "text-zinc-500" : "text-zinc-400"}>0</span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             </header>
@@ -1348,13 +1311,14 @@ export default function AdminPage() {
               </>
             ) : null}
 
-            {activeTab === "Powiadomienia" && currentUser ? (
+            {activeTab === "Moje wiadomości" && currentUser ? (
               <InternalInbox
                 currentUserId={currentUser.id}
                 isDark={isDark}
                 viewerRole="admin"
+                includeAllForAdmin
                 onUnreadCountChange={(count) =>
-                  setLiveSidebarBadges((prev) => ({ ...prev, Powiadomienia: count }))
+                  setLiveSidebarBadges((prev) => ({ ...prev, "Moje wiadomości": count }))
                 }
               />
             ) : null}

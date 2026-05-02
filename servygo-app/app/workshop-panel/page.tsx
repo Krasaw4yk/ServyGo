@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import InternalInbox from "@/components/InternalInbox";
 import { getWorkshopDetailForAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
@@ -67,7 +68,7 @@ import {
 const WORKSHOP_SECTIONS = [
   "Dashboard",
   "Rezerwacje",
-  "Powiadomienia",
+  "Moje wiadomości",
   "Kalendarz / dostępność",
   "Usługi i ceny",
   "Pracownicy",
@@ -446,6 +447,14 @@ function WorkshopPanelPageContent() {
     const stored = window.localStorage.getItem("servygo-theme");
     if (stored === "dark" || stored === "light") setTheme(stored);
   }, []);
+
+  useEffect(() => {
+    const raw = searchParams.get("section");
+    if (!raw) return;
+    const decoded = decodeURIComponent(raw.trim());
+    const match = WORKSHOP_SECTIONS.find((s) => s === decoded);
+    if (match) setActiveSection(match);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -1783,8 +1792,9 @@ function WorkshopPanelPageContent() {
   if (!isSupabaseConfigured) {
     return (
       <ServyGoPageShell isDark={false}>
-        <main className="mx-auto max-w-lg px-4 py-16 text-center">
-          <p className="text-sm">Brak konfiguracji Supabase.</p>
+        <main className="mx-auto max-w-lg px-4 py-8 text-center text-sm">
+          <ServyGoSubpageNavBar isDark={false} showMojeKonto={false} />
+          <p className="mt-4">Brak konfiguracji Supabase.</p>
         </main>
       </ServyGoPageShell>
     );
@@ -1917,6 +1927,7 @@ function WorkshopPanelPageContent() {
   return (
     <ServyGoPageShell isDark={isDark}>
       <main className={`min-h-screen w-full max-w-none px-3 py-3 sm:px-4 lg:px-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+        <ServyGoSubpageNavBar isDark={isDark} />
         <div className="flex w-full gap-3 lg:gap-4">
           <aside className="hidden md:block md:w-60 md:min-w-[15rem] md:max-w-[15rem] md:flex-shrink-0 xl:w-64 xl:min-w-[16rem] xl:max-w-[16rem]">
             <div className={`sticky top-4 rounded-3xl border p-4 backdrop-blur-xl ${isDark ? "border-blue-500/25 bg-zinc-900/92" : "border-blue-200/85 bg-white/85"}`}>
@@ -1938,14 +1949,14 @@ function WorkshopPanelPageContent() {
                     }`}
                   >
                     <span className="inline-flex items-center gap-2">
-                      {item === "Powiadomienia" ? (
+                      {item === "Moje wiadomości" ? (
                         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                           <rect x="3" y="5" width="18" height="14" rx="2" />
                           <path d="m4 7 8 6 8-6" />
                         </svg>
                       ) : null}
                       <span>{item}</span>
-                      {item === "Powiadomienia" && unreadMessages > 0 ? (
+                      {item === "Moje wiadomości" && unreadMessages > 0 ? (
                         <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
                           {unreadMessages > 99 ? "99+" : unreadMessages}
                         </span>
@@ -1993,14 +2004,14 @@ function WorkshopPanelPageContent() {
                       }`}
                     >
                       <span className="inline-flex items-center gap-2">
-                        {item === "Powiadomienia" ? (
+                        {item === "Moje wiadomości" ? (
                           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                             <rect x="3" y="5" width="18" height="14" rx="2" />
                             <path d="m4 7 8 6 8-6" />
                           </svg>
                         ) : null}
                         <span>{item}</span>
-                        {item === "Powiadomienia" && unreadMessages > 0 ? (
+                        {item === "Moje wiadomości" && unreadMessages > 0 ? (
                           <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
                             {unreadMessages > 99 ? "99+" : unreadMessages}
                           </span>
@@ -2386,7 +2397,7 @@ function WorkshopPanelPageContent() {
                   </section>
                 ) : null}
 
-                {activeSection === "Powiadomienia" && currentUserId ? (
+                {activeSection === "Moje wiadomości" && currentUserId ? (
                   <InternalInbox
                     currentUserId={currentUserId}
                     isDark={isDark}

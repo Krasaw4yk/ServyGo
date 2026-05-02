@@ -213,6 +213,22 @@ export async function sendInternalMessage(payload: {
   if (!supabase) throw new Error("Supabase client not available.");
   const messageBody = payload.body.trim();
   if (!messageBody) throw new Error("Treść wiadomości jest wymagana.");
+  const needsBookingOrRequest =
+    !payload.relatedBookingId && !payload.serviceRequestId && payload.senderRole !== "system";
+  if (needsBookingOrRequest) {
+    const { data: authData } = await supabase.auth.getUser();
+    const authUser = authData.user;
+    if (!authUser?.id) throw new Error("Musisz być zalogowany.");
+    if (payload.senderId && payload.senderId !== authUser.id) {
+      throw new Error("Niezgodna sesja nadawcy.");
+    }
+    const ctx = await resolveMessageViewerContext(authUser.id, authUser.email ?? null);
+    if (!ctx.isAdminOrOwner) {
+      throw new Error(
+        "Nie można utworzyć nowej rozmowy bez powiązania z rezerwacją lub zapytaniem. Napisz w istniejącym wątku lub skontaktuj się przez rezerwację.",
+      );
+    }
+  }
   const { error } = await supabase.from("internal_messages").insert({
     sender_id: payload.senderId,
     recipient_id: payload.recipientId,

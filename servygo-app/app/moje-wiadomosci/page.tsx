@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import InternalInbox from "@/components/InternalInbox";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { resolveMessageViewerContext, type InternalMessageRole } from "@/lib/messagesApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 
@@ -60,7 +61,10 @@ export default function MojeWiadomosciPage() {
   if (!isSupabaseConfigured || !supabase) {
     return (
       <ServyGoPageShell isDark={false}>
-        <main className="mx-auto max-w-lg px-4 py-10 text-center text-sm">Brak konfiguracji Supabase.</main>
+        <main className="mx-auto max-w-lg px-4 py-6 text-center text-sm">
+          <ServyGoSubpageNavBar isDark={false} variant="messages" />
+          <p className="mt-4">Brak konfiguracji Supabase.</p>
+        </main>
       </ServyGoPageShell>
     );
   }
@@ -70,27 +74,23 @@ export default function MojeWiadomosciPage() {
   return (
     <ServyGoPageShell isDark={isDark}>
       {!user ? (
-        <main className="mx-auto max-w-lg px-4 py-12 text-center">
-          <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Zaloguj się, aby zobaczyć powiadomienia.</p>
-          <Link href="/?auth=login" className="mt-4 inline-block text-blue-600 underline">
-            Logowanie
-          </Link>
+        <main className="mx-auto max-w-lg px-4 py-8">
+          <ServyGoSubpageNavBar isDark={isDark} variant="messages" />
+          <div className="mt-8 text-center">
+            <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Zaloguj się, aby zobaczyć wiadomości.</p>
+            <Link href="/?auth=login" className="mt-4 inline-block text-blue-600 underline">
+              Logowanie
+            </Link>
+          </div>
         </main>
       ) : (
         <main className="mx-auto min-h-screen w-full max-w-5xl px-3 py-6 sm:px-6 sm:py-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className={`text-2xl font-bold sm:text-3xl ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Powiadomienia</h1>
-              <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                Wiadomości od warsztatu, alerty systemowe i przypomnienia — jedna lista {unread > 0 ? `· ${unread} nieprzeczytanych` : ""}
-              </p>
-            </div>
-            <Link
-              href="/ustawienia"
-              className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-zinc-600 text-zinc-100 hover:bg-zinc-800" : "border-blue-200 text-blue-800 hover:bg-blue-50"}`}
-            >
-              Ustawienia
-            </Link>
+          <ServyGoSubpageNavBar isDark={isDark} variant="messages" />
+          <div className="mb-6">
+            <h1 className={`text-2xl font-bold sm:text-3xl ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Moje wiadomości</h1>
+            <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+              Wiadomości od warsztatu, alerty systemowe i przypomnienia — jedna lista {unread > 0 ? `· ${unread} nieprzeczytanych` : ""}
+            </p>
           </div>
           <InternalInbox
             currentUserId={user.id}
@@ -98,6 +98,8 @@ export default function MojeWiadomosciPage() {
             viewerRole={viewerRole}
             includeAllForAdmin={includeAllForAdmin}
             onUnreadCountChange={setUnread}
+            embeddedInPage
+            enableMobileMessenger
           />
         </main>
       )}

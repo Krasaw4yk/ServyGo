@@ -3,7 +3,7 @@ import Link from "next/link";
 type UserCenterCardsProps = {
   isDark: boolean;
   isLoggedIn: boolean;
-  vehiclesCount: number;
+  favoriteWorkshopsCount: number;
   dashboardBookingsCount: number;
   triggerButtonClass: string;
   ctaButtonClass: string;
@@ -14,7 +14,7 @@ type UserCenterCardsProps = {
 export default function UserCenterCards({
   isDark,
   isLoggedIn,
-  vehiclesCount,
+  favoriteWorkshopsCount,
   dashboardBookingsCount,
   triggerButtonClass,
   ctaButtonClass,
@@ -22,14 +22,6 @@ export default function UserCenterCards({
   onRegister,
 }: UserCenterCardsProps) {
   const cards = [
-    {
-      title: "Moje pojazdy",
-      value: isLoggedIn ? String(vehiclesCount) : "—",
-      link: "Zobacz wszystkie",
-      href: "/moje-konto",
-      icon: "🚗",
-      guestHint: "Dodaj auto i szybciej wysyłaj zapytania.",
-    },
     {
       title: "Nadchodzące wizyty",
       value: isLoggedIn ? String(dashboardBookingsCount) : "—",
@@ -48,31 +40,21 @@ export default function UserCenterCards({
     },
     {
       title: "Ulubione warsztaty",
-      value: isLoggedIn ? "0" : "—",
+      value: isLoggedIn ? String(favoriteWorkshopsCount) : "—",
       link: "Zobacz ulubione",
-      href: "/oferty",
+      href: "/ulubione-warsztaty",
       icon: "❤️",
       guestHint: "Zapisuj sprawdzone warsztaty na później.",
     },
-    {
-      title: "Moje zapytania",
-      value: isLoggedIn ? "0" : "—",
-      link: "Zobacz zapytania",
-      href: "/moje-rezerwacje",
-      icon: "💬",
-      guestHint: "Porównuj odpowiedzi i wybieraj najlepszą ofertę.",
-    },
   ];
   const lightCardAccent = [
-    "bg-blue-100 text-blue-600",
     "bg-orange-100 text-orange-600",
     "bg-indigo-100 text-indigo-600",
     "bg-sky-100 text-sky-600",
-    "bg-yellow-100 text-yellow-700",
   ];
 
   return (
-    <section className="mt-12">
+    <section id="dla-kierowcow" className="scroll-mt-28 mt-12">
       <div className="mb-5 flex items-center justify-between gap-3">
         <h2 className={`text-2xl font-bold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Twoje centrum</h2>
         {!isLoggedIn ? (
@@ -86,7 +68,7 @@ export default function UserCenterCards({
           </div>
         ) : null}
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((item) => (
           <article
             key={item.title}

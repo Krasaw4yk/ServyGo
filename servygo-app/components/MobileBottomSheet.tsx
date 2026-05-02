@@ -9,6 +9,12 @@ type MobileBottomSheetProps = {
   onClose: () => void;
   children: React.ReactNode;
   isDark?: boolean;
+  /**
+   * Wysoki arkusz z przewijalną listą (Autocomplete, kategorie usług).
+   * Bez tego arkusz dopasowuje się do treści (menu konta, język).
+   */
+  tallList?: boolean;
+  /** @deprecated Użyj `tallList` — zachowane dla kompatybilności wstecznej. */
   fixedHeight?: boolean;
 };
 
@@ -18,8 +24,10 @@ export default function MobileBottomSheet({
   onClose,
   children,
   isDark = false,
+  tallList: tallListProp,
   fixedHeight = false,
 }: MobileBottomSheetProps) {
+  const tallList = tallListProp ?? fixedHeight;
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isActive, setIsActive] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
@@ -62,11 +70,11 @@ export default function MobileBottomSheet({
   if (!shouldRender || !portalReady) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] sm:hidden">
+    <div className={`fixed inset-0 z-[9999] sm:hidden ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}>
       <button
         type="button"
         aria-label="Zamknij panel"
-        className={`absolute inset-0 z-0 bg-black/30 transition-opacity duration-200 ease-out ${isActive ? "opacity-100" : "opacity-0"}`}
+        className={`absolute inset-0 z-0 bg-black/30 transition-opacity duration-200 ease-out ${isActive && isOpen ? "opacity-100" : "opacity-0"}`}
         onClick={onClose}
       />
       <section
@@ -77,15 +85,9 @@ export default function MobileBottomSheet({
         onTouchStart={(event) => event.stopPropagation()}
         className={`absolute bottom-0 left-0 right-0 z-10 flex max-w-[100vw] flex-col overflow-hidden rounded-t-3xl border-t px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-200 ease-out ${
           isActive ? "translate-y-0" : "translate-y-full"
-        } ${
-          isDark
-            ? "border-zinc-700 bg-zinc-900 text-zinc-100"
-            : "border-blue-200 bg-white text-zinc-900"
+        } ${tallList ? "h-auto max-h-[85dvh] min-h-[60dvh]" : "h-auto max-h-[85dvh]"} ${
+          isDark ? "border-zinc-700 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
         }`}
-        style={{
-          maxHeight: "min(70dvh, 560px)",
-          height: fixedHeight ? "min(70dvh, 560px)" : undefined,
-        }}
       >
         <div className="mx-auto mb-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/50" />
         <header className="mb-3 flex shrink-0 items-center justify-between gap-3">
@@ -101,9 +103,11 @@ export default function MobileBottomSheet({
           </button>
         </header>
         <div
-          className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overscroll-contain [-webkit-overflow-scrolling:touch] ${
-            fixedHeight ? "flex flex-col" : ""
-          }`}
+          className={
+            tallList
+              ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden overscroll-contain [-webkit-overflow-scrolling:touch]"
+              : "max-h-[calc(85dvh-7.5rem)] min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+          }
         >
           {children}
         </div>

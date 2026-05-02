@@ -15,6 +15,7 @@ import { getAvailableSlots, inferEndTime } from "@/lib/bookingAvailability";
 import { trackEvent } from "@/lib/analytics";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
+import WorkshopFavoriteToggle from "@/components/WorkshopFavoriteToggle";
 
 function padTime(value: number) {
   return String(value).padStart(2, "0");
@@ -616,7 +617,16 @@ function WorkshopDetailsPageContent() {
                   </p>
                   <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{workshop.city}</p>
                 </div>
-                <div className="w-full space-y-2 text-left sm:w-auto sm:text-right">
+                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end sm:text-right">
+                  <WorkshopFavoriteToggle
+                    workshopId={workshop.supabaseId}
+                    isDark={isDark}
+                    isLoggedIn={isLoggedIn}
+                    userId={currentUserId}
+                    onRequireAuth={() => {
+                      router.push("/?auth=login");
+                    }}
+                  />
                   <div className="rounded-2xl border border-blue-400/30 bg-blue-500/10 px-3 py-2 text-sm">
                     ⭐ {workshop.rating.toFixed(1)} ({workshop.reviewsCount} {t("workshopDetails.reviews")})
                   </div>

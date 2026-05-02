@@ -19,9 +19,9 @@ type SidebarNavItem =
 const SIDEBAR_NAV: SidebarNavItem[] = [
   { type: "scroll", label: "Ustawienia konta", sectionId: "sec-konto" },
   { type: "link", label: "Moje rezerwacje", href: "/moje-rezerwacje" },
-  { type: "link", label: "Moje pojazdy", href: "/?account=vehicles" },
+  { type: "link", label: "Moje auta", href: "/moje-auta" },
   { type: "scroll", label: "Bezpieczeństwo", sectionId: "sec-bezpieczenstwo" },
-  { type: "link", label: "Powiadomienia", href: "/moje-wiadomosci" },
+  { type: "link", label: "Moje wiadomości", href: "/moje-wiadomosci" },
   { type: "link", label: "Kalendarz", href: "/moj-kalendarz" },
   { type: "scroll", label: "Prywatność", sectionId: "sec-prywatnosc" },
   { type: "scroll", label: "Pomoc i kontakt", sectionId: "sec-pomoc" },
@@ -292,11 +292,11 @@ export default function UstawieniaPage() {
                 </ul>
               </article>
 
-              <article id="sec-pojazdy" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
-                <h2 className="text-lg font-semibold text-zinc-900">Moje pojazdy</h2>
-                <p className="mt-2 text-sm text-zinc-600">Masz zapisanych {vehiclesCount} pojazdów. Zarządzaj nimi i dodawaj kolejne auta.</p>
-                <Link href="/?account=vehicles" className="mt-4 inline-flex rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
-                  Zarządzaj pojazdami
+              <article id="sec-auta" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
+                <h2 className="text-lg font-semibold text-zinc-900">Moje auta</h2>
+                <p className="mt-2 text-sm text-zinc-600">Masz zapisanych {vehiclesCount} aut. Zarządzaj nimi i dodawaj kolejne.</p>
+                <Link href="/moje-auta" className="mt-4 inline-flex rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
+                  Zarządzaj autami
                 </Link>
               </article>
 
