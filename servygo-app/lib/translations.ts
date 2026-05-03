@@ -140,6 +140,71 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       driverBenefits: ["Oszczędność czasu", "Porównanie cen", "Wygoda"],
       workshopBenefits: ["Nowi klienci", "Brak reklam", "Proste pozyskiwanie zleceń"],
     },
+    landing: {
+      navHowItWorks: "Jak to działa",
+      navForDrivers: "Dla kierowców",
+      navForWorkshops: "Dla warsztatów",
+      navAbout: "O nas",
+      navContact: "Kontakt",
+      modalContactTitle: "Kontakt z ServyGo",
+      modalAboutTitle: "O nas",
+      modalWorkshopsTitle: "Dla warsztatów",
+      modalDriversTitle: "Dla kierowców",
+      modalHowTitle: "Jak to działa",
+      contactIntro:
+        "Masz pytanie, problem lub chcesz zgłosić warsztat? Napisz do nas — odpowiemy tak szybko, jak to możliwe.",
+      contactEmailLabel: "E-mail",
+      contactEmailValue: "servygoa@gmail.com",
+      contactPhoneLabel: "Telefon",
+      contactPhonePlaceholder: "+48 XXX XXX XXX",
+      aboutP1:
+        "ServyGo powstało po to, żeby ułatwić kierowcom znalezienie sprawdzonego warsztatu bez dzwonienia po kilku miejscach i pytania za każdym razem o cenę, termin oraz dostępność.",
+      aboutP2:
+        "W jednym miejscu kierowca może opisać problem, wybrać auto, porównać oferty warsztatów i wybrać najlepszą opcję dla siebie.",
+      aboutP3:
+        "Celem ServyGo jest większa przejrzystość rynku usług motoryzacyjnych: prostsze szukanie warsztatu dla kierowców i łatwiejsze pozyskiwanie klientów dla serwisów.",
+      workshopsLead: "Dołącz do grona warsztatów ServyGo.",
+      workshopsBullets: [
+        "Pokaż swoją ofertę kierowcom, którzy realnie szukają usługi.",
+        "Otrzymuj zgłoszenia od klientów z Twojej okolicy.",
+        "Buduj widoczność swojego warsztatu online.",
+        "Pomóż klientom szybciej znaleźć termin, cenę i usługę.",
+      ],
+      workshopsCta: "Dołącz jako warsztat",
+      driversLead: "Korzyści dla kierowcy:",
+      driversBullets: [
+        "Znajdź warsztat w swojej okolicy.",
+        "Porównaj oferty, ceny i lokalizacje.",
+        "Wybierz usługę dopasowaną do auta.",
+        "Umów wizytę bez chaosu i niepotrzebnego dzwonienia.",
+        "Korzystaj z mapy i listy ofert.",
+        "Sprawdzaj warsztaty w jednym miejscu.",
+      ],
+      driversCtaHow: "Zobacz, jak to działa",
+      howItWorksIntro: "Od zapytania po wizytę — pięć przejrzystych kroków:",
+      howItWorksSteps: [
+        {
+          title: "Opisz problem",
+          desc: "Kierowca wybiera auto, usługę, miasto i opisuje, co dzieje się z pojazdem. Może też podać VIN, żeby warsztat mógł dokładniej przygotować ofertę.",
+        },
+        {
+          title: "Znajdź pasujące warsztaty",
+          desc: "ServyGo pokazuje warsztaty dodane do serwisu, listę ofert oraz mapę z lokalizacją. Kierowca może porównać cenę, odległość, ocenę i dostępność.",
+        },
+        {
+          title: "Wybierz warsztat i termin",
+          desc: "Kierowca wybiera warsztat, sprawdza szczegóły usługi i może wybrać dostępny termin wizyty.",
+        },
+        {
+          title: "Otrzymaj potwierdzenie lub propozycję",
+          desc: "Warsztat może potwierdzić wizytę, doprecyzować usługę albo wysłać klientowi propozycję ceny i komentarz.",
+        },
+        {
+          title: "Zdecyduj i skorzystaj z usługi",
+          desc: "Klient może zaakceptować ofertę, zmienić wybór albo szukać dalej. Po wykonaniu usługi może wrócić do ServyGo i skorzystać ponownie.",
+        },
+      ],
+    },
     account: {
       title: "Moje konto",
       tabs: {
@@ -555,6 +620,71 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       driverBenefits: ["Save time", "Compare prices", "Convenience"],
       workshopBenefits: ["New customers", "No ads", "Simple lead generation"],
     },
+    landing: {
+      navHowItWorks: "How it works",
+      navForDrivers: "For drivers",
+      navForWorkshops: "For workshops",
+      navAbout: "About us",
+      navContact: "Contact",
+      modalContactTitle: "Contact ServyGo",
+      modalAboutTitle: "About us",
+      modalWorkshopsTitle: "For workshops",
+      modalDriversTitle: "For drivers",
+      modalHowTitle: "How it works",
+      contactIntro:
+        "Have a question, issue, or want to suggest a workshop? Write to us — we respond as soon as we can.",
+      contactEmailLabel: "Email",
+      contactEmailValue: "servygoa@gmail.com",
+      contactPhoneLabel: "Phone",
+      contactPhonePlaceholder: "+48 XXX XXX XXX",
+      aboutP1:
+        "ServyGo helps drivers find a trusted workshop without calling several places each time to ask about price, timing, and availability.",
+      aboutP2:
+        "In one place you can describe the issue, choose your vehicle, compare workshop offers, and pick what suits you best.",
+      aboutP3:
+        "Our goal is clearer automotive services: simpler search for drivers and easier client acquisition for garages.",
+      workshopsLead: "Join ServyGo workshops.",
+      workshopsBullets: [
+        "Show your offer to drivers who are actively looking for a service.",
+        "Receive enquiries from customers in your area.",
+        "Grow your workshop's visibility online.",
+        "Help clients find a slot, price, and service faster.",
+      ],
+      workshopsCta: "Join as a workshop",
+      driversLead: "Benefits for drivers:",
+      driversBullets: [
+        "Find a workshop near you.",
+        "Compare offers, prices, and locations.",
+        "Pick a service matched to your vehicle.",
+        "Book without chaos or unnecessary phone calls.",
+        "Use the map and offers list.",
+        "Review workshops in one place.",
+      ],
+      driversCtaHow: "See how it works",
+      howItWorksIntro: "From request to visit — five clear steps:",
+      howItWorksSteps: [
+        {
+          title: "Describe the issue",
+          desc: "Choose vehicle, service, city, and describe what's wrong. You can add a VIN so the workshop can prepare a more precise offer.",
+        },
+        {
+          title: "Find matching workshops",
+          desc: "ServyGo shows workshops in the platform, offer lists, and a map. Compare price, distance, rating, and availability.",
+        },
+        {
+          title: "Choose workshop and time",
+          desc: "Pick a workshop, review service details, and choose an available appointment.",
+        },
+        {
+          title: "Get confirmation or a proposal",
+          desc: "The workshop can confirm the visit, clarify the job, or send a price proposal and comment.",
+        },
+        {
+          title: "Decide and use the service",
+          desc: "You can accept an offer, change your choice, or keep searching. After the job you can return to ServyGo anytime.",
+        },
+      ],
+    },
     account: {
       title: "My account",
       tabs: {
@@ -968,6 +1098,71 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       forWorkshops: "Для СТО",
       driverBenefits: ["Економія часу", "Порівняння цін", "Зручність"],
       workshopBenefits: ["Нові клієнти", "Без реклами", "Просте отримання заявок"],
+    },
+    landing: {
+      navHowItWorks: "Як це працює",
+      navForDrivers: "Для водіїв",
+      navForWorkshops: "Для СТО",
+      navAbout: "Про нас",
+      navContact: "Контакт",
+      modalContactTitle: "Зв'язок із ServyGo",
+      modalAboutTitle: "Про нас",
+      modalWorkshopsTitle: "Для СТО",
+      modalDriversTitle: "Для водіїв",
+      modalHowTitle: "Як це працює",
+      contactIntro:
+        "Є питання, проблема або хочете запропонувати СТО? Напишіть нам — відповімо якнайшвидше.",
+      contactEmailLabel: "E-mail",
+      contactEmailValue: "servygoa@gmail.com",
+      contactPhoneLabel: "Телефон",
+      contactPhonePlaceholder: "+48 XXX XXX XXX",
+      aboutP1:
+        "ServyGo створено, щоб водіям було простіше знайти перевірене СТО без десятків дзвінків про ціну, час і наявність місць.",
+      aboutP2:
+        "В одному місці можна описати проблему, обрати авто, порівняти пропозиції СТО й обрати найкраще для себе.",
+      aboutP3:
+        "Мета ServyGo — більша прозорість ринку автопослуг: простіший пошук для водіїв і зручніше залучення клієнтів для сервісів.",
+      workshopsLead: "Долучайтеся до майданчика ServyGo.",
+      workshopsBullets: [
+        "Покажіть свою пропозицію водіям, які реально шукають послугу.",
+        "Отримуйте звернення від клієнтів з вашого району.",
+        "Зміцнюйте онлайн-присутність свого СТО.",
+        "Допомагайте клієнтам швидше знайти час, ціну й послугу.",
+      ],
+      workshopsCta: "Долучитися як СТО",
+      driversLead: "Переваги для водія:",
+      driversBullets: [
+        "Знайдіть СТО поруч.",
+        "Порівняйте пропозиції, ціни та локації.",
+        "Оберіть послугу під ваше авто.",
+        "Запишіться без хаосу й зайвих дзвінків.",
+        "Користуйтеся картою та списком пропозицій.",
+        "Переглядайте СТО в одному місці.",
+      ],
+      driversCtaHow: "Подивитися, як це працює",
+      howItWorksIntro: "Від запиту до візиту — п'ять зрозумілих кроків:",
+      howItWorksSteps: [
+        {
+          title: "Опишіть проблему",
+          desc: "Водій обирає авто, послугу, місто й описує симптоми. Можна вказати VIN, щоб СТО точніше підготувало пропозицію.",
+        },
+        {
+          title: "Знайдіть відповідні СТО",
+          desc: "ServyGo показує підключені сервіси, список пропозицій і карту. Порівнюйте ціну, відстань, рейтинг і доступність.",
+        },
+        {
+          title: "Оберіть СТО і час",
+          desc: "Оберіть сервіс, перегляньте деталі послуги й доступний час візиту.",
+        },
+        {
+          title: "Отримайте підтвердження або пропозицію",
+          desc: "СТО може підтвердити візит, уточнити роботи або надіслати пропозицію ціни й коментар.",
+        },
+        {
+          title: "Прийміть рішення та скористайтеся послугою",
+          desc: "Можна прийняти пропозицію, змінити вибір або шукати далі. Після обслуговування завжди можна повернутися до ServyGo.",
+        },
+      ],
     },
     account: {
       title: "Мій кабінет",

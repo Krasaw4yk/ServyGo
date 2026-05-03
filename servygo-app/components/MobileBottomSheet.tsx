@@ -16,6 +16,8 @@ type MobileBottomSheetProps = {
   tallList?: boolean;
   /** @deprecated Użyj `tallList` — zachowane dla kompatybilności wstecznej. */
   fixedHeight?: boolean;
+  /** Nadpisanie warstwy nad innymi panelami (np. modal informacyjny nad kontem). */
+  stackClassName?: string;
 };
 
 export default function MobileBottomSheet({
@@ -26,6 +28,7 @@ export default function MobileBottomSheet({
   isDark = false,
   tallList: tallListProp,
   fixedHeight = false,
+  stackClassName,
 }: MobileBottomSheetProps) {
   const tallList = tallListProp ?? fixedHeight;
   const [shouldRender, setShouldRender] = useState(isOpen);
@@ -69,8 +72,13 @@ export default function MobileBottomSheet({
 
   if (!shouldRender || !portalReady) return null;
 
+  const zLayer = stackClassName ?? "z-[9999]";
+  const sheetMaxH = "max-h-[min(82dvh,calc(100dvh-env(safe-area-inset-bottom)-10px))]";
+
   return createPortal(
-    <div className={`fixed inset-0 z-[9999] sm:hidden ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}>
+    <div
+      className={`fixed inset-0 sm:hidden ${zLayer} ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+    >
       <button
         type="button"
         aria-label="Zamknij panel"
@@ -83,20 +91,25 @@ export default function MobileBottomSheet({
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
-        className={`absolute bottom-0 left-0 right-0 z-10 flex max-w-[100vw] flex-col overflow-hidden rounded-t-3xl border-t px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-200 ease-out ${
+        className={`absolute bottom-0 left-0 right-0 z-10 flex min-h-0 w-full max-w-[100vw] flex-col overflow-hidden rounded-t-3xl border-t shadow-2xl transition-transform duration-200 ease-out ${
           isActive ? "translate-y-0" : "translate-y-full"
-        } ${tallList ? "h-auto max-h-[85dvh] min-h-[60dvh]" : "h-auto max-h-[85dvh]"} ${
+        } ${sheetMaxH} ${
           isDark ? "border-zinc-700 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
         }`}
       >
-        <div className="mx-auto mb-2 h-1.5 w-12 shrink-0 rounded-full bg-zinc-400/50" />
-        <header className="mb-3 flex shrink-0 items-center justify-between gap-3">
-          <h3 className="text-base font-semibold">{title}</h3>
+        <div className="mx-auto mb-1.5 h-1 w-12 shrink-0 rounded-full bg-zinc-400/50" />
+        <header
+          className={`flex shrink-0 items-start justify-between gap-2 border-b px-3 pb-2 pt-0 ${
+            isDark ? "border-zinc-700/90 bg-zinc-900" : "border-blue-100/90 bg-white"
+          }`}
+        >
+          <h3 className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug">{title}</h3>
           <button
             type="button"
+            aria-label="Zamknij"
             onClick={onClose}
-            className={`rounded-xl border px-3 py-1.5 text-sm font-medium ${
-              isDark ? "border-zinc-600 text-zinc-200" : "border-zinc-300 text-zinc-700"
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-base font-semibold leading-none ${
+              isDark ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-zinc-300 bg-white text-zinc-800"
             }`}
           >
             ✕
@@ -105,8 +118,8 @@ export default function MobileBottomSheet({
         <div
           className={
             tallList
-              ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden overscroll-contain [-webkit-overflow-scrolling:touch]"
-              : "max-h-[calc(85dvh-7.5rem)] min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2"
+              : `min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 [-webkit-overflow-scrolling:touch]`
           }
         >
           {children}

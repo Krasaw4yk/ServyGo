@@ -310,7 +310,7 @@ export default function AutocompleteSelect({
           tallList
         >
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 space-y-3 pb-3">
+            <div className="shrink-0 space-y-2 pb-2">
               <input
                 value={query}
                 onChange={(event) => {
@@ -373,7 +373,7 @@ export default function AutocompleteSelect({
                 </button>
               ) : null}
             </div>
-            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-8 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-4 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
               {filteredOptions.length === 0 ? (
                 <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
               ) : (
@@ -385,7 +385,7 @@ export default function AutocompleteSelect({
                       event.preventDefault();
                       handleSelectOption(option);
                     }}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm ${
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm ${
                       isDark
                         ? highlightedIndex === index
                           ? "bg-zinc-800 text-zinc-100"

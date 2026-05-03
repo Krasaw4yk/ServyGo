@@ -17,6 +17,7 @@ import ClientNotificationBell from "@/components/home/ClientNotificationBell";
 import { pickDashboardUpcomingBooking, resolveClientBookingBadge } from "@/lib/bookingStatusUi";
 import RecommendedWorkshopsSection from "@/components/home/RecommendedWorkshopsSection";
 import LandingCtaFooter from "@/components/home/LandingCtaFooter";
+import LandingInfoDialogs from "@/components/home/LandingInfoDialogs";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
 import { getServiceCatalogGroupedByMainCategory } from "@/lib/serviceCatalog";
 import {
@@ -144,6 +145,9 @@ function HomePageContent() {
   const [manualDescription, setManualDescription] = useState("");
   const [years, setYears] = useState<string[]>([]);
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
+  const [landingInfoPanel, setLandingInfoPanel] = useState<
+    "contact" | "about" | "workshops" | "drivers" | "howItWorks" | null
+  >(null);
   const [language, setLanguage] = useState<LanguageCode>("pl");
   const [authModal, setAuthModal] = useState<AuthModalType>(null);
   const [authLoading, setAuthLoading] = useState(false);
@@ -642,16 +646,16 @@ function HomePageContent() {
     (getTranslationNode("sections.workshopBenefits", "pl") as string[] | undefined) ??
     [];
 
-  const landingHeaderNavLinks = useMemo(
+  const landingHeaderNavItems = useMemo(
     () =>
       [
-        { label: "Jak to działa", href: "/#jak-to-dziala" },
-        { label: "Dla kierowców", href: "/#dla-kierowcow" },
-        { label: "Dla warsztatów", href: "/#dla-warsztatow" },
-        { label: "O nas", href: "/#o-nas" },
-        { label: "Kontakt", href: "/#kontakt" },
+        { key: "howItWorks" as const, label: t("landing.navHowItWorks") },
+        { key: "drivers" as const, label: t("landing.navForDrivers") },
+        { key: "workshops" as const, label: t("landing.navForWorkshops") },
+        { key: "about" as const, label: t("landing.navAbout") },
+        { key: "contact" as const, label: t("landing.navContact") },
       ] as const,
-    [],
+    [t],
   );
 
   const modelsForBrand = useMemo(() => {
@@ -1681,16 +1685,17 @@ function HomePageContent() {
               />
 
               <nav className="mx-auto hidden min-w-0 flex-1 justify-center gap-6 xl:flex">
-                {landingHeaderNavLinks.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
+                {landingHeaderNavItems.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setLandingInfoPanel(item.key)}
                     className={`text-sm font-medium transition ${
                       isDark ? "text-zinc-200 hover:text-blue-300" : "text-zinc-700 hover:text-blue-600"
                     }`}
                   >
                     {item.label}
-                  </a>
+                  </button>
                 ))}
               </nav>
 
@@ -2058,10 +2063,18 @@ function HomePageContent() {
                       >
                         Strona
                       </p>
-                      {landingHeaderNavLinks.map((link) => (
-                        <Link key={link.href} href={link.href} onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
-                          {link.label}
-                        </Link>
+                      {landingHeaderNavItems.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => {
+                            setActiveDropdown(null);
+                            setLandingInfoPanel(item.key);
+                          }}
+                          className={mobileAccountSheetRowClass}
+                        >
+                          {item.label}
+                        </button>
                       ))}
                       <div className={mobileAccountSheetDividerClass} aria-hidden />
                       <button
@@ -2097,10 +2110,18 @@ function HomePageContent() {
                       >
                         Strona
                       </p>
-                      {landingHeaderNavLinks.map((link) => (
-                        <Link key={link.href} href={link.href} onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
-                          {link.label}
-                        </Link>
+                      {landingHeaderNavItems.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => {
+                            setActiveDropdown(null);
+                            setLandingInfoPanel(item.key);
+                          }}
+                          className={mobileAccountSheetRowClass}
+                        >
+                          {item.label}
+                        </button>
                       ))}
                     </>
                   )}
@@ -3525,6 +3546,14 @@ function HomePageContent() {
             </div>
           </div>
         ) : null}
+
+        <LandingInfoDialogs
+          panel={landingInfoPanel}
+          onClose={() => setLandingInfoPanel(null)}
+          onDriversSeeHow={() => setLandingInfoPanel("howItWorks")}
+          language={language}
+          isDark={isDark}
+        />
       </main>
     </div>
   );

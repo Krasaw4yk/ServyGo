@@ -559,7 +559,7 @@ export default function ServiceCategoryPicker({
             )}
             </div>
             {!mobileCustomOpen ? (
-              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-8 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
+              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-4 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
                   {normalizeSearchText(query) ? (
                     searchResults.length === 0 ? (
                       <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
