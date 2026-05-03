@@ -24,6 +24,8 @@ type ServiceCategoryPickerProps = {
   noResultsText?: string;
   /** Gdy zwraca obiekt: `available: false` = usługa niedostępna w wybranym warsztacie (wyszarzenie, brak wyboru). */
   getFinalServiceAvailability?: (serviceName: string) => FinalServiceAvailability | null;
+  rootClassName?: string;
+  toggleButtonClassName?: string;
 };
 
 type SearchResult = {
@@ -77,6 +79,8 @@ export default function ServiceCategoryPicker({
   placeholder = "Wybierz kategorię",
   noResultsText = "Brak wyników",
   getFinalServiceAvailability,
+  rootClassName = "",
+  toggleButtonClassName = "",
 }: ServiceCategoryPickerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -89,6 +93,17 @@ export default function ServiceCategoryPicker({
   const [customServiceDraft, setCustomServiceDraft] = useState("");
   const [browseHighlightIdx, setBrowseHighlightIdx] = useState(-1);
   const prevSheetOpenRef = useRef(false);
+  /** Zapobiega „ghost click” po zamknięciu MobileBottomSheet (klik wpada w pole pod spodem). */
+  const suppressOpenUntilRef = useRef(0);
+
+  function markSuppressTapThroughFromSheet() {
+    if (!isMobile) return;
+    suppressOpenUntilRef.current = Date.now() + 480;
+  }
+
+  function shouldIgnoreOpenTrigger() {
+    return isMobile && Date.now() < suppressOpenUntilRef.current;
+  }
 
   /** Document outside-click may fire in the same gesture as drilling into categories; reinforce stay-open while navigating */
   function keepPickerOpen() {
@@ -96,6 +111,7 @@ export default function ServiceCategoryPicker({
   }
 
   function closePicker(blurInput = false) {
+    markSuppressTapThroughFromSheet();
     setIsOpen(false);
     setQuery("");
     if (blurInput) {
@@ -329,7 +345,7 @@ export default function ServiceCategoryPicker({
   }, [browseHighlightIdx, isOpen, isMobile, normalizedBrowseQuery, activeCategory, activeSubcategory]);
 
   return (
-    <div ref={rootRef} className="relative w-full">
+    <div ref={rootRef} className={`relative w-full ${rootClassName}`}>
       <input
         ref={inputRef}
         value={displayValue}
@@ -340,6 +356,7 @@ export default function ServiceCategoryPicker({
         }}
         onClick={() => {
           if (disabled) return;
+          if (shouldIgnoreOpenTrigger()) return;
           if (!query) {
             setQuery(value);
           }
@@ -407,12 +424,13 @@ export default function ServiceCategoryPicker({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           if (disabled) return;
+          if (shouldIgnoreOpenTrigger()) return;
           setIsOpen((prev) => !prev);
           setQuery((prev) => (prev ? prev : value));
         }}
         className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${
           isOpen ? "rotate-180" : ""
-        } ${isDark ? "text-zinc-300" : "text-zinc-500"}`}
+        } ${isDark ? "text-zinc-300" : "text-zinc-500"} ${toggleButtonClassName}`}
       >
         <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path d="m5 7 5 6 5-6" />

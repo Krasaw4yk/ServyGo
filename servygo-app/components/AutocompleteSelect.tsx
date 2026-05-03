@@ -21,6 +21,10 @@ type AutocompleteSelectProps = {
   noResultsText?: string;
   inputClassName?: string;
   panelClassName?: string;
+  /** Dodatkowe klasy na kontener (np. layout mobilny). */
+  rootClassName?: string;
+  /** Klasy na przycisk strzałki (np. ukrycie na wąskim ekranie). */
+  toggleButtonClassName?: string;
 };
 
 function normalizeOption(option: string | AutocompleteOption): AutocompleteOption {
@@ -94,6 +98,8 @@ export default function AutocompleteSelect({
   noResultsText = "Brak wyników",
   inputClassName = "",
   panelClassName = "",
+  rootClassName = "",
+  toggleButtonClassName = "",
 }: AutocompleteSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -101,8 +107,20 @@ export default function AutocompleteSelect({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  /** Po zamknięciu arkusza mobilnego ten sam gest potrafi „przeklikać” pole pod spodem — ignoruj krótko otwarcie. */
+  const suppressOpenUntilRef = useRef(0);
+
+  function markSuppressTapThroughFromSheet() {
+    if (!isMobile) return;
+    suppressOpenUntilRef.current = Date.now() + 480;
+  }
+
+  function shouldIgnoreOpenTrigger() {
+    return isMobile && Date.now() < suppressOpenUntilRef.current;
+  }
 
   function closeDropdown(blurInput = false) {
+    markSuppressTapThroughFromSheet();
     setIsOpen(false);
     setQuery("");
     setHighlightedIndex(-1);
@@ -116,6 +134,7 @@ export default function AutocompleteSelect({
     setQuery("");
     setIsOpen(false);
     setHighlightedIndex(-1);
+    markSuppressTapThroughFromSheet();
     inputRef.current?.blur();
   }
 
@@ -124,6 +143,7 @@ export default function AutocompleteSelect({
     setQuery("");
     setIsOpen(false);
     setHighlightedIndex(-1);
+    markSuppressTapThroughFromSheet();
     inputRef.current?.blur();
   }
 
@@ -191,7 +211,7 @@ export default function AutocompleteSelect({
   const displayValue = isOpen ? query : selectedOption?.label ?? value;
 
   return (
-    <div ref={rootRef} className="relative flex w-full flex-col gap-2">
+    <div ref={rootRef} className={`relative flex w-full flex-col gap-2 ${rootClassName}`}>
       {label ? <span className="text-sm font-medium">{label}</span> : null}
       <div className="relative w-full">
         <input
@@ -209,6 +229,7 @@ export default function AutocompleteSelect({
           }}
           onClick={() => {
             if (disabled) return;
+            if (shouldIgnoreOpenTrigger()) return;
             setQuery(selectedOption?.label ?? value);
             setIsOpen(true);
             setHighlightedIndex(-1);
@@ -264,12 +285,13 @@ export default function AutocompleteSelect({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             if (disabled) return;
+            if (shouldIgnoreOpenTrigger()) return;
             setIsOpen((prev) => !prev);
             setHighlightedIndex(-1);
           }}
           className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${
             isOpen ? "rotate-180" : ""
-          } ${isDark ? "text-zinc-300" : "text-zinc-500"}`}
+          } ${isDark ? "text-zinc-300" : "text-zinc-500"} ${toggleButtonClassName}`}
           aria-label="Toggle options"
         >
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">

@@ -11,6 +11,7 @@ import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
 import UserCenterCards from "@/components/home/UserCenterCards";
+import { MobileCompactSearchField, searchFormFieldIconMap } from "@/components/home/MobileCompactSearchField";
 import UserDetailsSection from "@/components/home/UserDetailsSection";
 import ClientNotificationBell from "@/components/home/ClientNotificationBell";
 import { pickDashboardUpcomingBooking, resolveClientBookingBadge } from "@/lib/bookingStatusUi";
@@ -114,6 +115,9 @@ function toLocalDateKey(value: Date) {
 }
 
 const LOCAL_CLEANUP_VERSION_KEY = "servygo_local_cleanup_v1";
+
+/** Gdy false — ukrywa przycisk „Nie znalazłeś auta?” i kartę zgłoszenia brakującego auta (kod zostaje w projekcie). */
+const SHOW_MANUAL_MISSING_VEHICLE_UI = false;
 
 function HomePageContent() {
   const router = useRouter();
@@ -697,9 +701,13 @@ function HomePageContent() {
   );
   const sortedYears = useMemo(() => sortYearsDesc(years).map(String), [years]);
   const currentFieldClassName = isDark ? fieldClassName : lightFieldClassName;
+  const searchFormControlMobileStrip =
+    "max-md:border-0 max-md:bg-transparent max-md:shadow-none max-md:ring-0 max-md:focus:border-transparent max-md:focus:ring-0 max-md:focus:shadow-none max-md:px-0 max-md:py-1 max-md:rounded-none max-md:text-[15px] max-md:leading-snug max-md:placeholder:text-zinc-500";
+  const searchFormAutocompleteShell = "max-md:gap-0";
+  const searchFormChevronToggleHide = "max-md:hidden";
   const headerShellClass = isDark
-    ? "sticky top-0 z-[1000] isolate mb-7 box-border w-full max-w-full overflow-hidden border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2 backdrop-blur-xl sm:px-3 sm:py-2.5 md:px-4"
-    : "sticky top-0 z-[1000] isolate mb-7 box-border w-full max-w-full overflow-hidden border-b border-blue-100/90 bg-white/92 px-2 py-2 backdrop-blur-xl sm:px-3 sm:py-2.5 md:px-4";
+    ? "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-hidden border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2 max-md:py-1.5 backdrop-blur-xl sm:px-3 sm:py-2.5 md:mb-7 md:px-4"
+    : "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-hidden border-b border-blue-100/90 bg-white/92 px-2 py-2 max-md:py-1.5 backdrop-blur-xl sm:px-3 sm:py-2.5 md:mb-7 md:px-4";
   const triggerButtonClass = isDark
     ? "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-1.5 text-[11px] font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
     : "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-1.5 text-[11px] font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
@@ -1648,16 +1656,16 @@ function HomePageContent() {
       <div className={pageMeshClass} />
       <div className={pageNoiseClass} />
       <div className={pagePatternClass} />
-      <main className="relative z-0 mx-auto w-full max-w-[1760px] px-4 py-5 sm:px-6 sm:py-9 lg:px-8 2xl:px-10">
+      <main className="relative z-0 mx-auto w-full max-w-[1760px] px-4 py-5 max-md:px-3 max-md:py-4 sm:px-6 sm:py-9 lg:px-8 2xl:px-10">
         <section
           className="relative isolate w-full max-w-full overflow-x-hidden px-0 pb-8 pt-0 sm:pb-10"
         >
           <div
             ref={headerRef}
-            className={`${headerShellClass}${currentUser ? " max-sm:py-3" : ""}`}
+            className={`${headerShellClass}${currentUser ? " max-md:py-2" : ""}`}
           >
             <div
-              className={`flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1 overflow-hidden sm:gap-2 xl:gap-6${currentUser ? " max-sm:gap-2" : ""}`}
+              className={`flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1 overflow-hidden max-md:gap-0.5 sm:gap-2 xl:gap-6${currentUser ? " max-md:gap-1" : ""}`}
             >
               <Image
                 src={
@@ -1669,7 +1677,7 @@ function HomePageContent() {
                 width={256}
                 height={96}
                 priority
-                className={`h-8 w-auto max-w-[min(36vw,132px)] shrink-0 object-contain${currentUser ? " max-sm:h-10 max-sm:max-w-[min(44vw,168px)]" : ""} sm:h-12 sm:max-w-none md:mr-6 md:h-16 md:max-w-[256px]`}
+                className={`h-8 w-auto max-w-[min(36vw,132px)] shrink-0 object-contain max-md:h-9 max-md:translate-x-px max-md:max-w-[min(42vw,154px)] sm:h-12 sm:max-w-none md:mr-6 md:h-16 md:max-w-[256px] md:translate-x-0${currentUser ? " max-md:max-w-[min(50vw,176px)]" : ""}`}
               />
 
               <nav className="mx-auto hidden min-w-0 flex-1 justify-center gap-6 xl:flex">
@@ -1687,7 +1695,7 @@ function HomePageContent() {
               </nav>
 
               <div
-                className={`relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-hidden sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 md:gap-3 xl:ml-0${currentUser ? " max-sm:gap-2" : ""}`}
+                className={`relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-hidden max-md:gap-0.5 sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 md:gap-3 xl:ml-0${currentUser ? " max-md:gap-1" : ""}`}
               >
                 <div className="relative z-[1002] min-w-0 shrink">
                   <button
@@ -2260,7 +2268,7 @@ function HomePageContent() {
           </div>
 
           <div
-            className={`relative mt-8 overflow-hidden rounded-2xl border p-5 shadow-2xl backdrop-blur-xl sm:p-6 md:p-8 ${
+            className={`relative mt-8 overflow-hidden rounded-2xl border p-5 shadow-2xl backdrop-blur-xl max-md:p-3 max-md:pt-4 sm:p-6 md:p-8 ${
               isDark
                 ? "border-blue-500/20 bg-gradient-to-br from-[#091427]/88 via-[#071224]/84 to-[#040a15]/80 text-zinc-100 shadow-blue-500/20"
                 : "border border-blue-200/60 bg-white/85 text-zinc-900 shadow-[0_24px_70px_rgba(37,99,235,0.12),0_14px_40px_rgba(249,115,22,0.10)]"
@@ -2272,8 +2280,8 @@ function HomePageContent() {
                 <div className="pointer-events-none absolute -bottom-16 -right-12 h-52 w-52 rounded-full bg-orange-200/40 blur-3xl" />
               </>
             ) : null}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <h2 className="text-xl font-bold sm:text-2xl">
+            <div className="flex flex-col gap-2 max-md:gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+              <h2 className="text-xl font-bold max-md:text-lg sm:text-2xl">
                 {t("form.title")}
                 <span className="ml-2 text-orange-400">•</span>
               </h2>
@@ -2353,7 +2361,7 @@ function HomePageContent() {
               ) : null}
             </div>
             <p
-              className={`mt-2 max-w-3xl text-sm sm:text-base ${
+              className={`mt-2 max-w-3xl text-sm max-md:mt-1 max-md:text-[13px] sm:text-base ${
                 isDark ? "text-zinc-300" : "text-zinc-700"
               }`}
             >
@@ -2361,7 +2369,7 @@ function HomePageContent() {
             </p>
             {currentUser && favoriteWorkshopChoices.length > 0 ? (
               <div
-                className={`mt-4 rounded-xl border px-4 py-3 ${
+                className={`mt-4 rounded-xl border px-4 py-3 max-md:mt-2 max-md:px-3 max-md:py-2 ${
                   isDark ? "border-blue-500/30 bg-zinc-900/80" : "border-blue-200 bg-white/90"
                 }`}
               >
@@ -2397,7 +2405,7 @@ function HomePageContent() {
                 ) : null}
               </div>
             ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2 max-md:mt-2 max-md:gap-1.5">
               {vehicleTypeOptions.map((type) => {
                 const active = vehicleType === type.key;
                 return (
@@ -2413,7 +2421,7 @@ function HomePageContent() {
                       setFuel("");
                       setService("");
                     }}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition max-md:px-2.5 max-md:py-1.5 max-md:text-xs ${
                       active
                         ? "border-blue-600 bg-blue-600 text-white"
                         : isDark
@@ -2428,10 +2436,18 @@ function HomePageContent() {
             </div>
             <form
               onSubmit={handleSubmit}
-              className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
+              className="mt-6 grid grid-cols-1 gap-2 max-md:gap-2 max-md:pb-24 md:gap-4 md:grid-cols-2 xl:grid-cols-3"
             >
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">{t("form.labels.vehicleType")}</span>
+              <MobileCompactSearchField
+                label={t("form.labels.vehicleType")}
+                isDark={isDark}
+                icon={searchFormFieldIconMap.vehicleType}
+                error={
+                  searchFieldErrors.vehicleType ? (
+                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.vehicleType}</p>
+                  ) : null
+                }
+              >
                 <AutocompleteSelect
                   value={vehicleType}
                   onChange={(nextValue) => {
@@ -2451,17 +2467,24 @@ function HomePageContent() {
                   placeholder={t("form.selects.vehicleType")}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.vehicleType ? ` ${searchFieldErrorRingClass}` : ""}`}
+                  rootClassName={searchFormAutocompleteShell}
+                  toggleButtonClassName={searchFormChevronToggleHide}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.vehicleType ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   isDark={isDark}
                 />
                 <input type="hidden" name="vehicleType" value={vehicleType} />
-                {searchFieldErrors.vehicleType ? (
-                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.vehicleType}</p>
-                ) : null}
-              </div>
+              </MobileCompactSearchField>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">{t("form.labels.brand")}</span>
+              <MobileCompactSearchField
+                label={t("form.labels.brand")}
+                isDark={isDark}
+                icon={searchFormFieldIconMap.brand}
+                error={
+                  searchFieldErrors.brand ? (
+                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.brand}</p>
+                  ) : null
+                }
+              >
                 <AutocompleteSelect
                   name="brand"
                   value={brand}
@@ -2477,16 +2500,23 @@ function HomePageContent() {
                   disabled={!vehicleType}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.brand ? ` ${searchFieldErrorRingClass}` : ""}`}
+                  rootClassName={searchFormAutocompleteShell}
+                  toggleButtonClassName={searchFormChevronToggleHide}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.brand ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   isDark={isDark}
                 />
-                {searchFieldErrors.brand ? (
-                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.brand}</p>
-                ) : null}
-              </div>
+              </MobileCompactSearchField>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">{t("form.labels.model")}</span>
+              <MobileCompactSearchField
+                label={t("form.labels.model")}
+                isDark={isDark}
+                icon={searchFormFieldIconMap.model}
+                error={
+                  searchFieldErrors.model ? (
+                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.model}</p>
+                  ) : null
+                }
+              >
                 <AutocompleteSelect
                   name="model"
                   value={model}
@@ -2499,16 +2529,23 @@ function HomePageContent() {
                   disabled={!brand}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.model ? ` ${searchFieldErrorRingClass}` : ""}`}
+                  rootClassName={searchFormAutocompleteShell}
+                  toggleButtonClassName={searchFormChevronToggleHide}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.model ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   isDark={isDark}
                 />
-                {searchFieldErrors.model ? (
-                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.model}</p>
-                ) : null}
-              </div>
+              </MobileCompactSearchField>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">{t("form.labels.year")}</span>
+              <MobileCompactSearchField
+                label={t("form.labels.year")}
+                isDark={isDark}
+                icon={searchFormFieldIconMap.year}
+                error={
+                  searchFieldErrors.year ? (
+                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.year}</p>
+                  ) : null
+                }
+              >
                 <AutocompleteSelect
                   name="year"
                   value={year}
@@ -2520,16 +2557,23 @@ function HomePageContent() {
                   placeholder={t("form.selects.year")}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.year ? ` ${searchFieldErrorRingClass}` : ""}`}
+                  rootClassName={searchFormAutocompleteShell}
+                  toggleButtonClassName={searchFormChevronToggleHide}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.year ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   isDark={isDark}
                 />
-                {searchFieldErrors.year ? (
-                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.year}</p>
-                ) : null}
-              </div>
+              </MobileCompactSearchField>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">{translatedFuelLabel}</span>
+              <MobileCompactSearchField
+                label={translatedFuelLabel}
+                isDark={isDark}
+                icon={searchFormFieldIconMap.fuel}
+                error={
+                  searchFieldErrors.fuel ? (
+                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.fuel}</p>
+                  ) : null
+                }
+              >
                 <AutocompleteSelect
                   name="fuel"
                   value={fuel}
@@ -2544,16 +2588,23 @@ function HomePageContent() {
                   disabled={!vehicleType}
                   required
                   noResultsText={t("account.placeholders.noResults")}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.fuel ? ` ${searchFieldErrorRingClass}` : ""}`}
+                  rootClassName={searchFormAutocompleteShell}
+                  toggleButtonClassName={searchFormChevronToggleHide}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.fuel ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   isDark={isDark}
                 />
-                {searchFieldErrors.fuel ? (
-                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.fuel}</p>
-                ) : null}
-              </div>
+              </MobileCompactSearchField>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">{translatedServiceLabel}</span>
+              <MobileCompactSearchField
+                label={translatedServiceLabel}
+                isDark={isDark}
+                icon={searchFormFieldIconMap.service}
+                error={
+                  searchFieldErrors.service ? (
+                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.service}</p>
+                  ) : null
+                }
+              >
                 <ServiceCategoryPicker
                   value={service}
                   onChange={(next) => {
@@ -2563,7 +2614,8 @@ function HomePageContent() {
                   categories={serviceCatalogForVehicleType}
                   disabled={!vehicleType || serviceCatalogForVehicleType.length === 0}
                   isDark={isDark}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.service ? ` ${searchFieldErrorRingClass}` : ""}`}
+                  toggleButtonClassName={searchFormChevronToggleHide}
+                  inputClassName={`${currentFieldClassName}${searchFieldErrors.service ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   placeholder={
                     vehicleType ? t("form.selects.serviceCategory") : t("form.selects.chooseTypeFirst")
                   }
@@ -2571,9 +2623,6 @@ function HomePageContent() {
                   getFinalServiceAvailability={getFinalServiceAvailabilityFromFavorite}
                 />
                 <input type="hidden" name="service" value={service} />
-                {searchFieldErrors.service ? (
-                  <p className={searchFieldErrorHintClass}>{searchFieldErrors.service}</p>
-                ) : null}
                 {selectedFavoriteWorkshopId && favoriteServiceBlocked ? (
                   <div className="mt-2 space-y-2 rounded-xl border border-red-300/50 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-200">
                     <p>
@@ -2592,21 +2641,33 @@ function HomePageContent() {
                     </button>
                   </div>
                 ) : null}
-              </div>
+              </MobileCompactSearchField>
 
-              <label className="flex flex-col gap-2 md:col-span-2 xl:col-span-3">
-                <span className="text-sm font-medium">{t("form.labels.problem")}</span>
+              <MobileCompactSearchField
+                label={t("form.labels.problem")}
+                isDark={isDark}
+                icon={searchFormFieldIconMap.problem}
+                variant="block"
+              >
                 <textarea
                   name="problem"
-                  rows={4}
+                  rows={3}
                   placeholder={t("form.placeholders.problem")}
-                  className={`${currentFieldClassName} min-h-[120px] md:col-span-2`}
+                  className={`${currentFieldClassName} min-h-[100px] w-full max-md:min-h-[104px] max-md:px-2 max-md:py-2 max-md:text-[15px] md:min-h-[120px]`}
                 />
-              </label>
+              </MobileCompactSearchField>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:col-span-2 xl:col-span-3">
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">{t("form.labels.city")}</span>
+              <div className="grid grid-cols-1 gap-2 max-md:gap-2 md:col-span-2 md:grid-cols-2 md:gap-4 xl:col-span-3">
+                <MobileCompactSearchField
+                  label={t("form.labels.city")}
+                  isDark={isDark}
+                  icon={searchFormFieldIconMap.city}
+                  error={
+                    searchFieldErrors.city ? (
+                      <p className={searchFieldErrorHintClass}>{searchFieldErrors.city}</p>
+                    ) : null
+                  }
+                >
                   <input
                     type="text"
                     name="city"
@@ -2616,14 +2677,10 @@ function HomePageContent() {
                       setSearchCity(event.target.value);
                     }}
                     placeholder={t("form.placeholders.city")}
-                    className={`${currentFieldClassName}${searchFieldErrors.city ? ` ${searchFieldErrorRingClass}` : ""}`}
+                    className={`${currentFieldClassName}${searchFieldErrors.city ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   />
-                  {searchFieldErrors.city ? (
-                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.city}</p>
-                  ) : null}
-                </label>
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">VIN</span>
+                </MobileCompactSearchField>
+                <MobileCompactSearchField label="VIN" isDark={isDark} icon={searchFormFieldIconMap.vin}>
                   <input
                     type="text"
                     name="vin"
@@ -2631,33 +2688,41 @@ function HomePageContent() {
                     value={searchVin}
                     onChange={(event) => setSearchVin(event.target.value.toUpperCase().slice(0, 17))}
                     placeholder="np. WAUZZZ8V6JA000001"
-                    className={currentFieldClassName}
+                    className={`${currentFieldClassName} ${searchFormControlMobileStrip}`}
                   />
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>lub</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedSavedCarId("");
-                        setShowManualVehicle((prev) => !prev);
-                        setVehicleType("");
-                        setBrand("");
-                        setModel("");
-                        setYear("");
-                        setFuel("");
-                        setService("");
-                        setSearchCity("");
-                        setSearchVin("");
-                      }}
-                      className={`text-xs font-semibold ${isDark ? "text-blue-300 hover:text-orange-300" : "text-blue-700 hover:text-orange-600"}`}
-                    >
-                      {t("form.manual.toggleShow")}
-                    </button>
-                  </div>
-                </label>
+                  {SHOW_MANUAL_MISSING_VEHICLE_UI ? (
+                    <div className="mt-1 flex items-center gap-2 max-md:mt-1 md:mt-1">
+                      <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>lub</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSavedCarId("");
+                          setShowManualVehicle((prev) => !prev);
+                          setVehicleType("");
+                          setBrand("");
+                          setModel("");
+                          setYear("");
+                          setFuel("");
+                          setService("");
+                          setSearchCity("");
+                          setSearchVin("");
+                        }}
+                        className={`text-xs font-semibold ${isDark ? "text-blue-300 hover:text-orange-300" : "text-blue-700 hover:text-orange-600"}`}
+                      >
+                        {t("form.manual.toggleShow")}
+                      </button>
+                    </div>
+                  ) : null}
+                </MobileCompactSearchField>
               </div>
 
-              <div className="mt-1 grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-3">
+              <div
+                className={`z-[1002] mt-1 grid grid-cols-1 gap-2 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:mx-auto max-md:mt-0 max-md:w-full max-md:grid-cols-2 max-md:gap-2 max-md:border-t max-md:px-3 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] max-md:pt-2 max-md:backdrop-blur-xl md:static md:col-span-2 md:grid md:grid-cols-2 md:gap-3 md:border-0 md:px-0 md:pb-0 md:pt-0 xl:col-span-3 ${
+                  isDark
+                    ? "max-md:border-zinc-700/80 max-md:bg-zinc-950/95"
+                    : "max-md:border-blue-200/90 max-md:bg-white/95"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => {
@@ -2675,7 +2740,7 @@ function HomePageContent() {
                     setMessage("");
                     setMessageType("");
                   }}
-                  className={`inline-flex h-12 w-full items-center justify-center rounded-xl border px-6 py-3 font-semibold transition-all duration-300 hover:scale-[1.02] ${
+                  className={`inline-flex h-10 w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-300 hover:scale-[1.01] max-md:h-10 md:h-12 md:px-6 md:py-3 md:text-base ${
                     isDark
                       ? "border-zinc-600 bg-zinc-900/70 text-zinc-100 hover:border-blue-400/60"
                       : "border-blue-200 bg-white text-zinc-800 hover:border-blue-500"
@@ -2686,13 +2751,13 @@ function HomePageContent() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-6 py-3 font-semibold text-white shadow-[0_10px_30px_rgba(59,130,246,0.28),0_8px_22px_rgba(249,115,22,0.24)] transition-all duration-300 hover:scale-[1.02] hover:from-blue-500 hover:to-orange-400 hover:shadow-[0_14px_36px_rgba(59,130,246,0.35),0_10px_28px_rgba(249,115,22,0.3)]"
+                  className="inline-flex h-10 w-full max-h-12 items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(59,130,246,0.28),0_8px_22px_rgba(249,115,22,0.24)] transition-all duration-300 hover:scale-[1.01] hover:from-blue-500 hover:to-orange-400 hover:shadow-[0_14px_36px_rgba(59,130,246,0.35),0_10px_28px_rgba(249,115,22,0.3)] max-md:h-10 max-md:max-h-[48px] md:h-12 md:px-6 md:py-3 md:text-base"
                 >
                   {isSubmitting ? t("form.buttons.submitting") : t("form.buttons.submit")}
                 </button>
               </div>
 
-              {showManualVehicle ? (
+              {SHOW_MANUAL_MISSING_VEHICLE_UI && showManualVehicle ? (
                 <div
                   className={`md:col-span-2 rounded-2xl border p-4 sm:p-5 ${
                     isDark
