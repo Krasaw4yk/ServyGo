@@ -1,0 +1,195 @@
+"use client";
+
+import { memo, useEffect, useMemo, useState } from "react";
+
+const VEHICLE_PRICE_MODAL_PAGE = 50;
+
+export type WorkshopVehiclePricingListRow = {
+  id?: string;
+  workshop_service_id: string;
+  service_name: string;
+  vehicle_type: string;
+  brand: string;
+  model: string;
+  year_from: string;
+  year_to: string;
+  engine: string;
+  fuel: string;
+  transmission: string;
+  price_from: string;
+  price_to: string;
+  duration_minutes: string;
+  is_active: boolean;
+};
+
+type VehicleTypeOption = { key: string; label: string };
+
+type WorkshopVehiclePricingListModalProps = {
+  isDark: boolean;
+  readOnly: boolean;
+  selectedServiceName: string;
+  rows: WorkshopVehiclePricingListRow[];
+  vehicleTypeOptions: readonly VehicleTypeOption[];
+  vehiclePriceActionId: string | null;
+  onClose: () => void;
+  onAdd: () => void;
+  onToggleActive: (row: WorkshopVehiclePricingListRow, next: boolean) => void;
+  onEdit: (row: WorkshopVehiclePricingListRow) => void;
+  onDelete: (row: WorkshopVehiclePricingListRow) => void;
+};
+
+function WorkshopVehiclePricingListModalInner({
+  isDark,
+  readOnly,
+  selectedServiceName,
+  rows,
+  vehicleTypeOptions,
+  vehiclePriceActionId,
+  onClose,
+  onAdd,
+  onToggleActive,
+  onEdit,
+  onDelete,
+}: WorkshopVehiclePricingListModalProps) {
+  const [rowLimit, setRowLimit] = useState(VEHICLE_PRICE_MODAL_PAGE);
+
+  useEffect(() => {
+    setRowLimit(VEHICLE_PRICE_MODAL_PAGE);
+  }, [selectedServiceName]);
+
+  const typeLabelByKey = useMemo(
+    () => new Map(vehicleTypeOptions.map((x) => [x.key, x.label])),
+    [vehicleTypeOptions],
+  );
+
+  const visibleRows = useMemo(() => rows.slice(0, rowLimit), [rows, rowLimit]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-5">
+      <button type="button" className="absolute inset-0" aria-label="Zamknij panel cen aut" onClick={onClose} />
+      <div
+        className={`relative z-[1] h-[94vh] w-full overflow-hidden border sm:h-auto sm:max-h-[90vh] sm:max-w-6xl sm:rounded-2xl ${
+          isDark ? "border-blue-500/35 bg-zinc-950 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
+        }`}
+      >
+        <div className={`sticky top-0 z-10 border-b px-4 py-3 sm:px-5 ${isDark ? "border-zinc-800 bg-zinc-950" : "border-blue-100 bg-white"}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-lg font-semibold">
+                {selectedServiceName ? `${selectedServiceName} — ceny dla konkretnych aut` : "Ceny dla konkretnych aut"}
+              </h3>
+              <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Ustawiasz tutaj ceny i czas tylko dla wybranego auta.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={readOnly || !selectedServiceName}
+                onClick={onAdd}
+                className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-600 disabled:opacity-50"
+              >
+                Dodaj cenę dla auta
+              </button>
+              <button type="button" onClick={onClose} className="rounded-lg border px-3 py-2 text-xs font-semibold">
+                Zamknij
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-h-[calc(94vh-116px)] overflow-auto p-4 sm:max-h-[calc(90vh-120px)] sm:p-5">
+          {rows.length === 0 ? (
+            <p className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-700 text-zinc-400" : "border-blue-100 text-zinc-600"}`}>
+              Brak cen aut dla tej usługi. Dodaj pierwszy wariant.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[1080px] w-full text-sm">
+                <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
+                  <tr>
+                    <th className="px-2 py-2 text-left">Pojazd</th>
+                    <th className="px-2 py-2 text-left">Szczegóły</th>
+                    <th className="px-2 py-2 text-left">Rok produkcji</th>
+                    <th className="px-2 py-2 text-left">Cena od</th>
+                    <th className="px-2 py-2 text-left">Cena do</th>
+                    <th className="px-2 py-2 text-left">Czas (min)</th>
+                    <th className="px-2 py-2 text-left">Aktywne</th>
+                    <th className="px-2 py-2 text-left">Akcje</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.map((row, idx) => {
+                    const details = [row.engine.trim(), row.fuel.trim(), row.transmission.trim()].filter(Boolean).join(" · ") || "—";
+                    const yearRange =
+                      row.year_from && row.year_to
+                        ? `${row.year_from}-${row.year_to}`
+                        : row.year_from || row.year_to || "—";
+                    const vehicleTypeLabel = typeLabelByKey.get(row.vehicle_type) ?? "Pojazd";
+                    const actionKey = row.id ?? `${row.service_name}:${row.brand}:${row.model}:${row.engine}`;
+                    const actionBusy = vehiclePriceActionId === actionKey;
+                    return (
+                      <tr key={row.id ?? `vehicle-row-modal-${idx}`} className={`border-t ${isDark ? "border-zinc-800" : "border-blue-100"}`}>
+                        <td className="px-2 py-2">
+                          <p className="font-semibold">{[row.brand, row.model].filter(Boolean).join(" ") || "—"}</p>
+                          <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{vehicleTypeLabel}</p>
+                        </td>
+                        <td className="px-2 py-2 text-xs">{details}</td>
+                        <td className="px-2 py-2">{yearRange}</td>
+                        <td className="px-2 py-2">{row.price_from.trim() ? `${row.price_from} zł` : "—"}</td>
+                        <td className="px-2 py-2">{row.price_to.trim() ? `${row.price_to} zł` : "—"}</td>
+                        <td className="px-2 py-2">{row.duration_minutes.trim() ? `${row.duration_minutes} min` : "—"}</td>
+                        <td className="px-2 py-2">
+                          <button
+                            type="button"
+                            disabled={readOnly || actionBusy}
+                            onClick={() => void onToggleActive(row, !row.is_active)}
+                            className={`inline-flex h-6 w-11 items-center rounded-full border p-0.5 transition disabled:opacity-50 ${
+                              row.is_active
+                                ? "border-blue-500 bg-blue-500"
+                                : isDark
+                                  ? "border-zinc-600 bg-zinc-700"
+                                  : "border-zinc-300 bg-zinc-300"
+                            }`}
+                            aria-label={row.is_active ? "Ustaw jako nieaktywne" : "Ustaw jako aktywne"}
+                          >
+                            <span className={`h-4 w-4 rounded-full bg-white transition ${row.is_active ? "translate-x-5" : "translate-x-0"}`} />
+                          </button>
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            <button type="button" disabled={readOnly || actionBusy} onClick={() => onEdit(row)} className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50">
+                              Edytuj
+                            </button>
+                            <button type="button" disabled={readOnly || actionBusy} onClick={() => void onDelete(row)} className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-500 disabled:opacity-50">
+                              Usuń
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {rows.length > visibleRows.length ? (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold ${isDark ? "border-zinc-600 text-zinc-200" : "border-zinc-300 text-zinc-800"}`}
+                    onClick={() => setRowLimit((n) => n + VEHICLE_PRICE_MODAL_PAGE)}
+                  >
+                    Pokaż więcej ({rows.length - visibleRows.length} pozostałych)
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <div className={`mt-4 rounded-xl border px-3 py-2 text-xs ${isDark ? "border-blue-500/40 bg-blue-950/30 text-blue-100" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+            Ceny ustawione tutaj mają pierwszeństwo dla wybranego auta.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default memo(WorkshopVehiclePricingListModalInner);

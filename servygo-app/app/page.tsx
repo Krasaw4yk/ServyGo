@@ -585,8 +585,9 @@ function HomePageContent() {
   const currentVehicleConfig = vehicleType ? vehicleData[vehicleType] : null;
   const brandsForVehicleType = getVehicleBrands(vehicleType);
   const fuelsForVehicleType = getVehicleFuels(vehicleType);
+  /** Katalog w pickerze: bez wybranego typu pokazujemy drzewo jak dla „samochód” (22+ główne tematy z usługi.txt), żeby pole nie było puste. Po wyborze typu lista przełącza się na właściwy katalog. */
   const serviceCatalogForVehicleType = useMemo(
-    () => (vehicleType ? getServiceCatalogByVehicleType(vehicleType) : []),
+    () => getServiceCatalogByVehicleType((vehicleType || "car") as VehicleTypeKey),
     [vehicleType],
   );
   const favoriteMatchCriteria = useMemo(
@@ -2601,13 +2602,11 @@ function HomePageContent() {
                     setService(next);
                   }}
                   categories={serviceCatalogForVehicleType}
-                  disabled={!vehicleType || serviceCatalogForVehicleType.length === 0}
+                  disabled={serviceCatalogForVehicleType.length === 0}
                   isDark={isDark}
                   toggleButtonClassName={searchFormChevronToggleHide}
                   inputClassName={`${currentFieldClassName}${searchFieldErrors.service ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  placeholder={
-                    vehicleType ? t("form.selects.serviceCategory") : t("form.selects.chooseTypeFirst")
-                  }
+                  placeholder={t("form.selects.serviceCategory")}
                   noResultsText={t("account.placeholders.noResults")}
                   getFinalServiceAvailability={getFinalServiceAvailabilityFromFavorite}
                 />

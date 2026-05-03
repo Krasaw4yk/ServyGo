@@ -2,11 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ServiceCategory } from "@/lib/serviceCatalog";
-import { SERVICE_CATALOG_MAIN_ORDER } from "@/lib/serviceCatalog";
-import {
-  SERVICE_MAIN_CATEGORIES,
-  normalizeServiceTextForMatch,
-} from "@/lib/serviceCategoryClassifier";
+import { normalizeServiceTextForMatch } from "@/lib/serviceCategoryClassifier";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 
 type FinalServiceAvailability = {
@@ -60,17 +56,6 @@ function rankSearchMatch(label: string, query: string) {
 
 function sortByLabel<T extends { name: string }>(items: T[]) {
   return [...items].sort((a, b) => a.name.localeCompare(b.name, "pl", { sensitivity: "base" }));
-}
-
-function sortCategoriesByMainOrder<T extends { name: string }>(categories: T[]) {
-  const treeOrder = new Map(SERVICE_CATALOG_MAIN_ORDER.map((name, idx) => [name, idx]));
-  const legacyOrder = new Map(SERVICE_MAIN_CATEGORIES.map((name, idx) => [name, idx]));
-  return [...categories].sort((a, b) => {
-    const ao = treeOrder.get(a.name) ?? legacyOrder.get(a.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
-    const bo = treeOrder.get(b.name) ?? legacyOrder.get(b.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
-    if (ao !== bo) return ao - bo;
-    return a.name.localeCompare(b.name, "pl", { sensitivity: "base" });
-  });
 }
 
 export default function ServiceCategoryPicker({
@@ -149,7 +134,7 @@ export default function ServiceCategoryPicker({
   const displayValue = isOpen ? query : value;
   const sortedCategories = useMemo(
     () =>
-      sortCategoriesByMainOrder(categories).map((category) => ({
+      sortByLabel(categories).map((category) => ({
         ...category,
         subcategories: sortByLabel(category.subcategories).map((subcategory) => ({
           ...subcategory,

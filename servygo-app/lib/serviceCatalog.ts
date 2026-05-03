@@ -685,41 +685,77 @@ function collectLeafNamesFromCategories(categories: ServiceCategory[]): string[]
   return names;
 }
 
+/** Sortowanie etykiet katalogu (kategorie, podkategorie, usługi) — alfabet polski. */
+export function comparePolishServiceLabel(a: string, b: string): number {
+  return a.localeCompare(b, "pl", { sensitivity: "base" });
+}
+
+function sortServiceCatalogTree(categories: ServiceCategory[]): ServiceCategory[] {
+  return [...categories]
+    .sort((a, b) => comparePolishServiceLabel(a.name, b.name))
+    .map((category) => ({
+      ...category,
+      subcategories: [...category.subcategories]
+        .sort((a, b) => comparePolishServiceLabel(a.name, b.name))
+        .map((subcategory) => ({
+          ...subcategory,
+          services: [...subcategory.services].sort((a, b) =>
+            comparePolishServiceLabel(a.name, b.name),
+          ),
+        })),
+    }));
+}
+
 export function getServiceCatalogByVehicleType(vehicleType: string): ServiceCategory[] {
   const normalizedType = vehicleType as VehicleTypeKey;
   if (normalizedType === "motorcycle") {
-    return [...baseCatalog, motorcycleExtras];
+    return sortServiceCatalogTree([...baseCatalog, motorcycleExtras]);
   }
   if (normalizedType === "van") {
-    return [...baseCatalog, vanExtras];
+    return sortServiceCatalogTree([...baseCatalog, vanExtras]);
   }
-  return baseCatalog;
+  return sortServiceCatalogTree([...baseCatalog]);
 }
 
 function normalizeCatalogServiceNameKey(name: string) {
   return name.trim().toLocaleLowerCase("pl");
 }
 
-/** Główna kategoria z drzewa katalogu (wszystkie typy pojazdu) dla nazwy liścia. */
-export function getCatalogMainCategoryForService(serviceName: string): string | null {
-  const target = normalizeCatalogServiceNameKey(serviceName);
-  if (!target) return null;
+let catalogLeafKeyToMainCategoryCache: Map<string, string> | null = null;
+
+function getCatalogLeafKeyToMainCategoryMap(): Map<string, string> {
+  if (catalogLeafKeyToMainCategoryCache) return catalogLeafKeyToMainCategoryCache;
+  const m = new Map<string, string>();
   for (const vt of ["car", "motorcycle", "van"] as VehicleTypeKey[]) {
     for (const cat of getServiceCatalogByVehicleType(vt)) {
       for (const sub of cat.subcategories) {
         for (const leaf of sub.services) {
-          if (normalizeCatalogServiceNameKey(leaf.name) === target) {
-            return cat.name;
-          }
+          const k = normalizeCatalogServiceNameKey(leaf.name);
+          if (k && !m.has(k)) m.set(k, cat.name);
         }
       }
     }
   }
-  return null;
+  catalogLeafKeyToMainCategoryCache = m;
+  return m;
 }
 
-/** Kategorie w `<select>` panelu warsztatu — zgodne z katalogiem (`SERVICE_CATALOG_MAIN_ORDER`) + „Inne”. */
-export const WORKSHOP_SERVICE_CATEGORY_OPTIONS: readonly string[] = [...SERVICE_CATALOG_MAIN_ORDER, "Inne"];
+/** Główna kategoria z drzewa katalogu (wszystkie typy pojazdu) dla nazwy liścia. */
+export function getCatalogMainCategoryForService(serviceName: string): string | null {
+  const target = normalizeCatalogServiceNameKey(serviceName);
+  if (!target) return null;
+  return getCatalogLeafKeyToMainCategoryMap().get(target) ?? null;
+}
+
+/** Główne kategorie (jak w katalogu), alfabetycznie (pl); na końcu „Inne”. */
+const WORKSHOP_MAIN_CATEGORY_NAMES_ALPHA = [...SERVICE_CATALOG_MAIN_ORDER].sort(comparePolishServiceLabel);
+
+/** Kategorie w `<select>` panelu warsztatu — alfabetycznie + „Inne”. */
+export const WORKSHOP_SERVICE_CATEGORY_OPTIONS: readonly string[] = [...WORKSHOP_MAIN_CATEGORY_NAMES_ALPHA, "Inne"];
+
+const WORKSHOP_MAIN_CATEGORY_ALPHA_INDEX = new Map(
+  WORKSHOP_MAIN_CATEGORY_NAMES_ALPHA.map((name, idx) => [name, idx]),
+);
 
 const WORKSHOP_SERVICE_CATEGORY_OPTION_SET = new Set(WORKSHOP_SERVICE_CATEGORY_OPTIONS);
 
@@ -765,14 +801,17 @@ export function isWorkshopServiceCategoryOption(value: string): boolean {
 }
 
 export function workshopServiceCategorySortIndex(name: string): number {
-  const idx = SERVICE_CATALOG_MAIN_ORDER.indexOf(name as (typeof SERVICE_CATALOG_MAIN_ORDER)[number]);
-  if (idx >= 0) return idx;
-  if (name === "Inne") return SERVICE_CATALOG_MAIN_ORDER.length + 1;
-  return SERVICE_CATALOG_MAIN_ORDER.length;
+  if (name === "Inne") return WORKSHOP_MAIN_CATEGORY_NAMES_ALPHA.length;
+  const idx = WORKSHOP_MAIN_CATEGORY_ALPHA_INDEX.get(name);
+  if (idx !== undefined) return idx;
+  return WORKSHOP_MAIN_CATEGORY_NAMES_ALPHA.length;
 }
+
+let allCatalogServiceLeafNamesCache: string[] | null = null;
 
 /** Wszystkie nazwy usług z katalogu (samochód + motocykl + dostawczy), bez duplikatów — jedno źródło dla panelu warsztatu. */
 export function getAllCatalogServiceLeafNames(): string[] {
+  if (allCatalogServiceLeafNamesCache) return allCatalogServiceLeafNamesCache;
   const seen = new Set<string>();
   const out: string[] = [];
   const add = (name: string) => {
@@ -787,7 +826,9 @@ export function getAllCatalogServiceLeafNames(): string[] {
       add(n);
     }
   }
-  return out.sort((a, b) => a.localeCompare(b, "pl", { sensitivity: "base" }));
+  out.sort((a, b) => a.localeCompare(b, "pl", { sensitivity: "base" }));
+  allCatalogServiceLeafNamesCache = out;
+  return out;
 }
 
 export type WorkshopServiceCatalogFlatRow = {
@@ -800,7 +841,10 @@ export type WorkshopServiceCatalogFlatRow = {
  * Ta sama płaska lista liści co `getAllCatalogServiceLeafNames()`, zbudowana przez drzewo
  * `getServiceCatalogByVehicleType` (osobówka + motocykl + dostawczy) — dla panelu warsztatu.
  */
+let workshopServiceCatalogFlatRowsCache: WorkshopServiceCatalogFlatRow[] | null = null;
+
 export function getWorkshopServiceCatalogFlatRows(): WorkshopServiceCatalogFlatRow[] {
+  if (workshopServiceCatalogFlatRowsCache) return workshopServiceCatalogFlatRowsCache;
   const seen = new Set<string>();
   const names: string[] = [];
   const addName = (name: string) => {
@@ -820,11 +864,12 @@ export function getWorkshopServiceCatalogFlatRows(): WorkshopServiceCatalogFlatR
     }
   }
   names.sort((a, b) => a.localeCompare(b, "pl", { sensitivity: "base" }));
-  return names.map((name) => ({
+  workshopServiceCatalogFlatRowsCache = names.map((name) => ({
     key: slugifyServiceKey(name),
     name,
     category: resolveWorkshopServiceCategory(name, "", false),
   }));
+  return workshopServiceCatalogFlatRowsCache;
 }
 
 /**
