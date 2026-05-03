@@ -20,7 +20,7 @@ import RecommendedWorkshopsSection from "@/components/home/RecommendedWorkshopsS
 import LandingCtaFooter from "@/components/home/LandingCtaFooter";
 import LandingInfoDialogs from "@/components/home/LandingInfoDialogs";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
-import { getServiceCatalogGroupedByMainCategory } from "@/lib/serviceCatalog";
+import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
 import {
   createTranslator,
   getTranslationNode,
@@ -586,7 +586,7 @@ function HomePageContent() {
   const brandsForVehicleType = getVehicleBrands(vehicleType);
   const fuelsForVehicleType = getVehicleFuels(vehicleType);
   const serviceCatalogForVehicleType = useMemo(
-    () => (vehicleType ? getServiceCatalogGroupedByMainCategory(vehicleType) : []),
+    () => (vehicleType ? getServiceCatalogByVehicleType(vehicleType) : []),
     [vehicleType],
   );
   const favoriteMatchCriteria = useMemo(

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ServiceCategory } from "@/lib/serviceCatalog";
+import { SERVICE_CATALOG_MAIN_ORDER } from "@/lib/serviceCatalog";
 import {
   SERVICE_MAIN_CATEGORIES,
   normalizeServiceTextForMatch,
@@ -24,6 +25,8 @@ type ServiceCategoryPickerProps = {
   noResultsText?: string;
   /** Gdy zwraca obiekt: `available: false` = usługa niedostępna w wybranym warsztacie (wyszarzenie, brak wyboru). */
   getFinalServiceAvailability?: (serviceName: string) => FinalServiceAvailability | null;
+  /** Ukrywa „Inna usługa / wpisz ręcznie” na mobile (np. gdy własna usługa jest osobnym przyciskiem). */
+  hideManualServiceEntry?: boolean;
   rootClassName?: string;
   toggleButtonClassName?: string;
 };
@@ -60,10 +63,11 @@ function sortByLabel<T extends { name: string }>(items: T[]) {
 }
 
 function sortCategoriesByMainOrder<T extends { name: string }>(categories: T[]) {
-  const order = new Map(SERVICE_MAIN_CATEGORIES.map((name, idx) => [name, idx]));
+  const treeOrder = new Map(SERVICE_CATALOG_MAIN_ORDER.map((name, idx) => [name, idx]));
+  const legacyOrder = new Map(SERVICE_MAIN_CATEGORIES.map((name, idx) => [name, idx]));
   return [...categories].sort((a, b) => {
-    const ao = order.get(a.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
-    const bo = order.get(b.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
+    const ao = treeOrder.get(a.name) ?? legacyOrder.get(a.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
+    const bo = treeOrder.get(b.name) ?? legacyOrder.get(b.name as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 999;
     if (ao !== bo) return ao - bo;
     return a.name.localeCompare(b.name, "pl", { sensitivity: "base" });
   });
@@ -79,6 +83,7 @@ export default function ServiceCategoryPicker({
   placeholder = "Wybierz kategorię",
   noResultsText = "Brak wyników",
   getFinalServiceAvailability,
+  hideManualServiceEntry = false,
   rootClassName = "",
   toggleButtonClassName = "",
 }: ServiceCategoryPickerProps) {
@@ -537,7 +542,7 @@ export default function ServiceCategoryPicker({
                     Wyczyść
                   </button>
                 ) : null}
-                {!normalizeSearchText(query) ? (
+                {!hideManualServiceEntry && !normalizeSearchText(query) ? (
                   <button
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}

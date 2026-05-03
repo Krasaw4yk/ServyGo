@@ -2,6 +2,7 @@ import type { VehicleTypeKey } from "@/lib/vehicleData";
 import {
   classifyServiceCategory,
   SERVICE_MAIN_CATEGORIES,
+  slugifyServiceKey,
   type ServiceMainCategory,
 } from "@/lib/serviceCategoryClassifier";
 
@@ -29,8 +30,38 @@ function createCategory(name: string, subcategories: Array<{ name: string; servi
   };
 }
 
+/**
+ * Kolejność kategorii głównych wg listy `usługi.txt` (22 tematy osobowe) oraz na końcu dodatki moto/van.
+ */
+export const SERVICE_CATALOG_MAIN_ORDER: readonly string[] = [
+  "Kontrole i przeglądy okresowe",
+  "Olej i filtry",
+  "Opony i koła",
+  "Hamulce",
+  "Diagnostyka",
+  "Silnik",
+  "Elektryka pojazdu",
+  "Akumulator i rozruch",
+  "Klimatyzacja",
+  "Zawieszenie",
+  "Układ kierowniczy",
+  "Skrzynia biegów i napęd",
+  "Układ wydechowy",
+  "Płyny eksploatacyjne",
+  "Przeglądy flotowe i kontrole układów",
+  "Auto przed zakupem",
+  "Blacharstwo i lakiernictwo",
+  "Szyby i widoczność",
+  "Oświetlenie",
+  "Objawy i pomoc drogowa",
+  "Turbo i doładowanie",
+  "Serwis hybryd i elektryków",
+  "Motocykl - serwis",
+  "Dostawczy - serwis flotowy",
+] as const;
+
 const baseCatalog: ServiceCategory[] = [
-  createCategory("Serwis podstawowy", [
+  createCategory("Kontrole i przeglądy okresowe", [
     {
       name: "Kontrole sezonowe",
       services: [
@@ -49,6 +80,9 @@ const baseCatalog: ServiceCategory[] = [
         "Kontrola układów bezpieczeństwa",
         "Sprawdzenie stanu opon",
         "Kontrola stanu technicznego",
+        "Przegląd przed dłuższą trasą",
+        "Przegląd auta przed wakacjami",
+        "Przegląd auta przed zimą",
       ],
     },
     {
@@ -79,11 +113,7 @@ const baseCatalog: ServiceCategory[] = [
     },
     {
       name: "Czyszczenie",
-      services: [
-        "Czyszczenie filtra DPF/EGR",
-        "Płukanie układu olejowego",
-        "Czyszczenie układu dolotowego",
-      ],
+      services: ["Czyszczenie filtra DPF/EGR", "Płukanie układu olejowego", "Czyszczenie układu dolotowego"],
     },
   ]),
   createCategory("Opony i koła", [
@@ -122,10 +152,6 @@ const baseCatalog: ServiceCategory[] = [
         "Wymiana klocków hamulcowych (przednie/tylne)",
         "Wymiana tarcz hamulcowych (przednie/tylne)",
         "Wymiana klocków i tarcz hamulcowych",
-        "Wymiana przednich klocków hamulcowych",
-        "Wymiana tylnych klocków hamulcowych",
-        "Wymiana klocków hamulcowych",
-        "Wymiana tarcz hamulcowych",
         "Wymiana bębnów i szczęk",
         "Wymiana szczęk hamulca ręcznego",
       ],
@@ -139,15 +165,11 @@ const baseCatalog: ServiceCategory[] = [
         "Naprawa hamulca ręcznego",
         "Wymiana przewodów hamulcowych",
         "Wymiana cylinderków hamulcowych",
-        "Kontrola układu hamulcowego",
       ],
     },
     {
-      name: "Diagnostyka",
-      services: [
-        "Diagnostyka ABS/ESP",
-        "Diagnostyka zużycia tarcz i klocków",
-      ],
+      name: "Diagnostyka hamulców",
+      services: ["Kontrola układu hamulcowego", "Diagnostyka ABS/ESP", "Diagnostyka zużycia tarcz i klocków"],
     },
   ]),
   createCategory("Diagnostyka", [
@@ -158,7 +180,6 @@ const baseCatalog: ServiceCategory[] = [
         "Kasowanie błędów",
         "Diagnostyka kontrolki check engine",
         "Diagnostyka komputerowa pełna",
-        "Diagnostyka komputerowa",
         "Diagnostyka systemów ABS/ESP/SRS",
         "Diagnostyka DPF/EGR",
       ],
@@ -170,20 +191,9 @@ const baseCatalog: ServiceCategory[] = [
         "Diagnostyka układu paliwowego",
         "Diagnostyka układu chłodzenia",
         "Diagnostyka układu ładowania",
-        "Diagnostyka systemów hybrydowych/elektrycznych",
         "Diagnostyka układu start-stop",
         "Diagnostyka elektryczna",
         "Diagnostyka problemów z odpalaniem",
-      ],
-    },
-    {
-      name: "Diagnostyka przed zakupem",
-      services: [
-        "Diagnostyka komputerowa przed zakupem",
-        "Kontrola lakieru i grubości",
-        "Kontrola zawieszenia",
-        "Oględziny karoserii",
-        "Jazda próbna z mechanikiem",
       ],
     },
   ]),
@@ -192,9 +202,7 @@ const baseCatalog: ServiceCategory[] = [
       name: "Naprawy główne",
       services: [
         "Naprawa/rewizja silnika",
-        "Naprawa silnika",
         "Wymiana rozrządu (pasek/łańcuch)",
-        "Wymiana rozrządu",
         "Wymiana uszczelki pod głowicą",
         "Wymiana pierścieni",
         "Szlifowanie wału korbowego",
@@ -210,7 +218,6 @@ const baseCatalog: ServiceCategory[] = [
         "Wymiana cewek zapłonowych",
         "Regulacja zaworów",
         "Wymiana kabli zapłonowych",
-        "Regeneracja wtryskiwaczy",
       ],
     },
     {
@@ -218,9 +225,6 @@ const baseCatalog: ServiceCategory[] = [
       services: [
         "Czyszczenie przepustnicy",
         "Czyszczenie zaworu EGR",
-        "Czyszczenie EGR",
-        "Czyszczenie DPF/FAP",
-        "Czyszczenie DPF",
         "Czyszczenie wtryskiwaczy",
         "Dekarbonizacja silnika (hydrogenizacja)",
       ],
@@ -236,7 +240,7 @@ const baseCatalog: ServiceCategory[] = [
       ],
     },
   ]),
-  createCategory("Elektryka", [
+  createCategory("Elektryka pojazdu", [
     {
       name: "Instalacja i osprzęt",
       services: [
@@ -253,7 +257,6 @@ const baseCatalog: ServiceCategory[] = [
       services: [
         "Naprawa centralnego zamka",
         "Naprawa elektrycznych szyb/luster",
-        "Naprawa szyb elektrycznych",
         "Naprawa czujników parkowania",
         "Wymiana czujnika temperatury",
         "Wymiana czujnika ABS",
@@ -291,8 +294,6 @@ const baseCatalog: ServiceCategory[] = [
     {
       name: "Problemy z odpalaniem",
       services: [
-        "Diagnostyka problemów z odpalaniem",
-        "Awaryjne uruchomienie auta",
         "Sprawdzenie świec żarowych",
         "Sprawdzenie rozrusznika",
         "Sprawdzenie układu start-stop",
@@ -344,7 +345,6 @@ const baseCatalog: ServiceCategory[] = [
         "Wymiana wahacza",
         "Wymiana tulei wahacza",
         "Wymiana łącznika stabilizatora",
-        "Wymiana łączników stabilizatora",
         "Wymiana sworznia wahacza",
         "Wymiana poduszek amortyzatora",
         "Wymiana łożysk amortyzatora",
@@ -352,7 +352,7 @@ const baseCatalog: ServiceCategory[] = [
       ],
     },
     {
-      name: "Diagnostyka",
+      name: "Diagnostyka zawieszenia",
       services: [
         "Diagnostyka zawieszenia",
         "Diagnostyka amortyzatorów",
@@ -377,12 +377,11 @@ const baseCatalog: ServiceCategory[] = [
       ],
     },
   ]),
-  createCategory("Skrzynia biegów", [
+  createCategory("Skrzynia biegów i napęd", [
     {
-      name: "Obsługa i naprawy",
+      name: "Obsługa i naprawy skrzyni",
       services: [
         "Wymiana oleju w skrzyni biegów (manual/automat)",
-        "Wymiana oleju w skrzyni biegów",
         "Diagnostyka skrzyni biegów",
         "Naprawa skrzyni manualnej",
         "Naprawa skrzyni automatycznej",
@@ -392,22 +391,13 @@ const baseCatalog: ServiceCategory[] = [
         "Aktualizacja oprogramowania skrzyni biegów",
       ],
     },
-  ]),
-  createCategory("Sprzęgło", [
-    {
-      name: "Naprawa sprzęgła",
-      services: [
-        "Wymiana sprzęgła",
-        "Diagnostyka sprzęgła",
-        "Wymiana dwumasowego koła zamachowego",
-        "Wymiana koła dwumasowego",
-        "Wymiana wysprzęglika",
-        "Naprawa sprzęgła",
-      ],
-    },
     {
       name: "Napęd i sprzęgło",
       services: [
+        "Wymiana sprzęgła",
+        "Wymiana dwumasowego koła zamachowego",
+        "Wymiana wysprzęglika",
+        "Naprawa sprzęgła",
         "Naprawa mechanizmu różnicowego",
         "Wymiana półosi",
         "Wymiana przegubów",
@@ -429,7 +419,6 @@ const baseCatalog: ServiceCategory[] = [
         "Regeneracja sondy lambda",
         "Usuwanie nieszczelności wydechu",
         "Wymiana elastycznego łącznika",
-        "Naprawa DPF",
       ],
     },
     {
@@ -440,12 +429,16 @@ const baseCatalog: ServiceCategory[] = [
         "Wymiana DPF",
         "Regeneracja DPF",
         "Diagnostyka EGR",
-        "Czyszczenie EGR",
+        "Czyszczenie zaworu EGR",
         "Wymiana EGR",
-        "Diagnostyka AdBlue",
+        "Diagnostyka układu AdBlue",
         "Wymiana pompy AdBlue",
         "Wymiana zbiornika AdBlue",
-        "Programowanie AdBlue",
+        "Wymiana wtryskiwacza AdBlue",
+        "Wymiana filtra AdBlue",
+        "Uzupełnienie AdBlue",
+        "Programowanie systemu AdBlue",
+        "Diagnostyka i regeneracja DPF/FAP",
       ],
     },
   ]),
@@ -458,23 +451,11 @@ const baseCatalog: ServiceCategory[] = [
         "Wymiana płynu wspomagania",
         "Wymiana płynu do spryskiwaczy",
         "Wymiana oleju w przekładni kierowniczej",
-        "Uzupełnienie AdBlue",
         "Sprawdzenie/uzupełnienie płynów eksploatacyjnych",
-        "Uzupełnienie płynów eksploatacyjnych",
       ],
     },
   ]),
-  createCategory("Przeglądy i kontrole", [
-    {
-      name: "Przeglądy techniczne",
-      services: [
-        "Przegląd okresowy",
-        "Przegląd przed dłuższą trasą",
-        "Przegląd auta przed wakacjami",
-        "Przegląd auta przed zimą",
-        "Kontrola stanu technicznego",
-      ],
-    },
+  createCategory("Przeglądy flotowe i kontrole układów", [
     {
       name: "Przeglądy flotowe",
       services: [
@@ -503,9 +484,9 @@ const baseCatalog: ServiceCategory[] = [
         "Sprawdzenie auta przed zakupem",
         "Diagnostyka komputerowa przed zakupem",
         "Kontrola lakieru i nadwozia",
-        "Kontrola lakieru przed zakupem",
-        "Kontrola zawieszenia przed zakupem",
+        "Kontrola zawieszenia",
         "Kontrola silnika i skrzyni biegów",
+        "Oględziny karoserii",
         "Jazda próbna z mechanikiem",
         "Sprawdzenie stanu akumulatora",
         "Weryfikacja historii serwisowej",
@@ -522,7 +503,6 @@ const baseCatalog: ServiceCategory[] = [
         "Wymiana progów",
         "Wymiana błotnika",
         "Naprawa skorodowanej karoserii",
-        "Naprawa po kolizji",
       ],
     },
     {
@@ -540,7 +520,6 @@ const baseCatalog: ServiceCategory[] = [
       name: "Usuwanie uszkodzeń",
       services: [
         "Usuwanie wgniotek (PDR)",
-        "Usuwanie wgniotek",
         "Usuwanie rys i zadrapań",
         "Polerowanie lakieru",
         "Renowacja lakieru",
@@ -559,14 +538,13 @@ const baseCatalog: ServiceCategory[] = [
       ],
     },
   ]),
-  createCategory("Szyby i wycieraczki", [
+  createCategory("Szyby i widoczność", [
     {
-      name: "Szyby i widoczność",
+      name: "Szyby, wycieraczki i osłony",
       services: [
         "Wymiana przedniej szyby",
         "Wymiana tylnej szyby",
         "Wymiana szyb bocznych",
-        "Wymiana szyby",
         "Naprawa odprysku szyby",
         "Regeneracja reflektorów",
         "Przyciemnianie szyb",
@@ -579,27 +557,23 @@ const baseCatalog: ServiceCategory[] = [
       ],
     },
   ]),
-  createCategory("Światła i żarówki", [
+  createCategory("Oświetlenie", [
     {
       name: "Oświetlenie",
       services: [
-        "Wymiana żarówki",
         "Wymiana żarówki (halogen, LED, xenon)",
         "Wymiana lampy reflektora",
         "Wymiana lampy tylnej",
-        "Wymiana lampy",
         "Naprawa lampy",
         "Regeneracja odbłyśników",
         "Regulacja świateł",
         "Montaż lamp dodatkowych (światła do jazdy dziennej)",
         "Kodowanie świateł LED",
         "Polerowanie kloszy lamp",
-        "Wymiana świateł LED/Xenon",
-        "Montaż świateł do jazdy dziennej",
       ],
     },
   ]),
-  createCategory("Inne usterki", [
+  createCategory("Objawy i pomoc drogowa", [
     {
       name: "Objawy",
       services: [
@@ -613,7 +587,6 @@ const baseCatalog: ServiceCategory[] = [
         "Coś piszczy",
         "Wycieka płyn",
         "Pali się kontrolka",
-        "Świeci kontrolka",
         "Auto dymi",
         "Auto wydziela zapach spalenizny",
         "Nie wiem, co się dzieje",
@@ -631,7 +604,7 @@ const baseCatalog: ServiceCategory[] = [
       ],
     },
   ]),
-  createCategory("Turbosprężarka i doładowanie", [
+  createCategory("Turbo i doładowanie", [
     {
       name: "Turbo i doładowanie",
       services: [
@@ -644,23 +617,13 @@ const baseCatalog: ServiceCategory[] = [
         "Diagnostyka i naprawa kompresora mechanicznego",
       ],
     },
-    {
-      name: "AdBlue i DPF (serwis)",
-      services: [
-        "Diagnostyka układu AdBlue",
-        "Wymiana wtryskiwacza AdBlue",
-        "Wymiana filtra AdBlue",
-        "Programowanie systemu AdBlue",
-        "Diagnostyka i regeneracja DPF/FAP",
-        "Czyszczenie i wymiana EGR",
-      ],
-    },
   ]),
-  createCategory("Hybryda i elektryk", [
+  createCategory("Serwis hybryd i elektryków", [
     {
       name: "Serwis pojazdów hybrydowych",
       services: [
         "Diagnostyka układu hybrydowego",
+        "Diagnostyka systemów hybrydowych/elektrycznych",
         "Diagnostyka i naprawa inwertera",
         "Wymiana pakietu akumulatorów wysokonapięciowych",
         "Kalibracja układu hybrydowego",
@@ -733,6 +696,81 @@ export function getServiceCatalogByVehicleType(vehicleType: string): ServiceCate
   return baseCatalog;
 }
 
+function normalizeCatalogServiceNameKey(name: string) {
+  return name.trim().toLocaleLowerCase("pl");
+}
+
+/** Główna kategoria z drzewa katalogu (wszystkie typy pojazdu) dla nazwy liścia. */
+export function getCatalogMainCategoryForService(serviceName: string): string | null {
+  const target = normalizeCatalogServiceNameKey(serviceName);
+  if (!target) return null;
+  for (const vt of ["car", "motorcycle", "van"] as VehicleTypeKey[]) {
+    for (const cat of getServiceCatalogByVehicleType(vt)) {
+      for (const sub of cat.subcategories) {
+        for (const leaf of sub.services) {
+          if (normalizeCatalogServiceNameKey(leaf.name) === target) {
+            return cat.name;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Kategorie w `<select>` panelu warsztatu — zgodne z katalogiem (`SERVICE_CATALOG_MAIN_ORDER`) + „Inne”. */
+export const WORKSHOP_SERVICE_CATEGORY_OPTIONS: readonly string[] = [...SERVICE_CATALOG_MAIN_ORDER, "Inne"];
+
+const WORKSHOP_SERVICE_CATEGORY_OPTION_SET = new Set(WORKSHOP_SERVICE_CATEGORY_OPTIONS);
+
+/**
+ * Stare 13 kategorii z `classifyServiceCategory` → nazwy z katalogu (migracja zapisanych danych / UI).
+ */
+const LEGACY_CLASSIFIER_CATEGORY_TO_WORKSHOP: Record<string, string> = {
+  "Serwis okresowy": "Kontrole i przeglądy okresowe",
+  Diagnostyka: "Diagnostyka",
+  Hamulce: "Hamulce",
+  Elektryka: "Elektryka pojazdu",
+  Zawieszenie: "Zawieszenie",
+  Silnik: "Silnik",
+  "Skrzynia biegów": "Skrzynia biegów i napęd",
+  Klimatyzacja: "Klimatyzacja",
+  "Opony i koła": "Opony i koła",
+  "Układ wydechowy": "Układ wydechowy",
+  Nadwozie: "Blacharstwo i lakiernictwo",
+  Motocykl: "Motocykl - serwis",
+  Inne: "Inne",
+};
+
+/**
+ * Efektywna kategoria usługi w warsztacie: ręczna, albo z drzewa katalogu, albo migracja ze starej listy / „Inne”.
+ */
+export function resolveWorkshopServiceCategory(
+  serviceName: string,
+  storedCategory: string,
+  categoryManual: boolean,
+): string {
+  const cat = storedCategory?.trim() ?? "";
+  if (categoryManual && cat) return cat;
+  const fromTree = getCatalogMainCategoryForService(serviceName);
+  if (fromTree) return fromTree;
+  if (cat && WORKSHOP_SERVICE_CATEGORY_OPTION_SET.has(cat)) return cat;
+  if (cat && LEGACY_CLASSIFIER_CATEGORY_TO_WORKSHOP[cat]) return LEGACY_CLASSIFIER_CATEGORY_TO_WORKSHOP[cat]!;
+  const inferred = classifyServiceCategory(serviceName).category;
+  return LEGACY_CLASSIFIER_CATEGORY_TO_WORKSHOP[inferred] ?? "Inne";
+}
+
+export function isWorkshopServiceCategoryOption(value: string): boolean {
+  return WORKSHOP_SERVICE_CATEGORY_OPTION_SET.has(value);
+}
+
+export function workshopServiceCategorySortIndex(name: string): number {
+  const idx = SERVICE_CATALOG_MAIN_ORDER.indexOf(name as (typeof SERVICE_CATALOG_MAIN_ORDER)[number]);
+  if (idx >= 0) return idx;
+  if (name === "Inne") return SERVICE_CATALOG_MAIN_ORDER.length + 1;
+  return SERVICE_CATALOG_MAIN_ORDER.length;
+}
+
 /** Wszystkie nazwy usług z katalogu (samochód + motocykl + dostawczy), bez duplikatów — jedno źródło dla panelu warsztatu. */
 export function getAllCatalogServiceLeafNames(): string[] {
   const seen = new Set<string>();
@@ -750,6 +788,43 @@ export function getAllCatalogServiceLeafNames(): string[] {
     }
   }
   return out.sort((a, b) => a.localeCompare(b, "pl", { sensitivity: "base" }));
+}
+
+export type WorkshopServiceCatalogFlatRow = {
+  key: string;
+  name: string;
+  category: string;
+};
+
+/**
+ * Ta sama płaska lista liści co `getAllCatalogServiceLeafNames()`, zbudowana przez drzewo
+ * `getServiceCatalogByVehicleType` (osobówka + motocykl + dostawczy) — dla panelu warsztatu.
+ */
+export function getWorkshopServiceCatalogFlatRows(): WorkshopServiceCatalogFlatRow[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  const addName = (name: string) => {
+    const trimmed = name.trim();
+    const k = trimmed.toLocaleLowerCase("pl");
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    names.push(trimmed);
+  };
+  for (const vt of ["car", "motorcycle", "van"] as VehicleTypeKey[]) {
+    for (const cat of getServiceCatalogByVehicleType(vt)) {
+      for (const sub of cat.subcategories) {
+        for (const leaf of sub.services) {
+          addName(leaf.name);
+        }
+      }
+    }
+  }
+  names.sort((a, b) => a.localeCompare(b, "pl", { sensitivity: "base" }));
+  return names.map((name) => ({
+    key: slugifyServiceKey(name),
+    name,
+    category: resolveWorkshopServiceCategory(name, "", false),
+  }));
 }
 
 /**
@@ -811,4 +886,3 @@ export function getServiceCatalogGroupedByMainCategory(vehicleType: string): Ser
 
   return out;
 }
-

@@ -25,7 +25,15 @@ import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { sendBookingNotificationEmail } from "@/lib/sendBookingNotificationEmail";
 import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
-import { getAllCatalogServiceLeafNames } from "@/lib/serviceCatalog";
+import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
+import {
+  getServiceCatalogByVehicleType,
+  getWorkshopServiceCatalogFlatRows,
+  isWorkshopServiceCategoryOption,
+  resolveWorkshopServiceCategory,
+  WORKSHOP_SERVICE_CATEGORY_OPTIONS,
+  workshopServiceCategorySortIndex,
+} from "@/lib/serviceCatalog";
 import {
   getVehicleBrands,
   getVehicleFuels,
@@ -66,12 +74,7 @@ import {
   updateBookingStatusAsWorkshopOwner,
   updateOwnedWorkshopProfile,
 } from "@/lib/workshopOwnerApi";
-import {
-  classifyServiceCategory,
-  SERVICE_MAIN_CATEGORIES,
-  slugifyServiceKey,
-  type ServiceMainCategory,
-} from "@/lib/serviceCategoryClassifier";
+import { classifyServiceCategory, slugifyServiceKey } from "@/lib/serviceCategoryClassifier";
 
 const WORKSHOP_SECTIONS = [
   "Dashboard",
@@ -402,6 +405,8 @@ function WorkshopPanelPageContent() {
   const [serviceVehiclePriceDraftRows, setServiceVehiclePriceDraftRows] = useState<ServiceVehiclePriceDraftRow[]>([]);
   const [servicesCategoryFilter, setServicesCategoryFilter] = useState("Wszystkie");
   const [servicesActivityFilter, setServicesActivityFilter] = useState<"all" | "active" | "inactive">("all");
+  const [workshopCatalogVehicleType, setWorkshopCatalogVehicleType] = useState<VehicleTypeKey>("car");
+  const [catalogServicePickerValue, setCatalogServicePickerValue] = useState("");
   const [savingServices, setSavingServices] = useState(false);
   const [savingVehiclePrices, setSavingVehiclePrices] = useState(false);
   const [selectedServiceForVehiclePricing, setSelectedServiceForVehiclePricing] = useState<string>("");
@@ -467,6 +472,10 @@ function WorkshopPanelPageContent() {
     const match = WORKSHOP_SECTIONS.find((s) => s === decoded);
     if (match) setActiveSection(match);
   }, [searchParams]);
+
+  useEffect(() => {
+    setCatalogServicePickerValue("");
+  }, [workshopCatalogVehicleType]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -1030,16 +1039,25 @@ function WorkshopPanelPageContent() {
     return out;
   }, [dayDraft]);
 
-  const serviceCatalogRows = useMemo(() => {
-    const bucket = new Map<string, { key: string; name: string; category: string }>();
-    for (const name of getAllCatalogServiceLeafNames()) {
-      const category = classifyServiceCategory(name).category;
-      const key = slugifyServiceKey(name);
-      bucket.set(key, { key, name, category });
-    }
-    return Array.from(bucket.values()).sort((a, b) =>
-      a.name.localeCompare(b.name, "pl", { sensitivity: "base" }),
-    );
+  const serviceCatalogRows = useMemo(() => getWorkshopServiceCatalogFlatRows(), []);
+
+  const workshopPickerCategories = useMemo(
+    () => getServiceCatalogByVehicleType(workshopCatalogVehicleType),
+    [workshopCatalogVehicleType],
+  );
+
+  const handleWorkshopCatalogServicePick = useCallback((next: string) => {
+    setCatalogServicePickerValue(next);
+    const trimmed = next.trim();
+    if (!trimmed) return;
+    setServicesCategoryFilter("Wszystkie");
+    setServicesActivityFilter("all");
+    const id = `workshop-svc-${slugifyServiceKey(trimmed)}`;
+    queueMicrotask(() => {
+      requestAnimationFrame(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    });
   }, []);
 
   const mergedServiceRows = useMemo(() => {
@@ -1071,16 +1089,12 @@ function WorkshopPanelPageContent() {
   const serviceCategories = useMemo(() => {
     const values = Array.from(
       new Set(
-        mergedServiceRows.map((r) => {
-          const inferred = classifyServiceCategory(r.service_name);
-          return (r.category_manual ? r.category : inferred.category) || "Inne";
-        }),
+        mergedServiceRows.map((r) => resolveWorkshopServiceCategory(r.service_name, r.category, r.category_manual)),
       ),
     );
-    const orderMap = new Map(SERVICE_MAIN_CATEGORIES.map((c, i) => [c, i]));
     const sorted = [...values].sort((a, b) => {
-      const ai = orderMap.get(a as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 998;
-      const bi = orderMap.get(b as (typeof SERVICE_MAIN_CATEGORIES)[number]) ?? 998;
+      const ai = workshopServiceCategorySortIndex(a);
+      const bi = workshopServiceCategorySortIndex(b);
       if (ai !== bi) return ai - bi;
       return a.localeCompare(b, "pl", { sensitivity: "base" });
     });
@@ -1090,8 +1104,7 @@ function WorkshopPanelPageContent() {
   const visibleServiceRows = useMemo(
     () =>
       mergedServiceRows.filter((r) => {
-        const inferred = classifyServiceCategory(r.service_name);
-        const logicalCategory = (r.category_manual ? r.category : inferred.category) || "Inne";
+        const logicalCategory = resolveWorkshopServiceCategory(r.service_name, r.category, r.category_manual);
         const categoryOk = servicesCategoryFilter === "Wszystkie" || logicalCategory === servicesCategoryFilter;
         const activityOk = servicesActivityFilter === "all"
           ? true
@@ -1103,16 +1116,6 @@ function WorkshopPanelPageContent() {
     [mergedServiceRows, servicesCategoryFilter, servicesActivityFilter],
   );
   const vehicleYearOptions = useMemo(() => sortYearsDesc(getVehicleYears()).map(String), []);
-  const serviceNameOptions = useMemo(
-    () =>
-      sortAlphabetically(Array.from(
-        new Set([
-          ...serviceCatalogRows.map((row) => row.name),
-          ...mergedServiceRows.map((row) => row.service_name).filter(Boolean),
-        ]),
-      )),
-    [mergedServiceRows, serviceCatalogRows],
-  );
   const vehiclePriceCountByService = useMemo(() => {
     const map = new Map<string, number>();
     for (const row of serviceVehiclePriceDraftRows) {
@@ -1542,7 +1545,7 @@ function WorkshopPanelPageContent() {
           const resolvedCategory =
             row.category_manual && row.category.trim()
               ? row.category.trim()
-              : classifyServiceCategory(trimmedName).category;
+              : resolveWorkshopServiceCategory(trimmedName, row.category, false);
           return {
             id: row.id,
             service_key: row.service_key,
@@ -2778,6 +2781,49 @@ function WorkshopPanelPageContent() {
                       </div>
                       <button type="button" disabled={readOnly} onClick={() => setShowAddCustomServiceModal(true)} className="rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Dodaj własną usługę</button>
                     </div>
+                    <div className={`mt-4 rounded-2xl border p-4 ${isDark ? "border-zinc-600 bg-zinc-950/40" : "border-zinc-200 bg-zinc-50/80"}`}>
+                      <p className={`text-sm font-medium ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Wybór usługi z katalogu</p>
+                      <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        Typ pojazdu, potem kategoria → podkategoria → konkretna usługa (jak na stronie głównej). Następnie ustaw cenę od–do w tabeli lub w „Ceny dla aut”.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {vehicleTypeOptions.map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            disabled={readOnly}
+                            onClick={() => setWorkshopCatalogVehicleType(opt.key)}
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold transition disabled:opacity-50 ${
+                              workshopCatalogVehicleType === opt.key
+                                ? isDark
+                                  ? "border-blue-400 bg-blue-500/20 text-blue-200"
+                                  : "border-blue-500 bg-blue-50 text-blue-800"
+                                : isDark
+                                  ? "border-zinc-600 text-zinc-300"
+                                  : "border-zinc-300 text-zinc-700"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="relative mt-3 max-w-xl">
+                        <ServiceCategoryPicker
+                          value={catalogServicePickerValue}
+                          onChange={handleWorkshopCatalogServicePick}
+                          categories={workshopPickerCategories}
+                          disabled={readOnly || workshopPickerCategories.length === 0}
+                          isDark={isDark}
+                          hideManualServiceEntry
+                          inputClassName={`w-full rounded-xl border px-3 py-2 text-sm ${
+                            isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500" : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
+                          }`}
+                          placeholder="Kategoria → podkategoria → usługa"
+                          noResultsText="Brak wyników"
+                          rootClassName="w-full"
+                        />
+                      </div>
+                    </div>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {serviceCategories.map((cat) => (
                         <button key={cat} type="button" onClick={() => setServicesCategoryFilter(cat)} className={`rounded-full border px-3 py-1 text-xs ${servicesCategoryFilter === cat ? "border-blue-500" : ""}`}>{cat}</button>
@@ -2804,7 +2850,7 @@ function WorkshopPanelPageContent() {
                         <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
                           <tr>
                             <th className="px-2 py-2 text-left">Usługa</th>
-                            <th className="min-w-[200px] px-2 py-2 text-left">Kategoria</th>
+                            <th className="min-w-[min(100%,18rem)] px-2 py-2 text-left">Kategoria</th>
                             <th className="px-2 py-2 text-left">Oferuję</th>
                             <th className="px-2 py-2 text-left">Status</th>
                             <th className="px-2 py-2 text-left">Auta z cenami</th>
@@ -2814,11 +2860,24 @@ function WorkshopPanelPageContent() {
                         <tbody>
                           {visibleServiceRows.map((row) => {
                             const inferred = classifyServiceCategory(row.service_name);
-                            const effectiveCategory = row.category_manual ? row.category : inferred.category;
+                            const effectiveCategory = resolveWorkshopServiceCategory(
+                              row.service_name,
+                              row.category,
+                              row.category_manual,
+                            );
+                            const autoResolvedCategory = resolveWorkshopServiceCategory(
+                              row.service_name,
+                              row.category,
+                              false,
+                            );
                             const tagNote =
                               inferred.tags.length > 0 ? `Powiązane tagi: ${inferred.tags.join(", ")}` : null;
                             return (
-                              <tr key={row.id ?? row.service_key ?? row.service_name} className={`border-t ${isDark ? "border-zinc-800" : "border-zinc-100"}`}>
+                              <tr
+                                id={`workshop-svc-${stableServiceDraftKey(row)}`}
+                                key={row.id ?? row.service_key ?? row.service_name}
+                                className={`border-t ${isDark ? "border-zinc-800" : "border-zinc-100"}`}
+                              >
                               <td className="px-2 py-2">
                                 <p className="font-medium">{row.service_name}</p>
                               </td>
@@ -2826,18 +2885,17 @@ function WorkshopPanelPageContent() {
                                 <select
                                   disabled={readOnly}
                                   value={
-                                    SERVICE_MAIN_CATEGORIES.includes(effectiveCategory as ServiceMainCategory)
+                                    isWorkshopServiceCategoryOption(effectiveCategory)
                                       ? effectiveCategory
                                       : effectiveCategory || "Inne"
                                   }
                                   onChange={(e) => patchServiceRow(row, { category: e.target.value, category_manual: true })}
-                                  className={`mt-1 w-full max-w-[220px] rounded-lg border px-2 py-1 text-xs ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white text-zinc-900"}`}
+                                  className={`mt-1 w-full min-w-[12rem] max-w-[min(100%,32rem)] rounded-lg border px-2 py-1 text-xs ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white text-zinc-900"}`}
                                 >
-                                  {!SERVICE_MAIN_CATEGORIES.includes(effectiveCategory as ServiceMainCategory) &&
-                                  effectiveCategory ? (
+                                  {!isWorkshopServiceCategoryOption(effectiveCategory) && effectiveCategory ? (
                                     <option value={effectiveCategory}>{effectiveCategory} (niestandardowa)</option>
                                   ) : null}
-                                  {SERVICE_MAIN_CATEGORIES.map((cat) => (
+                                  {WORKSHOP_SERVICE_CATEGORY_OPTIONS.map((cat) => (
                                     <option key={cat} value={cat}>{cat}</option>
                                   ))}
                                 </select>
@@ -2851,7 +2909,7 @@ function WorkshopPanelPageContent() {
                                         onClick={() =>
                                           patchServiceRow(row, {
                                             category_manual: false,
-                                            category: classifyServiceCategory(row.service_name).category,
+                                            category: autoResolvedCategory,
                                           })
                                         }
                                         className="ml-2 font-semibold text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
@@ -2861,7 +2919,8 @@ function WorkshopPanelPageContent() {
                                     </>
                                   ) : (
                                     <>
-                                      Auto: przy zapisie = <span className="font-medium">{inferred.category}</span>
+                                      Auto: przy zapisie ={" "}
+                                      <span className="font-medium">{autoResolvedCategory}</span>
                                     </>
                                   )}
                                 </p>
@@ -3546,7 +3605,7 @@ function WorkshopPanelPageContent() {
                     setCustomServiceDraft((d) => {
                       const next = { ...d, service_name: name };
                       if (!d.category_manual) {
-                        next.category = classifyServiceCategory(name.trim() || "").category;
+                        next.category = resolveWorkshopServiceCategory(name.trim() || "", "", false);
                       }
                       return next;
                     });
@@ -3558,7 +3617,7 @@ function WorkshopPanelPageContent() {
                   <select
                     disabled={readOnly}
                     value={
-                      SERVICE_MAIN_CATEGORIES.includes(customServiceDraft.category as ServiceMainCategory)
+                      isWorkshopServiceCategoryOption(customServiceDraft.category)
                         ? customServiceDraft.category
                         : customServiceDraft.category || "Inne"
                     }
@@ -3567,7 +3626,12 @@ function WorkshopPanelPageContent() {
                     }
                     className="bg-transparent text-sm dark:text-zinc-100"
                   >
-                    {SERVICE_MAIN_CATEGORIES.map((cat) => (
+                    {!isWorkshopServiceCategoryOption(customServiceDraft.category) && customServiceDraft.category ? (
+                      <option value={customServiceDraft.category}>
+                        {customServiceDraft.category} (niestandardowa)
+                      </option>
+                    ) : null}
+                    {WORKSHOP_SERVICE_CATEGORY_OPTIONS.map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
@@ -3583,7 +3647,7 @@ function WorkshopPanelPageContent() {
                         setCustomServiceDraft((d) => ({
                           ...d,
                           category_manual: false,
-                          category: classifyServiceCategory(d.service_name.trim() || "").category,
+                          category: resolveWorkshopServiceCategory(d.service_name.trim() || "", "", false),
                         }))
                       }
                       className={`self-start text-left text-[11px] font-semibold text-blue-600 underline-offset-2 hover:underline dark:text-blue-400`}
@@ -3611,10 +3675,9 @@ function WorkshopPanelPageContent() {
                   onClick={() => {
                     if (!customServiceDraft.service_name.trim()) return;
                     const trimmed = customServiceDraft.service_name.trim();
-                    const inferred = classifyServiceCategory(trimmed);
                     const categoryResolved = customServiceDraft.category_manual
                       ? customServiceDraft.category.trim() || "Inne"
-                      : inferred.category;
+                      : resolveWorkshopServiceCategory(trimmed, customServiceDraft.category, false);
                     setServiceDraftRows((prev) => [
                       ...prev,
                       {
