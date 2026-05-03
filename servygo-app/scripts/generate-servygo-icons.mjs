@@ -5,7 +5,9 @@ import sharp from "sharp";
 import toIco from "to-ico";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const publicDir = path.join(__dirname, "..", "public");
+const rootDir = path.join(__dirname, "..");
+const publicDir = path.join(rootDir, "public");
+const appDir = path.join(rootDir, "app");
 
 /** Minimalist ServyGo mark: navy→orange gradient, blue accent, white “S”. */
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
@@ -25,6 +27,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" vi
 
 async function main() {
   fs.mkdirSync(publicDir, { recursive: true });
+  fs.mkdirSync(appDir, { recursive: true });
   const base = await sharp(Buffer.from(svg)).png().toBuffer();
   const buf512 = await sharp(base).resize(512, 512).png().toBuffer();
   const buf192 = await sharp(base).resize(192, 192).png().toBuffer();
@@ -38,8 +41,13 @@ async function main() {
   fs.writeFileSync(path.join(publicDir, "apple-touch-icon.png"), buf180);
 
   const ico = await toIco([buf16, buf32, buf48]);
+  // Next.js App Router: /favicon.ico is served from app/favicon.ico when present — it wins over public/.
+  fs.writeFileSync(path.join(appDir, "favicon.ico"), ico);
   fs.writeFileSync(path.join(publicDir, "favicon.ico"), ico);
-  console.log("Wrote public/favicon.ico, icon-192.png, icon-512.png, apple-touch-icon.png");
+  fs.writeFileSync(path.join(publicDir, "favicon-servygo-v2.ico"), ico);
+  console.log(
+    "Wrote app/favicon.ico, public/favicon.ico, public/favicon-servygo-v2.ico, icon-192.png, icon-512.png, apple-touch-icon.png",
+  );
 }
 
 main().catch((err) => {
