@@ -25,8 +25,8 @@ import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { sendBookingNotificationEmail } from "@/lib/sendBookingNotificationEmail";
 import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
+import { getAllCatalogServiceLeafNames } from "@/lib/serviceCatalog";
 import {
-  getAllServiceOptions,
   getVehicleBrands,
   getVehicleFuels,
   getVehicleModels,
@@ -1032,7 +1032,7 @@ function WorkshopPanelPageContent() {
 
   const serviceCatalogRows = useMemo(() => {
     const bucket = new Map<string, { key: string; name: string; category: string }>();
-    for (const name of getAllServiceOptions()) {
+    for (const name of getAllCatalogServiceLeafNames()) {
       const category = classifyServiceCategory(name).category;
       const key = slugifyServiceKey(name);
       bucket.set(key, { key, name, category });
