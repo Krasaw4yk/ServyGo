@@ -12,6 +12,20 @@ import AdminServyGoMapSection from "@/components/admin/AdminServyGoMapSection";
 import InternalInbox from "@/components/InternalInbox";
 import { sendSystemMessage } from "@/lib/messagesApi";
 import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
+import { runExpirePendingBookingsWorkshopTimeout } from "@/lib/bookingWorkshopResponseExpiry";
+import {
+  listSupportReportsForAdmin,
+  updateSupportReportStatus,
+  type SupportReportRow,
+  type SupportReportStatus,
+} from "@/lib/supportReportsApi";
+import {
+  listServygoReviewsForAdmin,
+  updateServygoReviewStatusAdmin,
+  type ServygoReviewStatus,
+  type WorkshopServygoReviewRow,
+} from "@/lib/workshopServygoReviewsApi";
+import WorkshopPhotosManager from "@/components/workshop/WorkshopPhotosManager";
 import {
   type AdminSidebarNotificationCounts,
   type AdminWorkshopDetail,
@@ -42,6 +56,7 @@ import { getAdminDashboardStats, type AdminDashboardStats } from "@/lib/adminSta
 const SIDEBAR_ITEMS = [
   "Dashboard",
   "Moje wiadomości",
+  "Zgłoszenia problemów",
   "Zgłoszenia warsztatów",
   "Warsztaty",
   "Mapa ServyGo",
@@ -58,6 +73,7 @@ type SidebarBadgeState = Record<SidebarItem, number>;
 const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
   Dashboard: 0,
   "Moje wiadomości": 0,
+  "Zgłoszenia problemów": 0,
   "Zgłoszenia warsztatów": 0,
   Warsztaty: 0,
   "Mapa ServyGo": 0,
@@ -177,6 +193,12 @@ export default function AdminPage() {
   const [dashboardStatsData, setDashboardStatsData] = useState<AdminDashboardStats | null>(null);
   const [loadingDashboardStats, setLoadingDashboardStats] = useState(false);
   const [dashboardStatsError, setDashboardStatsError] = useState("");
+  const [supportReportRows, setSupportReportRows] = useState<SupportReportRow[]>([]);
+  const [supportReportsLoading, setSupportReportsLoading] = useState(false);
+  const [supportReportsError, setSupportReportsError] = useState("");
+  const [servygoModerationRows, setServygoModerationRows] = useState<WorkshopServygoReviewRow[]>([]);
+  const [servygoModerationLoading, setServygoModerationLoading] = useState(false);
+  const [servygoModerationFilter, setServygoModerationFilter] = useState<"all" | ServygoReviewStatus>("all");
 
   const detailLead = useMemo(() => rows.find((r) => r.id === leadDetailId) ?? null, [rows, leadDetailId]);
 
@@ -262,6 +284,33 @@ export default function AdminPage() {
     }
   }, [currentUser]);
 
+  const refreshSupportReports = useCallback(async () => {
+    if (!currentUser) return;
+    setSupportReportsLoading(true);
+    setSupportReportsError("");
+    try {
+      const rows = await listSupportReportsForAdmin();
+      setSupportReportRows(rows);
+    } catch (err) {
+      setSupportReportsError(err instanceof Error ? err.message : "Nie udało się pobrać zgłoszeń.");
+    } finally {
+      setSupportReportsLoading(false);
+    }
+  }, [currentUser]);
+
+  const refreshServygoModeration = useCallback(async () => {
+    if (!currentUser) return;
+    setServygoModerationLoading(true);
+    try {
+      const rows = await listServygoReviewsForAdmin();
+      setServygoModerationRows(rows);
+    } catch {
+      setServygoModerationRows([]);
+    } finally {
+      setServygoModerationLoading(false);
+    }
+  }, [currentUser]);
+
   const refreshSidebarBadges = useCallback(async () => {
     if (!currentUser) return;
     try {
@@ -311,6 +360,16 @@ export default function AdminPage() {
       void refreshSidebarBadges();
     }
   }, [activeTab, currentUser, refreshSidebarBadges]);
+
+  useEffect(() => {
+    if (!currentUser || activeTab !== "Zgłoszenia problemów") return;
+    void refreshSupportReports();
+  }, [activeTab, currentUser, refreshSupportReports]);
+
+  useEffect(() => {
+    if (!currentUser || activeTab !== "Opinie / Google Maps") return;
+    void refreshServygoModeration();
+  }, [activeTab, currentUser, refreshServygoModeration]);
 
   const activeWorkshopPanelId = workshopViewId ?? workshopEditId;
 
@@ -425,6 +484,12 @@ export default function AdminPage() {
       setIsAdmin(true);
       setAdminRole(adminRecord.role ?? null);
       setAccessLoading(false);
+
+      try {
+        await runExpirePendingBookingsWorkshopTimeout();
+      } catch {
+        /* migracja RPC opcjonalna */
+      }
 
       try {
         const leadData = await listWorkshopLeadsForAdmin(user.id, email);
@@ -1375,6 +1440,84 @@ export default function AdminPage() {
               />
             ) : null}
 
+            {activeTab === "Zgłoszenia problemów" ? (
+              <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Zgłoszenia problemów (support)</h2>
+                  <button
+                    type="button"
+                    onClick={() => void refreshSupportReports()}
+                    disabled={supportReportsLoading}
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                  >
+                    Odśwież
+                  </button>
+                </div>
+                {supportReportsError ? (
+                  <p className={`mt-3 text-sm ${isDark ? "text-orange-200" : "text-orange-800"}`}>{supportReportsError}</p>
+                ) : null}
+                {supportReportsLoading ? <p className="mt-3 text-sm">Ładowanie…</p> : null}
+                {!supportReportsLoading ? (
+                  <div className="mt-4 min-w-0 overflow-x-auto">
+                    <table className="w-full min-w-[960px] text-sm">
+                      <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
+                        <tr>
+                          <th className="px-2 py-2 text-left">Data</th>
+                          <th className="px-2 py-2 text-left">Typ</th>
+                          <th className="px-2 py-2 text-left">Temat</th>
+                          <th className="px-2 py-2 text-left">E-mail</th>
+                          <th className="px-2 py-2 text-left">Status</th>
+                          <th className="px-2 py-2 text-left">Treść</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {supportReportRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className={`px-2 py-6 text-center ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
+                              Brak zgłoszeń.
+                            </td>
+                          </tr>
+                        ) : (
+                          supportReportRows.map((row) => (
+                            <tr key={row.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                              <td className="whitespace-nowrap px-2 py-2 align-top">{formatDate(row.created_at)}</td>
+                              <td className="px-2 py-2 align-top">{row.report_type}</td>
+                              <td className="max-w-[180px] px-2 py-2 align-top">{row.subject}</td>
+                              <td className="max-w-[160px] truncate px-2 py-2 align-top" title={row.email}>
+                                {row.email}
+                              </td>
+                              <td className="px-2 py-2 align-top">
+                                <select
+                                  value={row.status}
+                                  onChange={(e) => {
+                                    const next = e.target.value as SupportReportStatus;
+                                    void (async () => {
+                                      try {
+                                        await updateSupportReportStatus(row.id, next);
+                                        await refreshSupportReports();
+                                      } catch {
+                                        /* toast minimal */
+                                      }
+                                    })();
+                                  }}
+                                  className={`rounded-lg border px-2 py-1 text-xs ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
+                                >
+                                  <option value="new">new</option>
+                                  <option value="in_progress">in_progress</option>
+                                  <option value="closed">closed</option>
+                                </select>
+                              </td>
+                              <td className="max-w-[320px] px-2 py-2 align-top text-xs whitespace-pre-wrap">{row.message}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             {activeTab === "Zgłoszenia warsztatów" ? (
               <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -1764,39 +1907,122 @@ export default function AdminPage() {
             ) : null}
 
             {activeTab === "Opinie / Google Maps" ? (
-              <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
-                <h2 className="text-lg font-semibold">Opinie / Google Maps</h2>
-                <div className="mt-3 min-w-0 overflow-x-auto">
-                  <table className="w-full min-w-0 table-auto text-sm">
-                    <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
-                      <tr>
-                        <th className="px-3 py-2.5 text-left lg:px-4 lg:py-3">Warsztat</th>
-                        <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Śr. ocena</th>
-                        <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Liczba opinii</th>
-                        <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Google Maps</th>
-                        <th className="px-3 py-2.5 text-left lg:px-4 lg:py-3">googlePlaceId</th>
-                        <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Liczba zdjęć</th>
-                        <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reviewsOverview.map((item) => (
-                        <tr key={item.workshop} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
-                          <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.workshop}</td>
-                          <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.rating ? item.rating.toFixed(1) : "—"}</td>
-                          <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.reviewCount}</td>
-                          <td className="px-3 py-2.5 lg:px-4 lg:py-3">
-                            {item.mapsUrl === "-" ? "—" : <a href={item.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Otwórz</a>}
-                          </td>
-                          <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.googlePlaceId}</td>
-                          <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.photosCount}</td>
-                          <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.connectionStatus}</td>
+              <>
+                <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                  <h2 className="text-lg font-semibold">Opinie / Google Maps</h2>
+                  <div className="mt-3 min-w-0 overflow-x-auto">
+                    <table className="w-full min-w-0 table-auto text-sm">
+                      <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
+                        <tr>
+                          <th className="px-3 py-2.5 text-left lg:px-4 lg:py-3">Warsztat</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Śr. ocena</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Liczba opinii</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Google Maps</th>
+                          <th className="px-3 py-2.5 text-left lg:px-4 lg:py-3">googlePlaceId</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Liczba zdjęć</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Status</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                      </thead>
+                      <tbody>
+                        {reviewsOverview.map((item) => (
+                          <tr key={item.workshop} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                            <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.workshop}</td>
+                            <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.rating ? item.rating.toFixed(1) : "—"}</td>
+                            <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.reviewCount}</td>
+                            <td className="px-3 py-2.5 lg:px-4 lg:py-3">
+                              {item.mapsUrl === "-" ? "—" : <a href={item.mapsUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Otwórz</a>}
+                            </td>
+                            <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.googlePlaceId}</td>
+                            <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.photosCount}</td>
+                            <td className="px-3 py-2.5 lg:px-4 lg:py-3">{item.connectionStatus}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className={`mt-6 rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-lg font-semibold">Moderacja opinii ServyGo</h3>
+                    <div className="flex flex-wrap gap-2">
+                      <select
+                        value={servygoModerationFilter}
+                        onChange={(e) => setServygoModerationFilter(e.target.value as "all" | ServygoReviewStatus)}
+                        className={`rounded-lg border px-2 py-2 text-xs ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                      >
+                        <option value="all">Wszystkie statusy</option>
+                        <option value="pending">pending</option>
+                        <option value="published">published</option>
+                        <option value="hidden">hidden</option>
+                        <option value="reported">reported</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => void refreshServygoModeration()}
+                        disabled={servygoModerationLoading}
+                        className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                      >
+                        Odśwież
+                      </button>
+                    </div>
+                  </div>
+                  {servygoModerationLoading ? <p className="mt-3 text-sm">Ładowanie…</p> : null}
+                  {!servygoModerationLoading ? (
+                    <div className="mt-4 min-w-0 overflow-x-auto">
+                      <table className="w-full min-w-[920px] text-sm">
+                        <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
+                          <tr>
+                            <th className="px-2 py-2 text-left">Data</th>
+                            <th className="px-2 py-2 text-left">Warsztat</th>
+                            <th className="px-2 py-2 text-left">Podpis</th>
+                            <th className="px-2 py-2 text-left">Ocena</th>
+                            <th className="px-2 py-2 text-left">Status</th>
+                            <th className="px-2 py-2 text-left">Treść</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {servygoModerationRows
+                            .filter((r) => servygoModerationFilter === "all" || r.status === servygoModerationFilter)
+                            .map((r) => (
+                              <tr key={r.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                                <td className="whitespace-nowrap px-2 py-2 align-top">{formatDate(r.created_at)}</td>
+                                <td className="max-w-[120px] truncate px-2 py-2 align-top font-mono text-xs" title={r.workshop_id}>
+                                  {r.workshop_id.slice(0, 8)}…
+                                </td>
+                                <td className="px-2 py-2 align-top">{r.display_name_snapshot}</td>
+                                <td className="px-2 py-2 align-top">{r.rating}</td>
+                                <td className="px-2 py-2 align-top">
+                                  <select
+                                    value={r.status}
+                                    onChange={(e) => {
+                                      const next = e.target.value as ServygoReviewStatus;
+                                      void (async () => {
+                                        try {
+                                          await updateServygoReviewStatusAdmin(r.id, next);
+                                          await refreshServygoModeration();
+                                        } catch {
+                                          /* ignore */
+                                        }
+                                      })();
+                                    }}
+                                    className={`rounded-lg border px-2 py-1 text-xs ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
+                                  >
+                                    <option value="pending">pending</option>
+                                    <option value="published">published</option>
+                                    <option value="hidden">hidden</option>
+                                    <option value="reported">reported</option>
+                                  </select>
+                                </td>
+                                <td className="max-w-[360px] px-2 py-2 align-top text-xs whitespace-pre-wrap">{r.comment}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                </section>
+              </>
             ) : null}
 
             {(activeTab === "Rezerwacje" || activeTab === "Usługi i ceny" || activeTab === "Statystyki strony" || activeTab === "Ustawienia") ? (
@@ -2405,6 +2631,9 @@ export default function AdminPage() {
                   </select>
                 </label>
               </div>
+              {workshopEditId ? (
+                <WorkshopPhotosManager workshopId={workshopEditId} uploadedByRole="admin" isDark={isDark} />
+              ) : null}
               <div className="mt-6 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"

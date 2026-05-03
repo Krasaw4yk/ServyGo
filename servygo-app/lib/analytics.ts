@@ -1,3 +1,7 @@
+/**
+ * Wewnętrzna telemetria ServyGo — zapisywana wyłącznie do tabeli `analytics_events` w Supabase.
+ * To nie jest Google Analytics, Meta Pixel ani zewnętrzny tracker; brak wysyłki do GA/Ads/fbq.
+ */
 import { supabase } from "@/lib/supabaseClient";
 
 export type AnalyticsEventName =

@@ -72,6 +72,8 @@ type UserProfileDraft = {
   phone: string;
   country: string;
   city: string;
+  shareFullLastNameWithWorkshops: boolean;
+  reviewPublicNickname: string;
 };
 
 type SavedCarOption = {
@@ -92,6 +94,8 @@ type Profile = {
   phone: string | null;
   country: string | null;
   city: string | null;
+  share_full_last_name_with_workshops?: boolean | null;
+  review_public_nickname?: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -146,7 +150,7 @@ function HomePageContent() {
   const [years, setYears] = useState<string[]>([]);
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
   const [landingInfoPanel, setLandingInfoPanel] = useState<
-    "contact" | "about" | "workshops" | "drivers" | "howItWorks" | null
+    "contact" | "about" | "workshops" | "drivers" | "howItWorks" | "faq" | null
   >(null);
   const [language, setLanguage] = useState<LanguageCode>("pl");
   const [authModal, setAuthModal] = useState<AuthModalType>(null);
@@ -169,6 +173,8 @@ function HomePageContent() {
     phone: "",
     country: "",
     city: "",
+    shareFullLastNameWithWorkshops: false,
+    reviewPublicNickname: "",
   });
   const [vehicleTypeDraft, setVehicleTypeDraft] = useState("");
   const [vehicleBrandDraft, setVehicleBrandDraft] = useState("");
@@ -936,7 +942,7 @@ function HomePageContent() {
 
   async function upsertUserProfile(userId: string, profile: Partial<Profile>): Promise<Profile> {
     if (!supabase) throw new Error("Supabase client not available.");
-    const payload = {
+    const payload: Record<string, unknown> = {
       id: userId,
       first_name: profile.first_name ?? null,
       last_name: profile.last_name ?? null,
@@ -946,9 +952,16 @@ function HomePageContent() {
       city: profile.city ?? null,
       updated_at: new Date().toISOString(),
     };
+    if (profile.share_full_last_name_with_workshops !== undefined) {
+      payload.share_full_last_name_with_workshops = Boolean(profile.share_full_last_name_with_workshops);
+    }
+    if (profile.review_public_nickname !== undefined) {
+      payload.review_public_nickname = profile.review_public_nickname?.trim() || null;
+    }
     const { data, error } = await supabase
       .from("profiles")
-      .upsert(payload, { onConflict: "id" })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .upsert(payload as any, { onConflict: "id" })
       .select("*")
       .single();
     if (error) throw error;
@@ -991,6 +1004,8 @@ function HomePageContent() {
         phone: pickFirstNonEmpty(profile.phone ?? undefined, metadataPhone),
         country: profile.country ?? "",
         city: profile.city ?? "",
+        shareFullLastNameWithWorkshops: profile.share_full_last_name_with_workshops === true,
+        reviewPublicNickname: profile.review_public_nickname?.trim() ?? "",
       });
       setSecurityEmailDraft(user.email ?? "");
       setSecurityPhoneDraft(pickFirstNonEmpty(profile.phone ?? undefined, metadataPhone));
@@ -1094,6 +1109,12 @@ function HomePageContent() {
   }, [searchParams, favoriteWorkshopChoices]);
 
   useEffect(() => {
+    const info = searchParams.get("info")?.trim().toLowerCase() ?? "";
+    if (info === "faq") setLandingInfoPanel("faq");
+    if (info === "contact") setLandingInfoPanel("contact");
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!mounted || !currentUser) return;
     const frameId = window.requestAnimationFrame(() => {
       void loadAccountData();
@@ -1129,8 +1150,8 @@ function HomePageContent() {
     }
     const first = profileDraft.firstName.trim();
     const last = profileDraft.lastName.trim();
-    if (!first || !last) {
-      setAccountError(t("account.validation.profileNameRequired"));
+    if (!first) {
+      setAccountError(t("account.validation.profileFirstNameRequired"));
       setAccountInfo("");
       return;
     }
@@ -1139,11 +1160,13 @@ function HomePageContent() {
     try {
       const data = await upsertUserProfile(currentUser.id, {
         first_name: first,
-        last_name: last,
+        last_name: last || null,
         email: currentUser.email ?? null,
         phone: profileDraft.phone.trim(),
         country: profileDraft.country.trim(),
         city: profileDraft.city.trim(),
+        share_full_last_name_with_workshops: profileDraft.shareFullLastNameWithWorkshops,
+        review_public_nickname: profileDraft.reviewPublicNickname.trim() || null,
       });
       const nextProfile = {
         ...profileDraft,
@@ -1152,6 +1175,8 @@ function HomePageContent() {
         phone: data.phone ?? "",
         country: data.country ?? "",
         city: data.city ?? "",
+        shareFullLastNameWithWorkshops: data.share_full_last_name_with_workshops === true,
+        reviewPublicNickname: data.review_public_nickname?.trim() ?? "",
       };
       setProfileDraft(nextProfile);
       setSecurityPhoneDraft(nextProfile.phone);
@@ -1566,6 +1591,11 @@ function HomePageContent() {
     const phone = registerPhone.trim();
     const password = registerPassword.trim();
     const repeatedPassword = registerPasswordRepeat.trim();
+
+    if (!firstName) {
+      setAuthError(t("account.validation.profileFirstNameRequired"));
+      return;
+    }
 
     if (!email || !email.includes("@")) {
       setAuthError(t("auth.errors.emailInvalid"));
@@ -2832,7 +2862,11 @@ function HomePageContent() {
           onOpenAccountModal={openAccountModal}
         />
         <RecommendedWorkshopsSection isDark={isDark} city={searchCity} />
-        <LandingCtaFooter isDark={isDark} />
+        <LandingCtaFooter
+          isDark={isDark}
+          onOpenContact={() => setLandingInfoPanel("contact")}
+          onOpenFaq={() => setLandingInfoPanel("faq")}
+        />
 
         {accountModalOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 max-md:p-0 max-md:items-stretch">
@@ -2941,7 +2975,12 @@ function HomePageContent() {
                         />
                       </label>
                       <label className="flex flex-col gap-2">
-                        <span className="text-sm font-medium">{t("account.profile.lastName")}</span>
+                        <span className="text-sm font-medium">
+                          {t("account.profile.lastName")}{" "}
+                          <span className={`text-xs font-normal ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                            {t("account.profile.lastNameOptional")}
+                          </span>
+                        </span>
                         <input
                           type="text"
                           value={profileDraft.lastName}
@@ -2949,6 +2988,42 @@ function HomePageContent() {
                           className={currentFieldClassName}
                         />
                       </label>
+                      <label className="flex flex-col gap-2 sm:col-span-2">
+                        <span className="text-sm font-medium">{t("account.profile.reviewNickname")}</span>
+                        <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                          {t("account.profile.reviewNicknameHint")}
+                        </span>
+                        <input
+                          type="text"
+                          value={profileDraft.reviewPublicNickname}
+                          onChange={(event) =>
+                            setProfileDraft((prev) => ({ ...prev, reviewPublicNickname: event.target.value }))
+                          }
+                          className={currentFieldClassName}
+                        />
+                      </label>
+                      <label className={`flex items-start gap-3 sm:col-span-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                        <input
+                          type="checkbox"
+                          checked={profileDraft.shareFullLastNameWithWorkshops}
+                          onChange={(event) =>
+                            setProfileDraft((prev) => ({
+                              ...prev,
+                              shareFullLastNameWithWorkshops: event.target.checked,
+                            }))
+                          }
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                        />
+                        <span>
+                          <span className="block text-sm font-medium">{t("account.profile.shareFullLastNameWithWorkshops")}</span>
+                          <span className={`mt-1 block text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                            {t("account.profile.shareFullLastNameHint")}
+                          </span>
+                        </span>
+                      </label>
+                      <p className={`sm:col-span-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        Pełne nazwisko, e-mail i telefon nie są publikowane przy opiniach ServyGo — zgodnie z Polityką prywatności.
+                      </p>
                       <AutocompleteSelect
                         label={t("account.profile.country")}
                         value={profileDraft.country}

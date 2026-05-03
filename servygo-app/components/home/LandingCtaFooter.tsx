@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type BuildMeta = {
@@ -10,9 +11,11 @@ type BuildMeta = {
 
 type LandingCtaFooterProps = {
   isDark: boolean;
+  onOpenContact: () => void;
+  onOpenFaq: () => void;
 };
 
-export default function LandingCtaFooter({ isDark }: LandingCtaFooterProps) {
+export default function LandingCtaFooter({ isDark, onOpenContact, onOpenFaq }: LandingCtaFooterProps) {
   const [versionLine, setVersionLine] = useState<string>("");
 
   useEffect(() => {
@@ -48,11 +51,23 @@ export default function LandingCtaFooter({ isDark }: LandingCtaFooterProps) {
         >
           <h3 className="text-xl font-semibold">Potrzebujesz pomocy?</h3>
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            {["FAQ", "Skontaktuj się z nami", "Zgłoś problem"].map((item) => (
-              <a key={item} href="#" className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 text-zinc-200" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}>
-                {item}
-              </a>
-            ))}
+            <button
+              type="button"
+              onClick={onOpenFaq}
+              className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}
+            >
+              FAQ
+            </button>
+            <button
+              type="button"
+              onClick={onOpenContact}
+              className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}
+            >
+              Skontaktuj się z nami
+            </button>
+            <Link href="/zglos-problem" className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}>
+              Zgłoś problem
+            </Link>
           </div>
         </article>
       </section>
@@ -66,9 +81,9 @@ export default function LandingCtaFooter({ isDark }: LandingCtaFooterProps) {
             <a href="#" className="hover:text-blue-600">
               Polityka prywatności
             </a>
-            <a href="#" className="hover:text-blue-600">
+            <button type="button" onClick={onOpenContact} className="hover:text-blue-600">
               Kontakt
-            </a>
+            </button>
           </div>
           <div className="sm:order-2 sm:ml-auto sm:min-w-[200px] sm:pl-8 sm:text-right">
             <div className="font-semibold text-blue-600">ServyGo</div>

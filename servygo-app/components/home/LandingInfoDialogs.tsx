@@ -10,7 +10,7 @@ import {
   type LanguageCode,
 } from "@/lib/translations";
 
-export type LandingInfoPanelKey = "contact" | "about" | "workshops" | "drivers" | "howItWorks";
+export type LandingInfoPanelKey = "contact" | "about" | "workshops" | "drivers" | "howItWorks" | "faq";
 
 type StepCopy = { title: string; desc: string };
 
@@ -64,6 +64,15 @@ export default function LandingInfoDialogs({
     return Array.isArray(raw) ? (raw as string[]) : [];
   }, [language]);
 
+  const faqSteps = useMemo((): StepCopy[] => {
+    const raw = getTranslationNode("landing.faqItems", language);
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (x): x is StepCopy =>
+        Boolean(x) && typeof x === "object" && "title" in x && "desc" in x,
+    ) as StepCopy[];
+  }, [language]);
+
   useEffect(() => {
     if (!panel) return;
     function onEsc(e: KeyboardEvent) {
@@ -84,7 +93,9 @@ export default function LandingInfoDialogs({
             ? t("landing.modalDriversTitle")
             : panel === "howItWorks"
               ? t("landing.modalHowTitle")
-              : "";
+              : panel === "faq"
+                ? t("landing.modalFaqTitle")
+                : "";
 
   const cardBorder = isDark ? "border-zinc-600/80 bg-zinc-950/75" : "border-blue-100/90 bg-blue-50/40";
 
@@ -168,6 +179,19 @@ export default function LandingInfoDialogs({
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-500 dark:text-orange-400">
                     {t("sections.stepLabel")} {index + 1}
                   </p>
+                  <p className={`mt-1 font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{step.title}</p>
+                  <p className={`mt-1 text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{step.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case "faq":
+        return (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              {faqSteps.map((step, index) => (
+                <div key={`faq-${step.title}-${index}`} className={`rounded-xl border p-3 ${cardBorder}`}>
                   <p className={`mt-1 font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{step.title}</p>
                   <p className={`mt-1 text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{step.desc}</p>
                 </div>

@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/supabaseClient";
 import { parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
+import {
+  WORKSHOP_VISITOR_CONTACT_UNAVAILABLE,
+  workshopVisibleDriverDisplayName,
+  type WorkshopVisibleDriverProfile,
+} from "@/lib/driverPrivacyWorkshop";
 import { formatSupabaseError, isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
 
 export type WorkshopOwnerBookingRow = {
@@ -212,7 +217,11 @@ export async function getOwnedWorkshopForUser(userId: string): Promise<Workshop 
   return (data as Workshop | null) ?? null;
 }
 
-export async function listBookingsForWorkshopOwner(workshopId: string): Promise<WorkshopOwnerBookingRow[]> {
+export async function listBookingsForWorkshopOwner(
+  workshopId: string,
+  options?: { exposeDriverDirectContact?: boolean },
+): Promise<WorkshopOwnerBookingRow[]> {
+  const exposeDriverDirectContact = options?.exposeDriverDirectContact === true;
   if (!supabase) throw new Error("Supabase client not available.");
   const { data: rows, error } = await supabase
     .from("bookings")
@@ -269,13 +278,12 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
   >[];
   if (list.length === 0) return [];
   const userIds = [...new Set(list.map((r) => r.user_id))];
-  const { data: profiles, error: pErr } = await supabase
-    .from("profiles")
-    .select("id, first_name, last_name, email, phone")
-    .in("id", userIds);
+  const { data: profiles, error: pErr } = await supabase.from("profiles").select("*").in("id", userIds);
   if (pErr) throw new Error(formatSupabaseError(pErr));
   const profileMap = new Map(
-    (profiles as { id: string; first_name: string | null; last_name: string | null; email: string | null; phone?: string | null }[] | null)?.map((p) => [p.id, p]) ?? [],
+    (profiles as unknown as (WorkshopVisibleDriverProfile & { id: string; email?: string | null; phone?: string | null })[] | null)?.map(
+      (p) => [p.id, p],
+    ) ?? [],
   );
   const { data: cars, error: cErr } = await supabase
     .from("cars")
@@ -299,21 +307,13 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
     arr.push(c);
     carsByUser.set(c.user_id, arr);
   }
-  function clientLabel(uid: string, snapshotName: string | null | undefined) {
-    const snap = (snapshotName ?? "").trim();
-    if (snap) return snap;
-    const p = profileMap.get(uid);
-    if (!p) return "Klient";
-    const n = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
-    return n || p.email || "Klient";
-  }
-  function clientEmail(uid: string, snapshotEmail: string | null | undefined) {
+  function resolveClientEmail(uid: string, snapshotEmail: string | null | undefined) {
     const snap = (snapshotEmail ?? "").trim();
     if (snap) return snap;
     const p = profileMap.get(uid);
     return p?.email?.trim() || "—";
   }
-  function clientPhone(uid: string, snapshotPhone: string | null | undefined) {
+  function resolveClientPhone(uid: string, snapshotPhone: string | null | undefined) {
     const snap = (snapshotPhone ?? "").trim();
     if (snap) return snap;
     const p = profileMap.get(uid);
@@ -328,9 +328,7 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
       return tail ? `${fromJson} (${tail})` : fromJson;
     }
     const listC = carsByUser.get(uid) ?? [];
-    const one = carId
-      ? listC.find((c) => c.id === carId)
-      : listC.find((c) => c.is_primary) ?? listC[0];
+    const one = carId ? listC.find((c) => c.id === carId) : undefined;
     if (!one) return "—";
     const bits = [one.brand, one.model, one.year != null ? String(one.year) : null, one.plate_number].filter(Boolean);
     return bits.join(" · ") || "—";
@@ -339,9 +337,9 @@ export async function listBookingsForWorkshopOwner(workshopId: string): Promise<
     ...r,
     date: r.booking_date ?? r.date,
     time: (r.start_time ? r.start_time.slice(0, 5) : null) ?? r.time,
-    clientLabel: clientLabel(r.user_id, r.client_name),
-    clientEmail: clientEmail(r.user_id, r.client_email),
-    clientPhone: clientPhone(r.user_id, r.client_phone),
+    clientLabel: workshopVisibleDriverDisplayName(profileMap.get(r.user_id), r.client_name),
+    clientEmail: exposeDriverDirectContact ? resolveClientEmail(r.user_id, r.client_email) : WORKSHOP_VISITOR_CONTACT_UNAVAILABLE,
+    clientPhone: exposeDriverDirectContact ? resolveClientPhone(r.user_id, r.client_phone) : WORKSHOP_VISITOR_CONTACT_UNAVAILABLE,
     carLabel: carLabel(r.user_id, r.car_id, r.vehicle_data),
   }));
 }

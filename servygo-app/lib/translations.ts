@@ -204,6 +204,29 @@ export const translations: Record<LanguageCode, TranslationTree> = {
           desc: "Klient może zaakceptować ofertę, zmienić wybór albo szukać dalej. Po wykonaniu usługi może wrócić do ServyGo i skorzystać ponownie.",
         },
       ],
+      modalFaqTitle: "Często zadawane pytania",
+      faqItems: [
+        {
+          title: "Czy ServyGo wykonuje naprawy?",
+          desc: "Nie — ServyGo łączy kierowców z warsztatami. Umowa o naprawę jest między Tobą a warsztatem.",
+        },
+        {
+          title: "Czy ceny są ostateczne?",
+          desc: "Nie — na liście widzisz ceny orientacyjne. Końcową wycenę ustala warsztat.",
+        },
+        {
+          title: "Czy mogę anulować wizytę?",
+          desc: "Tak — możliwość anulowania zależy od statusu rezerwacji i zasad Serwisu (szczegóły przy Twojej rezerwacji).",
+        },
+        {
+          title: "Jak skontaktować się z warsztatem?",
+          desc: "Wyłącznie przez wewnętrzną skrzynkę wiadomości ServyGo.",
+        },
+        {
+          title: "Czy ServyGo rozpatruje reklamację naprawy?",
+          desc: "Nie — reklamacje jakości usługi naprawy kieruj bezpośrednio do warsztatu. ServyGo może przyjąć zgłoszenie dotyczące platformy lub warsztatu dla moderacji i bezpieczeństwa.",
+        },
+      ],
     },
     account: {
       title: "Moje konto",
@@ -215,6 +238,11 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       profile: {
         firstName: "Imię",
         lastName: "Nazwisko",
+        lastNameOptional: "(opcjonalne)",
+        shareFullLastNameWithWorkshops: "Warsztat widzi moje pełne nazwisko",
+        shareFullLastNameHint: "Domyślnie warsztat widzi imię i pierwszą literę nazwiska.",
+        reviewNickname: "Pseudonim pod opinie ServyGo",
+        reviewNicknameHint: "Opcjonalnie — jeśli zostawisz opinię z podpisem „pseudonim”, wpisz go tutaj.",
         country: "Kraj",
         city: "Miasto",
         save: "Zapisz zmiany",
@@ -267,7 +295,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         noResults: "Brak wyników",
       },
       validation: {
-        profileNameRequired: "Imię i nazwisko są wymagane.",
+        profileFirstNameRequired: "Imię jest wymagane.",
+        profileNameRequired: "Imię jest wymagane.",
         vehicleRequired: "Marka, model i rocznik są wymagane.",
         passwordMin: "Hasło musi mieć minimum 6 znaków.",
         passwordMismatch: "Hasła nie są takie same.",
@@ -684,6 +713,29 @@ export const translations: Record<LanguageCode, TranslationTree> = {
           desc: "You can accept an offer, change your choice, or keep searching. After the job you can return to ServyGo anytime.",
         },
       ],
+      modalFaqTitle: "Frequently asked questions",
+      faqItems: [
+        {
+          title: "Does ServyGo repair cars?",
+          desc: "No — ServyGo connects drivers with workshops. The repair agreement is between you and the workshop.",
+        },
+        {
+          title: "Are prices final?",
+          desc: "No — listed prices are indicative. The workshop confirms the final quote.",
+        },
+        {
+          title: "Can I cancel an appointment?",
+          desc: "Yes — depending on booking status and ServyGo rules (see your booking details).",
+        },
+        {
+          title: "How do I contact the workshop?",
+          desc: "Only via ServyGo's internal messaging inbox.",
+        },
+        {
+          title: "Does ServyGo handle repair-quality complaints?",
+          desc: "No — send repair-quality complaints directly to the workshop. ServyGo may collect reports about the platform or a workshop for moderation and safety.",
+        },
+      ],
     },
     account: {
       title: "My account",
@@ -695,6 +747,11 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       profile: {
         firstName: "First name",
         lastName: "Last name",
+        lastNameOptional: "(optional)",
+        shareFullLastNameWithWorkshops: "Workshops can see my full last name",
+        shareFullLastNameHint: "By default workshops see your first name and last-name initial.",
+        reviewNickname: "Nickname for ServyGo reviews",
+        reviewNicknameHint: "Optional — if you publish a review as “nickname”, enter it here.",
         country: "Country",
         city: "City",
         save: "Save changes",
@@ -747,7 +804,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         noResults: "No results",
       },
       validation: {
-        profileNameRequired: "First name and last name are required.",
+        profileFirstNameRequired: "First name is required.",
+        profileNameRequired: "First name is required.",
         vehicleRequired: "Brand, model, and year are required.",
         passwordMin: "Password must have at least 6 characters.",
         passwordMismatch: "Passwords do not match.",
@@ -1163,6 +1221,29 @@ export const translations: Record<LanguageCode, TranslationTree> = {
           desc: "Можна прийняти пропозицію, змінити вибір або шукати далі. Після обслуговування завжди можна повернутися до ServyGo.",
         },
       ],
+      modalFaqTitle: "Часті запитання",
+      faqItems: [
+        {
+          title: "Чи ServyGo робить ремонти?",
+          desc: "Ні — ServyGo з'єднує водіїв із СТО. Договір про ремонт — між вами та сервісом.",
+        },
+        {
+          title: "Чи ціни остаточні?",
+          desc: "Ні — у списку орієнтовні суми. Фінальну вартість підтверджує СТО.",
+        },
+        {
+          title: "Чи можу скасувати візит?",
+          desc: "Так — залежить від статусу бронювання та правил ServyGo (див. ваше бронювання).",
+        },
+        {
+          title: "Як зв'язатися з СТО?",
+          desc: "Лише через внутрішню пошту повідомлень ServyGo.",
+        },
+        {
+          title: "Чи ServyGo розглядає рекламацію щодо якості ремонту?",
+          desc: "Ні — такі рекламації надсилайте безпосередньо до СТО. ServyGo може прийняти звернення щодо платформи або майданчика для модерації й безпеки.",
+        },
+      ],
     },
     account: {
       title: "Мій кабінет",
@@ -1174,6 +1255,11 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       profile: {
         firstName: "Ім'я",
         lastName: "Прізвище",
+        lastNameOptional: "(необов'язково)",
+        shareFullLastNameWithWorkshops: "СТО бачить повне прізвище",
+        shareFullLastNameHint: "За замовчуванням сервіс бачить ім'я та першу літеру прізвища.",
+        reviewNickname: "Псевдонім для відгуків ServyGo",
+        reviewNicknameHint: "Необов'язково — якщо підписуєте відгук псевдонімом, введіть його тут.",
         country: "Країна",
         city: "Місто",
         save: "Зберегти зміни",
@@ -1226,7 +1312,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         noResults: "Немає результатів",
       },
       validation: {
-        profileNameRequired: "Ім'я та прізвище є обов'язковими.",
+        profileFirstNameRequired: "Ім'я є обов'язковим.",
+        profileNameRequired: "Ім'я є обов'язковим.",
         vehicleRequired: "Марка, модель і рік є обов'язковими.",
         passwordMin: "Пароль має містити щонайменше 6 символів.",
         passwordMismatch: "Паролі не збігаються.",

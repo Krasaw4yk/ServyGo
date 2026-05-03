@@ -24,8 +24,8 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
   { type: "link", label: "Moje wiadomości", href: "/moje-wiadomosci" },
   { type: "link", label: "Kalendarz", href: "/moj-kalendarz" },
   { type: "scroll", label: "Prywatność", sectionId: "sec-prywatnosc" },
-  { type: "scroll", label: "Pomoc i kontakt", sectionId: "sec-pomoc" },
-  { type: "scroll", label: "O aplikacji", sectionId: "sec-aplikacji" },
+  { type: "scroll", label: "Usuń konto", sectionId: "sec-usun-konto" },
+  { type: "scroll", label: "Pomoc i kontakt", sectionId: "sec-aplikacji" },
 ];
 
 function sidebarEntryClass(active: boolean) {
@@ -92,6 +92,11 @@ export default function UstawieniaPage() {
     reminders: true,
     promotions: false,
   });
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteEmailConfirm, setDeleteEmailConfirm] = useState("");
+  const [deleteAck, setDeleteAck] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     setMounted(true);
@@ -179,6 +184,50 @@ export default function UstawieniaPage() {
     router.push("/");
   }
 
+  async function handleConfirmDeleteAccount() {
+    if (!supabase || !user?.email) return;
+    setDeleteError("");
+    if (!deleteAck) {
+      setDeleteError("Zaznacz potwierdzenie świadomości skutków.");
+      return;
+    }
+    const confirm = deleteEmailConfirm.trim().toLowerCase();
+    if (confirm !== user.email.trim().toLowerCase()) {
+      setDeleteError("Wpisz dokładnie swój adres e-mail konta.");
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) {
+        setDeleteError("Brak aktywnej sesji — zaloguj się ponownie.");
+        setDeleteBusy(false);
+        return;
+      }
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ confirmationEmail: deleteEmailConfirm.trim() }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) {
+        setDeleteError(json?.error ?? "Nie udało się usunąć konta.");
+        setDeleteBusy(false);
+        return;
+      }
+      await supabase.auth.signOut();
+      router.replace("/?accountDeleted=1");
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Błąd żądania.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   function scrollToSection(sectionId: string, menuLabel: string) {
     setActiveMenu(menuLabel);
     window.history.replaceState(null, "", `#${sectionId}`);
@@ -255,7 +304,13 @@ export default function UstawieniaPage() {
               <article id="sec-konto" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Dane konta</h2>
                 <div className="mt-3 space-y-2 text-sm text-zinc-700">
-                  <p><span className="font-semibold">Imię i nazwisko:</span> {displayName}</p>
+                  <p>
+                    <span className="font-semibold">Imię:</span> {profile?.first_name?.trim() || "—"}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Nazwisko:</span>{" "}
+                    {profile?.last_name?.trim() ? profile.last_name.trim() : <span className="text-zinc-500">nie podano (opcjonalne)</span>}
+                  </p>
                   <p><span className="font-semibold">E-mail:</span> {profile?.email ?? user.email ?? "—"}</p>
                   <p><span className="font-semibold">Telefon:</span> {profile?.phone ?? "Nie ustawiono"}</p>
                 </div>
@@ -318,17 +373,22 @@ export default function UstawieniaPage() {
                 </Link>
               </article>
 
-              <article id="sec-pomoc" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
-                <h2 className="text-lg font-semibold text-zinc-900">Pomoc i kontakt</h2>
-                <p className="mt-2 text-sm text-zinc-600">Skontaktuj się z naszym zespołem wsparcia lub odwiedź FAQ.</p>
-                <div className="mt-4 flex gap-2">
-                  <button type="button" className="rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
-                    FAQ
-                  </button>
-                  <button type="button" className="rounded-xl border border-blue-300 px-4 py-2 text-sm font-semibold text-blue-700 hover:border-orange-400">
-                    Kontakt
-                  </button>
-                </div>
+              <article id="sec-usun-konto" className="rounded-2xl border border-rose-200 bg-rose-50/80 p-5 shadow-sm scroll-mt-28">
+                <h2 className="text-lg font-semibold text-rose-900">Usuń konto</h2>
+                <p className="mt-2 text-sm leading-relaxed text-rose-950/90">
+                  Usunięcie konta spowoduje utratę dostępu do profilu, pojazdów, historii wiadomości i rezerwacji. Część danych może być
+                  przechowywana przez czas wymagany do obsługi rezerwacji, bezpieczeństwa, roszczeń lub obowiązków prawnych.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteModalOpen(true);
+                    setDeleteError("");
+                  }}
+                  className="mt-4 rounded-xl border border-rose-600 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                >
+                  Usuń konto
+                </button>
               </article>
             </div>
 
@@ -336,14 +396,67 @@ export default function UstawieniaPage() {
               <h3 className="text-lg font-semibold">Potrzebujesz pomocy?</h3>
               <p className="mt-1 text-sm text-blue-50">Skontaktuj się z naszym zespołem supportu — odpowiadamy zwykle w ciągu 24h.</p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" className="rounded-xl bg-white/20 px-4 py-2 text-sm font-semibold backdrop-blur hover:bg-white/30">
+                <Link href="/?info=faq" className="rounded-xl bg-white/20 px-4 py-2 text-sm font-semibold backdrop-blur hover:bg-white/30">
                   FAQ
-                </button>
-                <button type="button" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                </Link>
+                <Link href="/?info=contact" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
                   Kontakt
-                </button>
+                </Link>
+                <Link href="/zglos-problem" className="rounded-xl bg-white/90 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-white">
+                  Zgłoś problem
+                </Link>
               </div>
             </article>
+
+            {deleteModalOpen ? (
+              <div className="fixed inset-0 z-[10060] flex items-end justify-center sm:items-center sm:p-6">
+                <button
+                  type="button"
+                  aria-label="Zamknij"
+                  className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+                  onClick={() => !deleteBusy && setDeleteModalOpen(false)}
+                />
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  className="relative z-[1] w-full max-w-md rounded-t-2xl border border-rose-200 bg-white p-5 shadow-2xl sm:rounded-2xl"
+                >
+                  <h3 className="text-lg font-bold text-zinc-900">Potwierdź usunięcie konta</h3>
+                  <p className="mt-2 text-sm text-zinc-600">
+                    Wpisz swój adres e-mail <span className="font-mono font-semibold">{user.email}</span>, aby potwierdzić operację.
+                  </p>
+                  <input
+                    value={deleteEmailConfirm}
+                    onChange={(e) => setDeleteEmailConfirm(e.target.value)}
+                    placeholder="E-mail konta"
+                    className="mt-3 w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                  <label className="mt-3 flex gap-2 text-sm text-zinc-700">
+                    <input type="checkbox" checked={deleteAck} onChange={(e) => setDeleteAck(e.target.checked)} className="mt-1 h-4 w-4" />
+                    Rozumiem, że tej operacji nie można łatwo cofnąć.
+                  </label>
+                  {deleteError ? <p className="mt-2 text-sm text-rose-700">{deleteError}</p> : null}
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={deleteBusy}
+                      onClick={() => setDeleteModalOpen(false)}
+                      className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold"
+                    >
+                      Anuluj
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleteBusy}
+                      onClick={() => void handleConfirmDeleteAccount()}
+                      className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {deleteBusy ? "Trwa…" : "Potwierdź usunięcie"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       </main>

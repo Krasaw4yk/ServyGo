@@ -7,12 +7,20 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
+import WorkshopPhotosManager from "@/components/workshop/WorkshopPhotosManager";
 import InternalInbox from "@/components/InternalInbox";
 import { getWorkshopDetailForAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
+import { runExpirePendingBookingsWorkshopTimeout } from "@/lib/bookingWorkshopResponseExpiry";
 import { notifyClientBookingQuoteSent, quoteDecisionLabel } from "@/lib/bookingQuoteNotifications";
 import { resolveMessageViewerContext, sendSystemMessage, workshopRespondClientReschedule } from "@/lib/messagesApi";
+import { submitSupportReport } from "@/lib/supportReportsApi";
+import {
+  averageRating,
+  fetchServygoReviewsForWorkshopOwner,
+  type WorkshopServygoReviewRow,
+} from "@/lib/workshopServygoReviewsApi";
 import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { sendBookingNotificationEmail } from "@/lib/sendBookingNotificationEmail";
@@ -74,6 +82,8 @@ const WORKSHOP_SECTIONS = [
   "Pracownicy",
   "Dane warsztatu",
   "Opinie Google",
+  "Opinie Servygo",
+  "Zdjęcia warsztatu",
   "Ustawienia",
 ] as const;
 
@@ -427,6 +437,8 @@ function WorkshopPanelPageContent() {
   const [rescheduleModalDate, setRescheduleModalDate] = useState("");
   const [rescheduleModalTime, setRescheduleModalTime] = useState("");
   const [rescheduleModalReason, setRescheduleModalReason] = useState("");
+  const [servygoReviewsPanel, setServygoReviewsPanel] = useState<WorkshopServygoReviewRow[]>([]);
+  const [servygoReviewReportBusy, setServygoReviewReportBusy] = useState(false);
 
   const isDark = mounted ? theme === "dark" : false;
   const formInputClassName = `rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-white text-black" : "border-zinc-300 bg-white text-black"}`;
@@ -489,10 +501,31 @@ function WorkshopPanelPageContent() {
     setError("");
   }, [activeSection]);
 
+  useEffect(() => {
+    if (!workshop?.id || activeSection !== "Opinie Servygo") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await fetchServygoReviewsForWorkshopOwner(workshop.id);
+        if (!cancelled) setServygoReviewsPanel(rows);
+      } catch {
+        if (!cancelled) setServygoReviewsPanel([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workshop?.id, activeSection]);
+
   const loadAll = useCallback(async (ws: Workshop) => {
     setError("");
+    try {
+      await runExpirePendingBookingsWorkshopTimeout();
+    } catch {
+      /* brak migracji RPC lub wygaśnięcie nie blokuje panelu */
+    }
     const [b, exceptions, serviceRows, vehiclePriceRows, employeeRows] = await Promise.all([
-      listBookingsForWorkshopOwner(ws.id),
+      listBookingsForWorkshopOwner(ws.id, { exposeDriverDirectContact: isAdminPreview }),
       listAvailabilityExceptionsForOwner(ws.id),
       listWorkshopServiceConfigsForOwner(ws.id),
       listWorkshopServiceVehiclePricesForOwner(ws.id),
@@ -567,7 +600,7 @@ function WorkshopPanelPageContent() {
       google_maps_url: ws.google_maps_url ?? "",
       opening_hours: ws.opening_hours ?? "",
     });
-  }, []);
+  }, [isAdminPreview]);
 
   const respondClientRescheduleProposal = useCallback(
     async (b: WorkshopOwnerBookingRow, accept: boolean) => {
@@ -2144,7 +2177,6 @@ function WorkshopPanelPageContent() {
                             <tr>
                               <th className="px-3 py-2 text-left">Data</th>
                               <th className="px-3 py-2 text-left">Klient</th>
-                              <th className="px-3 py-2 text-left">Telefon/email</th>
                               <th className="px-3 py-2 text-left">Usługa</th>
                               <th className="px-3 py-2 text-left">Auto</th>
                               <th className="px-3 py-2 text-left">Termin</th>
@@ -2155,7 +2187,7 @@ function WorkshopPanelPageContent() {
                           <tbody>
                             {bookings.length === 0 ? (
                               <tr>
-                                <td colSpan={8} className="px-3 py-8 text-center text-zinc-500">Brak rezerwacji</td>
+                                <td colSpan={7} className="px-3 py-8 text-center text-zinc-500">Brak rezerwacji</td>
                               </tr>
                             ) : (
                               bookings.slice(0, 10).map((b) => {
@@ -2165,8 +2197,14 @@ function WorkshopPanelPageContent() {
                                 return (
                                   <tr key={b.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
                                     <td className="px-3 py-2">{b.created_at?.slice(0, 10) ?? "—"}</td>
-                                    <td className="px-3 py-2">{b.clientLabel}</td>
-                                    <td className="px-3 py-2 text-xs"><div>{b.clientPhone}</div><div className={isDark ? "text-zinc-400" : "text-zinc-500"}>{b.clientEmail}</div></td>
+                                    <td className="px-3 py-2">
+                                      <div>{b.clientLabel}</div>
+                                      {!isAdminPreview ? (
+                                        <p className={`mt-1 max-w-[220px] text-[11px] leading-snug ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                                          Kontakt wyłącznie przez wiadomości ServyGo — bez telefonu i e-mailu kierowcy.
+                                        </p>
+                                      ) : null}
+                                    </td>
                                     <td className="px-3 py-2">{b.service_name}</td>
                                     <td className="px-3 py-2 text-xs">{b.carLabel}</td>
                                     <td className="whitespace-nowrap px-3 py-2">{b.date} {b.start_time?.slice(0, 5) ?? b.time}</td>
@@ -2262,7 +2300,6 @@ function WorkshopPanelPageContent() {
                           <tr>
                             <th className="px-3 py-2 text-left">Data zgłoszenia</th>
                             <th className="px-3 py-2 text-left">Klient</th>
-                            <th className="px-3 py-2 text-left">Telefon / email</th>
                             <th className="px-3 py-2 text-left">Usługa</th>
                             <th className="px-3 py-2 text-left">Auto</th>
                             <th className="px-3 py-2 text-left">Termin</th>
@@ -2274,7 +2311,7 @@ function WorkshopPanelPageContent() {
                         <tbody>
                           {bookings.length === 0 ? (
                             <tr>
-                              <td colSpan={9} className="px-3 py-8 text-center text-zinc-500">Brak rezerwacji.</td>
+                              <td colSpan={8} className="px-3 py-8 text-center text-zinc-500">Brak rezerwacji.</td>
                             </tr>
                           ) : (
                             bookings.map((b) => {
@@ -2288,8 +2325,14 @@ function WorkshopPanelPageContent() {
                               return (
                                 <tr key={b.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
                                   <td className="px-3 py-2">{b.created_at?.slice(0, 10) ?? "—"}</td>
-                                  <td className="px-3 py-2">{b.clientLabel}</td>
-                                  <td className="px-3 py-2 text-xs"><div>{b.clientPhone}</div><div className={isDark ? "text-zinc-400" : "text-zinc-500"}>{b.clientEmail}</div></td>
+                                  <td className="px-3 py-2">
+                                    <div>{b.clientLabel}</div>
+                                    {!isAdminPreview ? (
+                                      <p className={`mt-1 max-w-[240px] text-[11px] leading-snug ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                                        Kontakt wyłącznie przez wiadomości ServyGo — bez telefonu i e-mailu kierowcy.
+                                      </p>
+                                    ) : null}
+                                  </td>
                                   <td className="px-3 py-2">{b.service_name}</td>
                                   <td className="px-3 py-2 text-xs">{b.carLabel}</td>
                                   <td className="whitespace-nowrap px-3 py-2">{b.date} {b.start_time?.slice(0, 5) ?? b.time} - {b.end_time?.slice(0, 5) ?? "—"}</td>
@@ -2643,6 +2686,86 @@ function WorkshopPanelPageContent() {
                       ) : null}
                       <span className={`rounded-xl border px-3 py-2 text-xs ${isDark ? "border-zinc-700 text-zinc-300" : "border-blue-200 text-zinc-600"}`}>Średnia ocena: 4.7 · Liczba opinii: 124 (placeholder)</span>
                     </div>
+                  </section>
+                ) : null}
+
+                {activeSection === "Opinie Servygo" && workshop ? (
+                  <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <h2 className="text-lg font-semibold">Opinie ServyGo</h2>
+                    <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Osobno od Google — widzisz podpis zgodnie z ustawieniami kierowcy. Nie możesz edytować ani usuwać opinii.
+                    </p>
+                    <p className={`mt-2 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                      Średnia ServyGo: <strong>{servygoReviewsPanel.length ? averageRating(servygoReviewsPanel).toFixed(1) : "—"}</strong> · liczba:{" "}
+                      <strong>{servygoReviewsPanel.length}</strong>
+                    </p>
+                    <div className="mt-4 space-y-3">
+                      {servygoReviewsPanel.map((r) => (
+                        <article key={r.id} className={`rounded-xl border p-3 text-sm ${isDark ? "border-zinc-700 bg-zinc-950/40" : "border-blue-100 bg-white/80"}`}>
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold">{r.display_name_snapshot}</p>
+                              <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{new Date(r.created_at).toLocaleString("pl-PL")}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-amber-500">★ {r.rating}/5 · {r.status}</span>
+                          </div>
+                          {r.service_name ? <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Usługa: {r.service_name}</p> : null}
+                          <p className={`mt-2 whitespace-pre-wrap ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{r.comment}</p>
+                          {!readOnly ? (
+                            <button
+                              type="button"
+                              disabled={servygoReviewReportBusy}
+                              onClick={() => {
+                                if (!supabase || !workshop) return;
+                                setServygoReviewReportBusy(true);
+                                void (async () => {
+                                  try {
+                                    const {
+                                      data: { user },
+                                    } = await supabase.auth.getUser();
+                                    const em = user?.email?.trim();
+                                    if (!em) throw new Error("Brak e-maila konta warsztatu.");
+                                    await submitSupportReport({
+                                      user_id: user?.id ?? null,
+                                      email: em,
+                                      report_type: "servygo_review_report",
+                                      subject: `Zgłoszenie opinii ServyGo (${r.id.slice(0, 8)}…)`,
+                                      message: `Warsztat ${workshop.name} zgłasza opinię ServyGo do moderacji.\nreview_id=${r.id}\nPodpis: ${r.display_name_snapshot}\nTreść: ${r.comment}`,
+                                      workshop_id: workshop.id,
+                                      booking_id: r.booking_id,
+                                      legal_ack: true,
+                                    });
+                                    setSuccess("Zgłoszenie przekazane do administratora.");
+                                  } catch (e) {
+                                    setError(e instanceof Error ? e.message : "Nie udało się zgłosić.");
+                                  } finally {
+                                    setServygoReviewReportBusy(false);
+                                  }
+                                })();
+                              }}
+                              className="mt-3 rounded-lg border border-orange-400/60 px-3 py-1 text-xs font-semibold text-orange-700 dark:text-orange-200"
+                            >
+                              Zgłoś opinię do administratora
+                            </button>
+                          ) : null}
+                        </article>
+                      ))}
+                      {servygoReviewsPanel.length === 0 ? (
+                        <p className={`text-sm ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>Brak opinii ServyGo.</p>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
+
+                {activeSection === "Zdjęcia warsztatu" && workshop ? (
+                  <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <h2 className="text-lg font-semibold">Zdjęcia warsztatu</h2>
+                    <WorkshopPhotosManager
+                      workshopId={workshop.id}
+                      uploadedByRole="workshop_owner"
+                      isDark={isDark}
+                      readOnly={readOnly}
+                    />
                   </section>
                 ) : null}
 
@@ -3064,9 +3187,18 @@ function WorkshopPanelPageContent() {
                     <section className={`mt-5 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
                       {secTitle("Klient")}
                       <dl className="space-y-2">
-                        {row("Imię i nazwisko", dash(b.clientLabel))}
-                        {row("E-mail", dash(b.clientEmail))}
-                        {row("Telefon", dash(b.clientPhone))}
+                        {row("Wyświetlana nazwa", dash(b.clientLabel))}
+                        {isAdminPreview ? (
+                          <>
+                            {row("E-mail (podgląd admina)", dash(b.clientEmail))}
+                            {row("Telefon (podgląd admina)", dash(b.clientPhone))}
+                          </>
+                        ) : (
+                          row(
+                            "Kontakt z kierowcą",
+                            "Wyłącznie przez wiadomości ServyGo — numer telefonu i adres e-mail kierowcy nie są udostępniane warsztatowi.",
+                          )
+                        )}
                         {row("ID użytkownika", b.user_id)}
                       </dl>
                     </section>

@@ -17,6 +17,15 @@ import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 import WorkshopFavoriteToggle from "@/components/WorkshopFavoriteToggle";
 import WorkshopLocationMiniMap from "@/components/workshop/WorkshopLocationMiniMap";
+import {
+  averageRating,
+  fetchPublishedServygoReviewsForWorkshop,
+  listEligibleBookingsForServygoReview,
+  submitServygoReview,
+  type ServygoReviewDisplayMode,
+  type WorkshopServygoReviewRow,
+} from "@/lib/workshopServygoReviewsApi";
+import { listActiveWorkshopPhotos, type WorkshopPhotoRow } from "@/lib/workshopPhotosApi";
 
 function padTime(value: number) {
   return String(value).padStart(2, "0");
@@ -96,6 +105,19 @@ function WorkshopDetailsPageContent() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("any");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [employeeSheetOpen, setEmployeeSheetOpen] = useState(false);
+  const [servygoReviews, setServygoReviews] = useState<WorkshopServygoReviewRow[]>([]);
+  const [workshopPhotos, setWorkshopPhotos] = useState<WorkshopPhotoRow[]>([]);
+  const [servygoReviewOpen, setServygoReviewOpen] = useState(false);
+  const [servygoEligible, setServygoEligible] = useState<{ id: string; service_name: string | null }[]>([]);
+  const [servygoBookingId, setServygoBookingId] = useState("");
+  const [servygoRating, setServygoRating] = useState(5);
+  const [servygoComment, setServygoComment] = useState("");
+  const [servygoDisplayMode, setServygoDisplayMode] = useState<ServygoReviewDisplayMode>("first_initial");
+  const [servygoNickname, setServygoNickname] = useState("");
+  const [servygoProfileFirst, setServygoProfileFirst] = useState("");
+  const [servygoProfileLast, setServygoProfileLast] = useState("");
+  const [servygoBusy, setServygoBusy] = useState(false);
+  const [servygoMsg, setServygoMsg] = useState("");
 
   const workshopId = typeof params?.id === "string" ? params.id : "";
 
@@ -141,6 +163,60 @@ function WorkshopDetailsPageContent() {
   }, [workshopId]);
 
   useEffect(() => {
+    if (!workshop?.supabaseId) {
+      setServygoReviews([]);
+      setWorkshopPhotos([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [rev, pho] = await Promise.all([
+          fetchPublishedServygoReviewsForWorkshop(workshop.supabaseId),
+          listActiveWorkshopPhotos(workshop.supabaseId),
+        ]);
+        if (!cancelled) {
+          setServygoReviews(rev);
+          setWorkshopPhotos(pho);
+        }
+      } catch {
+        if (!cancelled) {
+          setServygoReviews([]);
+          setWorkshopPhotos([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workshop?.supabaseId]);
+
+  useEffect(() => {
+    if (!servygoReviewOpen || !currentUserId || !workshop?.supabaseId || !supabase) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [eligible, prof] = await Promise.all([
+          listEligibleBookingsForServygoReview(currentUserId, workshop.supabaseId),
+          supabase.from("profiles").select("first_name,last_name,review_public_nickname").eq("id", currentUserId).maybeSingle(),
+        ]);
+        if (cancelled) return;
+        setServygoEligible(eligible.map((e) => ({ id: e.id, service_name: e.service_name })));
+        const p = prof.data as { first_name?: string | null; last_name?: string | null; review_public_nickname?: string | null } | null;
+        setServygoProfileFirst((p?.first_name ?? "").trim());
+        setServygoProfileLast((p?.last_name ?? "").trim());
+        setServygoNickname((p?.review_public_nickname ?? "").trim());
+        if (eligible.length === 1) setServygoBookingId(eligible[0].id);
+      } catch {
+        if (!cancelled) setServygoEligible([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [servygoReviewOpen, currentUserId, workshop?.supabaseId, supabase]);
+
+  useEffect(() => {
     if (!workshop?.supabaseId || !supabase) {
       setEmployeeOptions([]);
       return;
@@ -156,13 +232,11 @@ function WorkshopDetailsPageContent() {
       if (cancelled) return;
       const rows = (data as { id: string; first_name: string; last_name: string; role: string }[] | null) ?? [];
       setEmployeeOptions(
-        rows
-          .map((row) => ({
-            id: row.id,
-            role: row.role,
-            label: `${row.first_name} ${row.last_name} (${row.role})`,
-          }))
-          .sort((a, b) => a.label.localeCompare(b.label, "pl", { sensitivity: "base" })),
+        rows.map((row, idx) => ({
+          id: row.id,
+          role: row.role,
+          label: `${row.role?.trim() || "Stanowisko"} (${idx + 1})`,
+        })),
       );
     })();
     return () => {
@@ -648,8 +722,26 @@ function WorkshopDetailsPageContent() {
                         : "border-orange-300/70 bg-orange-50 text-orange-700 hover:border-orange-400"
                     }`}
                   >
-                    Zostaw opinię
+                    Opinia Google Maps
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isLoggedIn) {
+                        router.push("/?auth=login");
+                        return;
+                      }
+                      setServygoMsg("");
+                      setServygoReviewOpen(true);
+                    }}
+                    className={`inline-flex w-full items-center justify-center rounded-xl border px-3 py-1.5 text-sm font-semibold transition sm:w-auto ${
+                      isDark
+                        ? "border-blue-300/50 bg-blue-500/10 text-blue-100 hover:border-blue-300"
+                        : "border-blue-300/70 bg-blue-50 text-blue-800 hover:border-blue-400"
+                    }`}
+                  >
+                    Zostaw opinię ServyGo
+                  </button>
                 </div>
               </div>
 
@@ -687,6 +779,68 @@ function WorkshopDetailsPageContent() {
               <p className={`mt-4 text-sm leading-relaxed sm:text-base ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
                 {workshop.description}
               </p>
+
+              {workshopPhotos.length > 0 ? (
+                <div className="mt-6">
+                  <h2 className={`text-lg font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Zdjęcia warsztatu</h2>
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {workshopPhotos.map((ph) =>
+                      ph.public_url ? (
+                        <div
+                          key={ph.id}
+                          className={`overflow-hidden rounded-2xl border ${
+                            isDark ? "border-zinc-700 bg-zinc-900/60" : "border-blue-100 bg-white/80"
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={ph.public_url} alt="" className="aspect-video w-full object-cover" />
+                          {ph.caption ? (
+                            <p className={`px-2 py-1 text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{ph.caption}</p>
+                          ) : null}
+                        </div>
+                      ) : null,
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-6 rounded-2xl border border-blue-400/25 bg-blue-500/5 p-4 sm:p-5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className={`text-lg font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Opinie ServyGo</h2>
+                    <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Odrębne od ocen Google — widoczne podpis zgodnie z ustawieniami (bez e-maila i telefonu).
+                    </p>
+                  </div>
+                  <div className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 text-zinc-200" : "border-blue-200 text-zinc-800"}`}>
+                    Średnia:{" "}
+                    <strong>{servygoReviews.length ? averageRating(servygoReviews).toFixed(1) : "—"}</strong> · Liczba:{" "}
+                    <strong>{servygoReviews.length}</strong>
+                  </div>
+                </div>
+                <ul className={`mt-4 space-y-3 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  {servygoReviews.length === 0 ? (
+                    <li className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-700 text-zinc-400" : "border-blue-100 text-zinc-600"}`}>
+                      Jeszcze brak opinii ServyGo dla tego warsztatu.
+                    </li>
+                  ) : (
+                    servygoReviews.map((r) => (
+                      <li
+                        key={r.id}
+                        className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-700 bg-zinc-900/40" : "border-blue-100 bg-white/70"}`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold">{r.display_name_snapshot}</span>
+                          <span className="text-xs opacity-80">{new Date(r.created_at).toLocaleDateString("pl-PL")}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">★ {r.rating}/5</p>
+                        {r.service_name ? <p className="mt-1 text-xs opacity-80">Usługa: {r.service_name}</p> : null}
+                        <p className="mt-2 whitespace-pre-wrap">{r.comment}</p>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
 
               <div className="mt-6">
                 <button
@@ -1116,6 +1270,142 @@ function WorkshopDetailsPageContent() {
               ) : null}
             </div>
           </div>
+        ) : null}
+
+        {workshop ? (
+          <MobileBottomSheet
+            isOpen={servygoReviewOpen}
+            title="Zostaw opinię ServyGo"
+            onClose={() => {
+              if (!servygoBusy) setServygoReviewOpen(false);
+            }}
+            isDark={isDark}
+            tallList
+            stackClassName="z-[10056]"
+          >
+            <div className="space-y-3 px-1 pb-4 text-sm">
+              {servygoMsg ? (
+                <p className={`rounded-xl border px-3 py-2 ${isDark ? "border-emerald-500/40 text-emerald-200" : "border-emerald-200 text-emerald-800"}`}>
+                  {servygoMsg}
+                </p>
+              ) : null}
+              {servygoEligible.length === 0 ? (
+                <p className={isDark ? "text-zinc-400" : "text-zinc-600"}>
+                  Możesz dodać opinię ServyGo po zakończonej lub potwierdzonej rezerwacji w tym warsztacie. Jeśli dopiero się umówiłeś, wróć po wizycie.
+                </p>
+              ) : (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="font-medium">Rezerwacja</span>
+                    <select
+                      value={servygoBookingId}
+                      onChange={(e) => setServygoBookingId(e.target.value)}
+                      className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                    >
+                      <option value="">— wybierz —</option>
+                      {servygoEligible.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {(b.service_name ?? "Usługa").slice(0, 60)} · {b.id.slice(0, 8)}…
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="font-medium">Ocena</span>
+                    <select
+                      value={servygoRating}
+                      onChange={(e) => setServygoRating(Number(e.target.value))}
+                      className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                    >
+                      {[5, 4, 3, 2, 1].map((n) => (
+                        <option key={n} value={n}>
+                          {n} — gwiazdek
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="font-medium">Treść opinii</span>
+                    <textarea
+                      rows={4}
+                      value={servygoComment}
+                      onChange={(e) => setServygoComment(e.target.value)}
+                      className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                    />
+                  </label>
+                  <fieldset className="space-y-2">
+                    <legend className="font-medium">Podpis przy opinii</legend>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        checked={servygoDisplayMode === "first_initial"}
+                        onChange={() => setServygoDisplayMode("first_initial")}
+                      />
+                      Imię i pierwsza litera nazwiska
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        checked={servygoDisplayMode === "nickname"}
+                        onChange={() => setServygoDisplayMode("nickname")}
+                      />
+                      Pseudonim
+                    </label>
+                  </fieldset>
+                  {servygoDisplayMode === "nickname" ? (
+                    <label className="flex flex-col gap-1">
+                      <span className="font-medium">Pseudonim</span>
+                      <input
+                        value={servygoNickname}
+                        onChange={(e) => setServygoNickname(e.target.value)}
+                        className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                      />
+                    </label>
+                  ) : null}
+                  <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
+                    Pełne nazwisko, e-mail i telefon nie są publikowane przy opinii ServyGo.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={servygoBusy || !servygoBookingId || !servygoComment.trim()}
+                    onClick={() => {
+                      if (!currentUserId || !workshop.supabaseId || !supabase) return;
+                      setServygoBusy(true);
+                      setServygoMsg("");
+                      const sid = servygoEligible.find((b) => b.id === servygoBookingId)?.service_name ?? null;
+                      void (async () => {
+                        try {
+                          await submitServygoReview({
+                            workshopId: workshop.supabaseId,
+                            userId: currentUserId,
+                            bookingId: servygoBookingId,
+                            serviceName: sid,
+                            rating: servygoRating,
+                            comment: servygoComment,
+                            displayNameMode: servygoDisplayMode,
+                            nicknameForReview: servygoNickname,
+                            profileFirstName: servygoProfileFirst,
+                            profileLastName: servygoProfileLast,
+                          });
+                          const next = await fetchPublishedServygoReviewsForWorkshop(workshop.supabaseId);
+                          setServygoReviews(next);
+                          setServygoMsg("Dziękujemy — opinia została przekazana i oczekuje na moderację.");
+                          setServygoComment("");
+                        } catch (e) {
+                          setServygoMsg(e instanceof Error ? e.message : "Nie udało się zapisać opinii.");
+                        } finally {
+                          setServygoBusy(false);
+                        }
+                      })();
+                    }}
+                    className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-orange-500 px-4 py-3 font-semibold text-white disabled:opacity-50"
+                  >
+                    {servygoBusy ? "Wysyłanie…" : "Wyślij opinię"}
+                  </button>
+                </>
+              )}
+            </div>
+          </MobileBottomSheet>
         ) : null}
       </main>
     </ServyGoPageShell>
