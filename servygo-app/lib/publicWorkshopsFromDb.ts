@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import type { MockWorkshop, WorkshopAvailabilityConfig, WorkshopServiceOffer } from "@/lib/mockWorkshops";
+import { mockWorkshops } from "@/lib/mockWorkshops";
+import { getApproxCityCenterCoords } from "@/lib/offersGeo";
 import { normalizeServiceTextForMatch } from "@/lib/serviceCategoryClassifier";
 import { formatSupabaseError } from "@/lib/workshopApi";
 
@@ -9,28 +11,9 @@ export function isPubliclyListedWorkshopStatus(status: string | null | undefined
   return s === "active";
 }
 
-const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
-  "bielsko-biała": { lat: 49.82, lng: 19.04 },
-  "kraków": { lat: 50.06, lng: 19.94 },
-  "warszawa": { lat: 52.23, lng: 21.01 },
-  "wrocław": { lat: 51.11, lng: 17.04 },
-  "gdańsk": { lat: 54.35, lng: 18.65 },
-  "poznań": { lat: 52.41, lng: 16.93 },
-  "katowice": { lat: 50.26, lng: 19.02 },
-  "łódź": { lat: 51.76, lng: 19.46 },
-  "szczecin": { lat: 53.43, lng: 14.55 },
-  "bydgoszcz": { lat: 53.12, lng: 18.01 },
-  "lublin": { lat: 51.25, lng: 22.57 },
-  "rzeszów": { lat: 50.04, lng: 21.99 },
-  "częstochowa": { lat: 50.81, lng: 19.12 },
-};
-
-function approximateCoordsForCity(city: string | null): { lat: number; lng: number } {
-  const key = (city ?? "").trim().toLowerCase();
-  if (key && CITY_COORDS[key]) return CITY_COORDS[key];
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return { lat: 50.2 + (h % 900) / 2500, lng: 18.5 + (h % 1100) / 2200 };
+/** Lista / mapa ofert: tylko aktywne i włączone przez admina na mapę ServyGo. */
+export function isWorkshopVisibleOnOffersPage(status: string | null | undefined, showOnMap: boolean | null | undefined): boolean {
+  return isPubliclyListedWorkshopStatus(status) && showOnMap === true;
 }
 
 const DEFAULT_BASE_SLOTS = [
@@ -107,6 +90,7 @@ function buildServiceOffers(
     id?: string;
     service_name: string;
     service_key?: string | null;
+    category?: string | null;
     price_from?: number | null;
     price_to?: number | null;
     duration_minutes?: number | null;
@@ -141,16 +125,24 @@ function buildServiceOffers(
 type WorkshopWithNestedServices = {
   id: string;
   name: string;
+  slug?: string | null;
   city: string | null;
   address: string | null;
   description: string | null;
   status: string | null;
   google_maps_url: string | null;
   services_summary: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  rating?: number | string | null;
+  reviews_count?: number | null;
+  google_place_id?: string | null;
+  show_on_map?: boolean | null;
   workshop_services?: {
     id: string;
     service_name: string;
     service_key: string | null;
+    category?: string | null;
     price_from: number | null;
     price_to: number | null;
     duration_minutes: number | null;
@@ -383,26 +375,49 @@ function buildGoogleSearchUrl(name: string, address: string | null, city: string
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q || name)}`;
 }
 
+function parseDbRating(value: number | string | null | undefined): number {
+  if (value == null) return 0;
+  const n = typeof value === "number" ? value : Number.parseFloat(String(value));
+  return Number.isFinite(n) ? Math.min(5, Math.max(0, n)) : 0;
+}
+
 export function buildMockWorkshopFromDbRow(w: WorkshopWithNestedServices): MockWorkshop {
-  const coords = approximateCoordsForCity(w.city);
+  const fallback = getApproxCityCenterCoords(w.city);
+  const latRaw = w.latitude;
+  const lngRaw = w.longitude;
+  const hasDbCoords =
+    latRaw != null &&
+    lngRaw != null &&
+    Number.isFinite(Number(latRaw)) &&
+    Number.isFinite(Number(lngRaw));
+  const lat = hasDbCoords ? Number(latRaw) : fallback.lat;
+  const lng = hasDbCoords ? Number(lngRaw) : fallback.lng;
   const nested = Array.isArray(w.workshop_services) ? w.workshop_services : [];
   const offers = buildServiceOffers(nested, w.services_summary);
   const storedMaps = (w.google_maps_url ?? "").trim();
   const mapsUrl = storedMaps || buildGoogleSearchUrl(w.name, w.address, w.city);
+  const showOnMap = w.show_on_map === true;
+  const placeId = (w.google_place_id ?? "").trim();
 
   return {
     id: w.id,
     supabaseId: w.id,
-    googlePlaceId: "",
+    googlePlaceId: placeId,
     googleMapsUrl: mapsUrl,
     workshopGoogleMapsUrl: storedMaps || null,
+    slug: (w.slug ?? "").trim() || null,
     name: w.name,
     city: (w.city ?? "").trim() || "—",
     address: (w.address ?? "").trim() || "—",
-    rating: 0,
-    reviewsCount: 0,
-    lat: coords.lat,
-    lng: coords.lng,
+    rating: parseDbRating(w.rating),
+    reviewsCount: typeof w.reviews_count === "number" && Number.isFinite(w.reviews_count) ? w.reviews_count : 0,
+    lat,
+    lng,
+    showOnMap,
+    hasMapPin: Boolean(hasDbCoords && showOnMap),
+    hasPreciseMapCoords: hasDbCoords,
+    usesLocalCalendar: false,
+    photoUrls: [],
     description: (w.description ?? "").trim() || "—",
     imagePlaceholder: "",
     availability: defaultAvailability(),
@@ -419,22 +434,31 @@ export function buildMockWorkshopFromDbRow(w: WorkshopWithNestedServices): MockW
 const PUBLIC_WORKSHOP_SELECT = `
   id,
   name,
+  slug,
   city,
   address,
   description,
   status,
   google_maps_url,
   services_summary,
-  workshop_services ( id, service_name, service_key, price_from, price_to, duration_minutes, required_roles, is_active )
+  latitude,
+  longitude,
+  rating,
+  reviews_count,
+  google_place_id,
+  show_on_map,
+  workshop_services ( id, service_name, service_key, category, price_from, price_to, duration_minutes, required_roles, is_active )
 `;
 
-/** Lista warsztatów z Supabase do strony ofert (tylko statusy publiczne — dodatkowy filtr po stronie klienta). */
+/** Lista warsztatów z Supabase do strony ofert (aktywne + włączone na mapę ServyGo przez admina). */
 export async function fetchPublicWorkshopsAsMock(): Promise<MockWorkshop[]> {
-  if (!supabase) return [];
+  if (!supabase) {
+    return mockWorkshops.filter((w) => (w.showOnMap ?? true) !== false);
+  }
   const { data, error } = await supabase.from("workshops").select(PUBLIC_WORKSHOP_SELECT).order("name", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
   const rows = (data as WorkshopWithNestedServices[] | null) ?? [];
-  const visibleRows = rows.filter((w) => isPubliclyListedWorkshopStatus(w.status));
+  const visibleRows = rows.filter((w) => isWorkshopVisibleOnOffersPage(w.status, w.show_on_map));
   const workshopIds = visibleRows.map((w) => w.id);
   const { data: vehiclePricesRaw, error: vehiclePricesError } = workshopIds.length
     ? await supabase

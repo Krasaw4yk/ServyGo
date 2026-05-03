@@ -16,6 +16,7 @@ import { trackEvent } from "@/lib/analytics";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 import WorkshopFavoriteToggle from "@/components/WorkshopFavoriteToggle";
+import WorkshopLocationMiniMap from "@/components/workshop/WorkshopLocationMiniMap";
 
 function padTime(value: number) {
   return String(value).padStart(2, "0");
@@ -239,6 +240,13 @@ function WorkshopDetailsPageContent() {
     [searchParams],
   );
   const problemFromSearch = useMemo(() => (searchParams.get("problem") ?? "").trim(), [searchParams]);
+
+  const workshopDetailHref = useMemo(() => {
+    const q = searchParams.toString();
+    const id = workshop?.id ?? "";
+    if (!id) return "";
+    return q ? `/warsztat/${id}?${q}` : `/warsztat/${id}`;
+  }, [searchParams, workshop?.id]);
 
   const filteredServices = useMemo(() => {
     if (!workshop) return [];
@@ -981,23 +989,32 @@ function WorkshopDetailsPageContent() {
               <section
                 className={`relative h-56 overflow-hidden rounded-3xl border ${
                   isDark
-                    ? "border-blue-500/25 bg-gradient-to-br from-zinc-900 to-slate-950"
-                    : "border-blue-200 bg-gradient-to-br from-sky-100 via-white to-orange-100"
+                    ? "border-blue-500/25 bg-zinc-950"
+                    : "border-blue-200 bg-white"
                 }`}
               >
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.25),transparent_40%),radial-gradient(circle_at_75%_75%,rgba(249,115,22,0.22),transparent_45%)]" />
-                <div className="absolute inset-4 rounded-2xl border border-white/30 bg-white/20 p-3">
-                  <div className="h-full w-full rounded-xl border border-blue-200/40 bg-[linear-gradient(to_right,rgba(148,163,184,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.22)_1px,transparent_1px)] bg-[size:24px_24px]">
-                    <div className="relative h-full w-full">
-                      <span
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500 px-2 py-1 text-xs font-semibold text-white shadow-lg"
-                        title={workshop.name}
-                      >
-                        ● {workshop.name}
-                      </span>
-                    </div>
+                {workshop.hasMapPin === true && workshopDetailHref ? (
+                  <WorkshopLocationMiniMap
+                    workshopId={workshop.id}
+                    name={workshop.name}
+                    addressLine={[workshop.city, workshop.address].filter(Boolean).join(" · ")}
+                    lat={workshop.lat}
+                    lng={workshop.lng}
+                    detailsHref={workshopDetailHref}
+                    rating={workshop.rating}
+                    reviewsCount={workshop.reviewsCount}
+                  />
+                ) : (
+                  <div
+                    className={`flex h-full items-center justify-center px-4 text-center text-sm ${
+                      isDark ? "text-zinc-400" : "text-zinc-600"
+                    }`}
+                  >
+                    {workshop.hasPreciseMapCoords === true && workshop.showOnMap !== true
+                      ? t("workshopDetails.workshopLocationNotOnPublicMap")
+                      : t("workshopDetails.noWorkshopLocation")}
                   </div>
-                </div>
+                )}
               </section>
             </aside>
           </div>

@@ -38,6 +38,7 @@ export type AdminWorkshopListRow = {
   owner_id?: string | null;
   owner_user_id?: string | null;
   name: string;
+  slug?: string | null;
   nip: string | null;
   phone: string | null;
   email: string | null;
@@ -46,6 +47,12 @@ export type AdminWorkshopListRow = {
   description: string | null;
   status: string | null;
   google_maps_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  rating?: number | string | null;
+  reviews_count?: number | null;
+  google_place_id?: string | null;
+  show_on_map?: boolean | null;
   services_summary?: string | null;
   opening_hours?: string | null;
   created_at: string | null;
@@ -82,6 +89,7 @@ export type AdminWorkshopDetail = AdminWorkshopListRow & {
 
 export type AdminWorkshopUpdatePayload = {
   name: string;
+  slug?: string | null;
   city: string | null;
   address: string | null;
   phone: string | null;
@@ -90,6 +98,12 @@ export type AdminWorkshopUpdatePayload = {
   google_maps_url: string | null;
   opening_hours: string | null;
   status: AdminWorkshopEntityStatus;
+  latitude?: number | null;
+  longitude?: number | null;
+  rating?: number | null;
+  reviews_count?: number | null;
+  google_place_id?: string | null;
+  show_on_map?: boolean;
 };
 
 export type AdminSidebarNotificationCounts = {
@@ -213,7 +227,7 @@ export async function listWorkshopsForAdmin(
   const { data, error } = await supabase
     .from("workshops")
     .select(
-      "id, owner_id, owner_user_id, name, nip, phone, email, city, address, description, status, google_maps_url, services_summary, opening_hours, created_at, updated_at",
+      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, created_at, updated_at",
     )
     .order("created_at", { ascending: false });
   if (error) throw new Error(formatSupabaseError(error));
@@ -240,7 +254,7 @@ export async function getWorkshopDetailForAdmin(
   const { data: workshop, error: wError } = await supabase
     .from("workshops")
     .select(
-      "id, owner_id, owner_user_id, name, nip, phone, email, city, address, description, status, google_maps_url, services_summary, opening_hours, created_at, updated_at",
+      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, created_at, updated_at",
     )
     .eq("id", workshopId)
     .single();
@@ -280,10 +294,28 @@ export async function updateWorkshopAsAdmin(
   if (st !== "active" && st !== "suspended" && st !== "hidden") {
     throw new Error("Niedozwolony status warsztatu.");
   }
+  const slugRaw = (payload.slug ?? "").trim();
+  const placeRaw = (payload.google_place_id ?? "").trim();
+  const lat =
+    payload.latitude === null || payload.latitude === undefined || String(payload.latitude) === ""
+      ? null
+      : Number(payload.latitude);
+  const lng =
+    payload.longitude === null || payload.longitude === undefined || String(payload.longitude) === ""
+      ? null
+      : Number(payload.longitude);
+  const ratingNum =
+    payload.rating === null || payload.rating === undefined ? null : Math.min(5, Math.max(0, Number(payload.rating)));
+  const reviewsNum =
+    payload.reviews_count === null || payload.reviews_count === undefined
+      ? null
+      : Math.max(0, Math.floor(Number(payload.reviews_count)));
+
   const { error } = await supabase
     .from("workshops")
     .update({
       name: payload.name.trim(),
+      slug: slugRaw || null,
       city: payload.city?.trim() || null,
       address: payload.address?.trim() || null,
       phone: payload.phone?.trim() || null,
@@ -291,7 +323,33 @@ export async function updateWorkshopAsAdmin(
       description: payload.description?.trim() || null,
       google_maps_url: payload.google_maps_url?.trim() || null,
       opening_hours: payload.opening_hours?.trim() || null,
+      latitude: lat != null && Number.isFinite(lat) ? lat : null,
+      longitude: lng != null && Number.isFinite(lng) ? lng : null,
+      rating: ratingNum != null && Number.isFinite(ratingNum) ? ratingNum : null,
+      reviews_count: reviewsNum != null && Number.isFinite(reviewsNum) ? reviewsNum : null,
+      google_place_id: placeRaw || null,
+      show_on_map: Boolean(payload.show_on_map),
       status: st,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", workshopId);
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+/** Tylko przełącznik widoczności na mapie ServyGo (bez pełnego formularza edycji). */
+export async function updateWorkshopShowOnMapAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+  workshopId: string,
+  showOnMap: boolean,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do edycji warsztatu.");
+  const { error } = await supabase
+    .from("workshops")
+    .update({
+      show_on_map: showOnMap,
       updated_at: new Date().toISOString(),
     })
     .eq("id", workshopId);

@@ -36,6 +36,17 @@ export type MockWorkshop = {
   googleMapsUrl: string;
   /** Z `workshops.google_maps_url` — używaj m.in. do przycisku „Zostaw opinię”. */
   workshopGoogleMapsUrl?: string | null;
+  slug?: string | null;
+  /** Publiczna lista ofert: domyślnie true dla mocków lokalnych. */
+  showOnMap?: boolean;
+  /** Pinezka na mapie OSM — wymaga współrzędnych i showOnMap (mock: zawsze true). */
+  hasMapPin?: boolean;
+  /** Współrzędne zapisane w bazie (nie przybliżenie z miasta). */
+  hasPreciseMapCoords?: boolean;
+  /** Sloty z `availability` zamiast RPC Supabase (mocki lokalne). */
+  usesLocalCalendar?: boolean;
+  /** Opcjonalnie: URL zdjęć z Google po podłączeniu API; na razie puste / z admina. */
+  photoUrls?: string[];
   name: string;
   city: string;
   address: string;
@@ -74,7 +85,7 @@ type MockWorkshopBase = Omit<
 const rawWorkshops: MockWorkshopBase[] = [
   {
     id: "bb-1",
-    name: "AutoSerwis Beskid Premium",
+    name: "Fix Auto",
     city: "Bielsko-Biała",
     address: "ul. Cieszyńska 45, Bielsko-Biała",
     rating: 4.8,
@@ -86,13 +97,25 @@ const rawWorkshops: MockWorkshopBase[] = [
         service_name: "Wymiana oleju",
         vehicle_type: "Osobowy",
         brand: "Fiat",
+        model: "Punto",
+        year_from: 2006,
+        year_to: 2012,
+        engine: "1.3 Diesel",
+        price: 189,
+        duration_minutes: 50,
+        next_available: "Dziś 17:10",
+      },
+      {
+        service_name: "Wymiana oleju",
+        vehicle_type: "Osobowy",
+        brand: "Fiat",
         model: "Croma",
         year_from: 2007,
         year_to: 2010,
         engine: "1.9 Diesel",
         price: 249,
         duration_minutes: 60,
-        next_available: "Dziś 17:10",
+        next_available: "Jutro 09:00",
       },
       {
         service_name: "Diagnostyka komputerowa",
@@ -122,7 +145,7 @@ const rawWorkshops: MockWorkshopBase[] = [
   },
   {
     id: "bb-2",
-    name: "Moto Klinik Lipnik",
+    name: "Moto Expert",
     city: "Bielsko-Biała",
     address: "ul. Lwowska 88, Bielsko-Biała",
     rating: 4.6,
@@ -170,7 +193,7 @@ const rawWorkshops: MockWorkshopBase[] = [
   },
   {
     id: "bb-3",
-    name: "Serwis Pod Szyndzielnią",
+    name: "Blue Garage",
     city: "Bielsko-Biała",
     address: "ul. Partyzantów 62, Bielsko-Biała",
     rating: 4.9,
@@ -218,7 +241,7 @@ const rawWorkshops: MockWorkshopBase[] = [
   },
   {
     id: "bb-4",
-    name: "Auto Punkt Karpacka",
+    name: "Orange Service",
     city: "Bielsko-Biała",
     address: "ul. Karpacka 24, Bielsko-Biała",
     rating: 4.5,
@@ -590,6 +613,18 @@ export const mockWorkshops: MockWorkshop[] = rawWorkshops.map((workshop) => {
 
   return {
     ...workshop,
+    showOnMap: true,
+    hasMapPin: true,
+    hasPreciseMapCoords: true,
+    usesLocalCalendar: true,
+    photoUrls: [],
+    slug: workshop.name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 64),
     supabaseId: `00000000-0000-4000-8000-${String(idSeed).padStart(12, "0").slice(-12)}`,
     googlePlaceId: `mock-place-${workshop.id}`,
     googleMapsUrl: `https://maps.google.com/?q=${encodeURIComponent(`${workshop.name}, ${workshop.address}`)}`,

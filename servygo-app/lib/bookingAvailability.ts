@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
+import type { MockWorkshop } from "@/lib/mockWorkshops";
 import { parseOpeningSchedule } from "@/lib/workshopOwnerApi";
 
 function pad2(v: number) {
@@ -189,4 +190,112 @@ export function inferEndTime(startTime: string, durationMinutes: number): string
 
 export function toLocalDateKey(date: Date): string {
   return dateKeyFromDate(date);
+}
+
+function overlapsMinutes(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+/**
+ * Sloty z konfiguracji `workshop.availability` (mock / fallback bez Supabase).
+ * Logika zbliżona do kalendarza: dni robocze, godziny, wyjątki, zajęte terminy z `bookedSlots`.
+ */
+export function computeLocalAvailabilitySlots(
+  workshop: Pick<MockWorkshop, "availability" | "bookedSlots" | "closedDates">,
+  dateKey: string,
+  durationMinutes: number,
+  now: Date = new Date(),
+): string[] {
+  const duration = Math.max(1, Math.floor(Number(durationMinutes)) || 60);
+  const [y, mo, d] = dateKey.split("-").map(Number);
+  if (!y || !mo || !d) return [];
+  const dayDate = new Date(y, mo - 1, d);
+  if (Number.isNaN(dayDate.getTime())) return [];
+
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (dayDate < todayStart) return [];
+
+  const jsDow = dayDate.getDay();
+  const { availability, bookedSlots, closedDates } = workshop;
+  if (!availability.workingDays.includes(jsDow)) return [];
+
+  const blocked = new Set<string>([...(availability.blockedDates ?? []), ...(closedDates ?? [])]);
+  if (blocked.has(dateKey)) return [];
+
+  const customRaw = availability.customAvailability?.[dateKey];
+  if (Object.prototype.hasOwnProperty.call(availability.customAvailability ?? {}, dateKey)) {
+    if (!Array.isArray(customRaw) || customRaw.length === 0) return [];
+  }
+
+  const weekdayKey = String(jsDow);
+  const customSlots = Array.isArray(customRaw) && customRaw.length > 0 ? customRaw : null;
+  const templateSlots = customSlots ?? availability.availableTimeSlots[weekdayKey] ?? [];
+
+  const openM = minutesFromHHmm(availability.openingHours.start);
+  const closeM = minutesFromHHmm(availability.openingHours.end);
+  if (closeM <= openM) return [];
+
+  const busy: { start: number; end: number }[] = [];
+  for (const raw of bookedSlots ?? []) {
+    const s = String(raw).trim();
+    if (!s.includes("T")) continue;
+    const [datePart, timePart] = s.split("T");
+    if (datePart !== dateKey) continue;
+    const hhmm = timePart.slice(0, 5);
+    const sm = minutesFromHHmm(hhmm);
+    if (!Number.isFinite(sm)) continue;
+    busy.push({ start: sm, end: sm + duration });
+  }
+
+  let candidates: string[] =
+    templateSlots.length > 0
+      ? templateSlots
+          .map((slot) => slot.slice(0, 5))
+          .filter((slot) => {
+            const sm = minutesFromHHmm(slot);
+            return Number.isFinite(sm) && sm >= openM && sm + duration <= closeM;
+          })
+      : (() => {
+          const out: string[] = [];
+          for (let t = openM; t + duration <= closeM; t += 30) {
+            out.push(hhmmFromMinutes(t));
+          }
+          return out;
+        })();
+
+  const todayKey = dateKeyFromDate(now);
+  const nowM = now.getHours() * 60 + now.getMinutes();
+
+  candidates = candidates.filter((slot) => {
+    const sm = minutesFromHHmm(slot.slice(0, 5));
+    const em = sm + duration;
+    if (!busy.every((b) => !overlapsMinutes(sm, em, b.start, b.end))) return false;
+    if (dateKey === todayKey && sm < nowM) return false;
+    return true;
+  });
+
+  return [...new Set(candidates)].sort((a, b) => minutesFromHHmm(a) - minutesFromHHmm(b));
+}
+
+/** Tak samo jak kalendarz rezerwacji: Supabase RPC lub lokalny model dostępności (mock). */
+export async function resolveAvailableSlotsForWorkshopDay(
+  workshop: MockWorkshop,
+  dateKey: string,
+  durationMinutes: number,
+): Promise<string[]> {
+  if (workshop.usesLocalCalendar === true) {
+    return computeLocalAvailabilitySlots(workshop, dateKey, durationMinutes);
+  }
+  if (!supabase) {
+    return computeLocalAvailabilitySlots(workshop, dateKey, durationMinutes);
+  }
+  try {
+    return await getAvailableSlots({
+      workshopId: workshop.supabaseId,
+      date: dateKey,
+      serviceDurationMinutes: durationMinutes,
+    });
+  } catch {
+    return computeLocalAvailabilitySlots(workshop, dateKey, durationMinutes);
+  }
 }

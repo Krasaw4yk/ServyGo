@@ -60,7 +60,7 @@ import {
 } from "@/lib/userCarsDb";
 import { resolveMessageViewerContext } from "@/lib/messagesApi";
 import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
-type ActiveDropdown = "user" | "lang" | "theme" | null;
+type ActiveDropdown = "user" | "lang" | null;
 type AuthModalType = "login" | "register" | null;
 type AccountTab = "profile" | "vehicles" | "security" | "messages";
 
@@ -1951,61 +1951,15 @@ function HomePageContent() {
                 <div className="relative z-[1002] min-w-0 shrink">
                   <button
                     type="button"
-                    onClick={() =>
-                      setActiveDropdown((prev) => (prev === "theme" ? null : "theme"))
-                    }
-                    className={`${triggerButtonClass}${currentUser ? " max-sm:h-[34px] max-sm:min-h-[34px] max-sm:px-[10px] max-sm:text-[11px] max-sm:gap-[7px]" : ""}`}
+                    onClick={() => selectTheme(isDark ? "light" : "dark")}
+                    title={isDark ? t("header.themeDark") : t("header.themeLight")}
                     aria-label={isDark ? t("header.themeDark") : t("header.themeLight")}
+                    className={`${triggerButtonClass} size-8 shrink-0 justify-center gap-0 !px-0 sm:size-12 md:size-14 max-sm:!size-[34px]`}
                   >
-                    <span aria-hidden>{isDark ? "🌙" : "☀️"}</span>
-                    <span
-                      className={
-                        currentUser
-                          ? "ml-0.5 inline max-w-[2.75rem] shrink truncate text-[9px] leading-tight sm:ml-1 sm:max-w-none sm:text-xs md:text-base"
-                          : "ml-0.5 hidden max-w-[3.25rem] truncate text-xs sm:ml-1 sm:inline sm:max-w-none md:text-base"
-                      }
-                    >
-                      {isDark ? t("header.themeDark") : t("header.themeLight")}
+                    <span className="text-lg leading-none sm:text-xl" aria-hidden>
+                      {isDark ? "🌙" : "☀️"}
                     </span>
-                    <svg
-                      viewBox="0 0 20 20"
-                      className={
-                        currentUser
-                          ? "h-3 w-3 shrink-0 max-sm:inline-block sm:inline-block sm:h-4 sm:w-4"
-                          : "hidden h-3 w-3 shrink-0 sm:block sm:h-4 sm:w-4"
-                      }
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <path d="m5 7 5 6 5-6" />
-                    </svg>
                   </button>
-                  <div
-                    className={`absolute right-0 top-[calc(100%+10px)] z-[9999] w-[min(92vw,360px)] max-w-[calc(100vw-24px)] origin-top-right ${dropdownPanelClass} transition-all duration-200 sm:w-52 sm:max-w-none ${
-                      activeDropdown === "theme"
-                        ? "pointer-events-auto translate-y-0 opacity-100"
-                        : "pointer-events-none -translate-y-2 opacity-0"
-                    } hidden sm:block`}
-                  >
-                    <p className={dropdownHintClass}>{t("header.chooseTheme")}</p>
-                    <button
-                      type="button"
-                      onClick={() => selectTheme("light")}
-                      className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
-                    >
-                      <span>☀️ {t("header.themeLight")}</span>
-                      {!isDark ? <span className="text-blue-400">✓</span> : null}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => selectTheme("dark")}
-                      className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left transition hover:bg-blue-500/10"
-                    >
-                      <span>🌙 {t("header.themeDark")}</span>
-                      {isDark ? <span className="text-blue-400">✓</span> : null}
-                    </button>
-                  </div>
                 </div>
 
                 {currentUser ? (
@@ -2175,24 +2129,6 @@ function HomePageContent() {
                       {language === item.code ? <span>✓</span> : null}
                     </button>
                   ))}
-                </div>
-              </MobileBottomSheet>
-
-              <MobileBottomSheet
-                isOpen={activeDropdown === "theme"}
-                onClose={() => setActiveDropdown(null)}
-                title={t("header.chooseTheme")}
-                isDark={isDark}
-              >
-                <div className="space-y-1">
-                  <button type="button" onClick={() => selectTheme("light")} className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
-                    <span>☀️ {t("header.themeLight")}</span>
-                    {!isDark ? <span>✓</span> : null}
-                  </button>
-                  <button type="button" onClick={() => selectTheme("dark")} className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10">
-                    <span>🌙 {t("header.themeDark")}</span>
-                    {isDark ? <span>✓</span> : null}
-                  </button>
                 </div>
               </MobileBottomSheet>
             </>
@@ -2435,6 +2371,7 @@ function HomePageContent() {
               })}
             </div>
             <form
+              id="servygo-search"
               onSubmit={handleSubmit}
               className="mt-6 grid grid-cols-1 gap-2 max-md:gap-2 max-md:pb-24 md:gap-4 md:grid-cols-2 xl:grid-cols-3"
             >

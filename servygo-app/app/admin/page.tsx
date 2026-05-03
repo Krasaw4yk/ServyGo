@@ -8,6 +8,7 @@ import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
+import AdminServyGoMapSection from "@/components/admin/AdminServyGoMapSection";
 import InternalInbox from "@/components/InternalInbox";
 import { sendSystemMessage } from "@/lib/messagesApi";
 import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
@@ -43,6 +44,7 @@ const SIDEBAR_ITEMS = [
   "Moje wiadomości",
   "Zgłoszenia warsztatów",
   "Warsztaty",
+  "Mapa ServyGo",
   "Rezerwacje",
   "Użytkownicy",
   "Usługi i ceny",
@@ -58,6 +60,7 @@ const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
   "Moje wiadomości": 0,
   "Zgłoszenia warsztatów": 0,
   Warsztaty: 0,
+  "Mapa ServyGo": 0,
   Rezerwacje: 0,
   Użytkownicy: 0,
   "Usługi i ceny": 0,
@@ -118,12 +121,19 @@ function coerceWorkshopEntityStatus(status: string | null | undefined): AdminWor
 
 type WorkshopEditDraft = {
   name: string;
+  slug: string;
   city: string;
   address: string;
   phone: string;
   email: string;
   description: string;
   google_maps_url: string;
+  google_place_id: string;
+  latitude: string;
+  longitude: string;
+  show_on_map: boolean;
+  rating: string;
+  reviews_count: string;
   opening_hours: string;
   status: AdminWorkshopEntityStatus;
   servicesText: string;
@@ -339,12 +349,31 @@ export default function AdminPage() {
     }
     setEditDraft({
       name: workshopPanelDetail.name,
+      slug: workshopPanelDetail.slug ?? "",
       city: workshopPanelDetail.city ?? "",
       address: workshopPanelDetail.address ?? "",
       phone: workshopPanelDetail.phone ?? "",
       email: workshopPanelDetail.email ?? "",
       description: workshopPanelDetail.description ?? "",
       google_maps_url: workshopPanelDetail.google_maps_url ?? "",
+      google_place_id: workshopPanelDetail.google_place_id ?? "",
+      latitude:
+        workshopPanelDetail.latitude != null && Number.isFinite(Number(workshopPanelDetail.latitude))
+          ? String(workshopPanelDetail.latitude)
+          : "",
+      longitude:
+        workshopPanelDetail.longitude != null && Number.isFinite(Number(workshopPanelDetail.longitude))
+          ? String(workshopPanelDetail.longitude)
+          : "",
+      show_on_map: workshopPanelDetail.show_on_map === true,
+      rating:
+        workshopPanelDetail.rating != null && String(workshopPanelDetail.rating).trim() !== ""
+          ? String(workshopPanelDetail.rating)
+          : "",
+      reviews_count:
+        workshopPanelDetail.reviews_count != null && Number.isFinite(Number(workshopPanelDetail.reviews_count))
+          ? String(workshopPanelDetail.reviews_count)
+          : "",
       opening_hours: workshopPanelDetail.opening_hours ?? "",
       status: coerceWorkshopEntityStatus(workshopPanelDetail.status),
       servicesText: workshopPanelDetail.services.map((s) => s.service_name).join("\n"),
@@ -575,21 +604,44 @@ export default function AdminPage() {
   async function handleSaveWorkshopEdit() {
     if (!currentUser || !workshopEditId || !editDraft) return;
     const maps = editDraft.google_maps_url.trim();
-    if (!maps || !isValidWorkshopGoogleMapsUrl(maps)) {
-      setWorkshopPanelError("Podaj poprawny link do Google Maps swojego warsztatu.");
+    if (maps && !isValidWorkshopGoogleMapsUrl(maps)) {
+      setWorkshopPanelError("Podaj poprawny link do Google Maps albo zostaw pole puste.");
       return;
+    }
+    if (editDraft.show_on_map) {
+      const latN = Number(editDraft.latitude.replace(",", "."));
+      const lngN = Number(editDraft.longitude.replace(",", "."));
+      if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
+        setWorkshopPanelError('Włączenie „Pokaż na mapie ServyGo” wymaga poprawnych pól „Szerokość” i „Długość”.');
+        return;
+      }
+      if (latN < -90 || latN > 90 || lngN < -180 || lngN > 180) {
+        setWorkshopPanelError("Współrzędne geograficzne są poza dopuszczalnym zakresem.");
+        return;
+      }
     }
     setSavingWorkshopId(workshopEditId);
     setWorkshopPanelError("");
     try {
+      const latStr = editDraft.latitude.replace(",", ".").trim();
+      const lngStr = editDraft.longitude.replace(",", ".").trim();
+      const ratingStr = editDraft.rating.replace(",", ".").trim();
+      const reviewsStr = editDraft.reviews_count.trim();
       const payload: AdminWorkshopUpdatePayload = {
         name: editDraft.name,
+        slug: editDraft.slug.trim() || null,
         city: editDraft.city || null,
         address: editDraft.address || null,
         phone: editDraft.phone || null,
         email: editDraft.email || null,
         description: editDraft.description || null,
-        google_maps_url: maps,
+        google_maps_url: maps || null,
+        google_place_id: editDraft.google_place_id.trim() || null,
+        latitude: latStr === "" ? null : Number(latStr),
+        longitude: lngStr === "" ? null : Number(lngStr),
+        rating: ratingStr === "" ? null : Number(ratingStr),
+        reviews_count: reviewsStr === "" ? null : Number(reviewsStr),
+        show_on_map: editDraft.show_on_map,
         opening_hours: editDraft.opening_hours || null,
         status: editDraft.status,
       };
@@ -1638,6 +1690,47 @@ export default function AdminPage() {
               </section>
             ) : null}
 
+            {activeTab === "Mapa ServyGo" ? (
+              <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                {workshopsError && !loadingWorkshops ? (
+                  <div className="mb-3 flex flex-col gap-2 rounded-xl border border-orange-400/50 bg-orange-500/10 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                    <p className={`text-sm ${isDark ? "text-orange-100" : "text-orange-950"}`}>{workshopsError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void refreshWorkshops()}
+                      className={`shrink-0 text-xs font-semibold underline ${isDark ? "text-orange-200" : "text-orange-900"}`}
+                    >
+                      Spróbuj ponownie
+                    </button>
+                  </div>
+                ) : null}
+                {loadingWorkshops ? (
+                  <p className="text-sm">Ładowanie warsztatów…</p>
+                ) : (
+                  <AdminServyGoMapSection
+                    workshops={adminWorkshops}
+                    isDark={isDark}
+                    userId={currentUser.id}
+                    userEmail={currentUser.email ?? null}
+                    onRefreshWorkshops={refreshWorkshops}
+                    onEditWorkshop={(id) => {
+                      setWorkshopViewId(null);
+                      setWorkshopEditId(id);
+                    }}
+                    onNotify={(msg, isError) => {
+                      if (isError) {
+                        setWorkshopsError(msg);
+                        setSuccessMessage("");
+                      } else {
+                        setWorkshopsError("");
+                        setSuccessMessage(msg);
+                      }
+                    }}
+                  />
+                )}
+              </section>
+            ) : null}
+
             {activeTab === "Użytkownicy" ? (
               <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                 <h2 className="text-lg font-semibold">Użytkownicy</h2>
@@ -2207,6 +2300,81 @@ export default function AdminPage() {
                   <input
                     value={editDraft.google_maps_url}
                     onChange={(e) => setEditDraft((d) => (d ? { ...d, google_maps_url: e.target.value } : d))}
+                    className={`rounded-lg border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  <span className="text-xs font-medium">Google Place ID (opcjonalnie)</span>
+                  <input
+                    value={editDraft.google_place_id}
+                    onChange={(e) => setEditDraft((d) => (d ? { ...d, google_place_id: e.target.value } : d))}
+                    placeholder="np. ChIJ..."
+                    className={`rounded-lg border px-3 py-2 font-mono text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
+                  />
+                </label>
+                <div className="sm:col-span-2">
+                  <p className={`text-xs font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>Mapa ServyGo (OpenStreetMap)</p>
+                  <p className={`mt-1 text-[11px] leading-snug ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
+                    Warsztat nie pojawi się na mapie w ofertach, dopóki nie wpiszesz współrzędnych i nie włączysz przełącznika poniżej.
+                  </p>
+                </div>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Szerokość (latitude)</span>
+                  <input
+                    inputMode="decimal"
+                    value={editDraft.latitude}
+                    onChange={(e) => setEditDraft((d) => (d ? { ...d, latitude: e.target.value } : d))}
+                    placeholder="np. 49.8225"
+                    className={`rounded-lg border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Długość (longitude)</span>
+                  <input
+                    inputMode="decimal"
+                    value={editDraft.longitude}
+                    onChange={(e) => setEditDraft((d) => (d ? { ...d, longitude: e.target.value } : d))}
+                    placeholder="np. 19.0444"
+                    className={`rounded-lg border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-medium">
+                    <input
+                      type="checkbox"
+                      checked={editDraft.show_on_map}
+                      onChange={(e) => setEditDraft((d) => (d ? { ...d, show_on_map: e.target.checked } : d))}
+                      className="h-4 w-4 rounded border-zinc-400"
+                    />
+                    Pokaż na mapie ServyGo (/oferty)
+                  </span>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Slug (opcjonalnie)</span>
+                  <input
+                    value={editDraft.slug}
+                    onChange={(e) => setEditDraft((d) => (d ? { ...d, slug: e.target.value } : d))}
+                    placeholder="np. fix-auto-bielsko"
+                    className={`rounded-lg border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Ocena (0–5)</span>
+                  <input
+                    inputMode="decimal"
+                    value={editDraft.rating}
+                    onChange={(e) => setEditDraft((d) => (d ? { ...d, rating: e.target.value } : d))}
+                    placeholder="np. 4.8"
+                    className={`rounded-lg border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Liczba opinii</span>
+                  <input
+                    inputMode="numeric"
+                    value={editDraft.reviews_count}
+                    onChange={(e) => setEditDraft((d) => (d ? { ...d, reviews_count: e.target.value } : d))}
+                    placeholder="np. 120"
                     className={`rounded-lg border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
                   />
                 </label>

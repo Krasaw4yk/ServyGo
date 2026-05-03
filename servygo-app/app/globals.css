@@ -43,3 +43,25 @@ body {
 *::after {
   box-sizing: border-box;
 }
+
+/* Leaflet: custom divIcon bez białej ramki domyślnej */
+.leaflet-container .servygo-leaflet-divicon {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Kompaktowe karty ofert nad markerem — Leaflet domyślnie dodaje własne tło */
+.leaflet-tooltip.servygo-offers-map-tooltip-wrap {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.leaflet-tooltip.servygo-offers-map-tooltip-wrap::before {
+  border-top-color: rgba(15, 23, 42, 0.92) !important;
+}
+
+.servygo-offers-popup .leaflet-popup-content-wrapper {
+  border-radius: 0.75rem;
+}
