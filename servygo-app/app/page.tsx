@@ -706,8 +706,8 @@ function HomePageContent() {
   const searchFormAutocompleteShell = "max-md:gap-0";
   const searchFormChevronToggleHide = "max-md:hidden";
   const headerShellClass = isDark
-    ? "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-hidden border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2 max-md:py-1.5 backdrop-blur-xl sm:px-3 sm:py-2.5 md:mb-7 md:px-4"
-    : "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-hidden border-b border-blue-100/90 bg-white/92 px-2 py-2 max-md:py-1.5 backdrop-blur-xl sm:px-3 sm:py-2.5 md:mb-7 md:px-4";
+    ? "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-x-hidden border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2 max-sm:overflow-hidden max-md:py-1.5 backdrop-blur-xl sm:overflow-visible sm:px-3 sm:py-2.5 md:mb-7 md:px-4"
+    : "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-x-hidden border-b border-blue-100/90 bg-white/92 px-2 py-2 max-sm:overflow-hidden max-md:py-1.5 backdrop-blur-xl sm:overflow-visible sm:px-3 sm:py-2.5 md:mb-7 md:px-4";
   const triggerButtonClass = isDark
     ? "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-1.5 text-[11px] font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
     : "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-1.5 text-[11px] font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
@@ -1665,7 +1665,7 @@ function HomePageContent() {
             className={`${headerShellClass}${currentUser ? " max-md:py-2" : ""}`}
           >
             <div
-              className={`flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1 overflow-hidden max-md:gap-0.5 sm:gap-2 xl:gap-6${currentUser ? " max-md:gap-1" : ""}`}
+              className={`flex w-full min-w-0 max-w-full flex-row items-center justify-between gap-1 overflow-x-hidden max-sm:overflow-hidden max-md:gap-0.5 sm:gap-2 sm:overflow-visible xl:gap-6${currentUser ? " max-md:gap-1" : ""}`}
             >
               <Image
                 src={
@@ -1695,7 +1695,7 @@ function HomePageContent() {
               </nav>
 
               <div
-                className={`relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-hidden max-md:gap-0.5 sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 md:gap-3 xl:ml-0${currentUser ? " max-md:gap-1" : ""}`}
+                className={`relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-x-hidden max-sm:overflow-hidden max-md:gap-0.5 sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 sm:overflow-visible sm:pr-1 md:gap-3 md:pr-2 xl:ml-0${currentUser ? " max-md:gap-1" : ""}`}
               >
                 <div className="relative z-[1002] min-w-0 shrink">
                   <button

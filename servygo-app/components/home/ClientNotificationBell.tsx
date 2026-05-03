@@ -18,8 +18,8 @@ export default function ClientNotificationBell({
     isDark ? "border-zinc-600 text-zinc-100 hover:bg-zinc-800" : "border-blue-200 text-blue-800 hover:bg-blue-50"
   }`;
   const bellBtnClass = buttonClassName?.trim()
-    ? `relative min-w-0 max-sm:shrink sm:shrink-0 ${buttonClassName}`
-    : compactBellBtnClass;
+    ? `relative min-w-0 overflow-visible max-sm:shrink sm:shrink-0 ${buttonClassName}`
+    : `relative overflow-visible ${compactBellBtnClass}`;
   const bellIconClass = buttonClassName?.trim() ? "h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:h-6 shrink-0" : "h-5 w-5 shrink-0";
 
   return (
@@ -34,7 +34,7 @@ export default function ClientNotificationBell({
         <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
       </svg>
       {unreadCount > 0 ? (
-        <span className="absolute -right-1 -top-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white shadow">
+        <span className="absolute right-1 top-1 z-[1] flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white shadow ring-2 ring-white/90 dark:ring-zinc-950/90">
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
       ) : null}
