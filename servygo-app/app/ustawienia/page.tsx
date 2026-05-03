@@ -341,7 +341,11 @@ export default function UstawieniaPage() {
               <article id="sec-prywatnosc" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
                 <h2 className="text-lg font-semibold text-zinc-900">Prywatność</h2>
                 <ul className="mt-3 space-y-2 text-sm text-zinc-700">
-                  <li className="rounded-xl border border-zinc-200 px-3 py-2">Polityka prywatności</li>
+                  <li className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <Link href="/polityka-prywatnosci" className="font-medium text-blue-700 hover:text-orange-600 hover:underline">
+                      Polityka prywatności
+                    </Link>
+                  </li>
                   <li className="rounded-xl border border-zinc-200 px-3 py-2">Zarządzanie danymi</li>
                   <li className="rounded-xl border border-zinc-200 px-3 py-2">Ustawienia prywatności</li>
                 </ul>

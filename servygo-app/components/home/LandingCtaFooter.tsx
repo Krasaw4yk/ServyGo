@@ -75,12 +75,12 @@ export default function LandingCtaFooter({ isDark, onOpenContact, onOpenFaq }: L
       <footer className={`mt-12 border-t pb-2 pt-6 ${isDark ? "border-zinc-700 text-zinc-300" : "border-blue-100/80 bg-gradient-to-r from-white via-blue-50/40 to-orange-50/30 text-zinc-600"}`}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-wrap gap-4 text-sm sm:order-1">
-            <a href="#" className="hover:text-blue-600">
+            <Link href="/regulamin" className="hover:text-blue-600">
               Regulamin
-            </a>
-            <a href="#" className="hover:text-blue-600">
+            </Link>
+            <Link href="/polityka-prywatnosci" className="hover:text-blue-600">
               Polityka prywatności
-            </a>
+            </Link>
             <button type="button" onClick={onOpenContact} className="hover:text-blue-600">
               Kontakt
             </button>

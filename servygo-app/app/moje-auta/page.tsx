@@ -28,15 +28,23 @@ import {
   vehicleTypeOptions,
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
+import { VinOptionalHint } from "@/components/VinOptionalHint";
+import { createTranslator, type LanguageCode } from "@/lib/translations";
 
 const fieldLight =
   "rounded-xl border border-blue-200/80 bg-slate-100/85 px-4 py-3 text-zinc-900 placeholder:text-zinc-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300/60";
 const fieldDark =
   "rounded-xl border border-zinc-600/70 bg-zinc-900/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-400 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/40";
 
+function parseStoredLanguage(raw: string | null): LanguageCode {
+  if (raw === "en" || raw === "ua" || raw === "pl") return raw;
+  return "pl";
+}
+
 export default function MojeAutaPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [language, setLanguage] = useState<LanguageCode>("pl");
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,12 +65,14 @@ export default function MojeAutaPage() {
 
   const isDark = mounted ? theme === "dark" : false;
   const field = isDark ? fieldDark : fieldLight;
+  const t = useMemo(() => createTranslator(language), [language]);
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {
       setMounted(true);
       const th = window.localStorage.getItem("servygo-theme");
       if (th === "dark" || th === "light") setTheme(th);
+      setLanguage(parseStoredLanguage(window.localStorage.getItem("servygo_language")));
     });
     return () => window.cancelAnimationFrame(id);
   }, []);
@@ -385,6 +395,7 @@ export default function MojeAutaPage() {
                       maxLength={17}
                       disabled={saving}
                     />
+                    <VinOptionalHint text={t("account.vehicle.vinHint")} isDark={isDark} className="mt-0" />
                   </label>
                   <AutocompleteSelect
                     label="Paliwo"
@@ -531,6 +542,7 @@ export default function MojeAutaPage() {
                               className={field}
                               maxLength={17}
                             />
+                            <VinOptionalHint text={t("account.vehicle.vinHint")} isDark={isDark} className="mt-0" />
                           </label>
                           <label className="flex flex-col gap-1 sm:col-span-2">
                             <span className="text-xs font-medium">Miasto</span>

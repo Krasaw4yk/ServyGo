@@ -1,0 +1,87 @@
+Polityka prywatności serwisu ServyGo
+1. Informacje ogólne
+Serwis ServyGo, dostępny pod adresem servygo.pl, jest platformą testową umożliwiającą kontakt pomiędzy kierowcami poszukującymi usług motoryzacyjnych a warsztatami. Administratorem danych osobowych przetwarzanych w ramach Serwisu jest Kyrylo Veremieienko prowadzący projekt ServyGo. Dane korespondencyjne administratora: ul. Grażyny 11/24, 43‑330 Bielsko‑Biała; e‑mail: servygoa@gmail.com. Serwis ma charakter testowy, ale jest publicznie dostępny.
+Niniejsza Polityka prywatności określa zasady przetwarzania danych osobowych użytkowników Serwisu, w tym kierowców i warsztatów, zgodnie z Rozporządzeniem Parlamentu Europejskiego i Rady (UE) 2016/679 z 27 kwietnia 2016 r. (RODO) oraz krajowymi przepisami o ochronie danych osobowych.
+2. Definicje
+W niniejszej Polityce przyjmuje się definicje zgodne z Regulaminem Serwisu:
+Serwis – platforma ServyGo umożliwiająca łączenie kierowców z warsztatami.
+Użytkownik – każda osoba korzystająca z Serwisu; użytkownikami są m.in. kierowcy, warsztaty i administratorzy.
+Kierowca – osoba fizyczna poszukująca usługi motoryzacyjnej, która posiada konto kierowcy w Serwisie.
+Warsztat – przedsiębiorca prowadzący działalność gospodarczą lub osoba prawna oferująca usługi motoryzacyjne za pośrednictwem Serwisu.
+Administrator – uprawniony przedstawiciel Usługodawcy zarządzający Serwisem.
+Rezerwacja – zarezerwowanie przez kierowcę terminu wizyty w wybranym warsztacie.
+3. Zakres i kategorie danych osobowych
+3.1. Dane kierowcy
+Podczas rejestracji kierowca podaje co najmniej: imię, adres e‑mail, numer telefonu oraz hasło. Podanie nazwiska jest opcjonalne – użytkownik może użyć pseudonimu lub inicjału. Do konta można dodać kilka pojazdów. W celu przygotowania wyceny kierowca podaje dane pojazdu: marka, model, rocznik i rodzaj paliwa; podanie numeru VIN jest dobrowolne, ale ułatwia warsztatowi przygotowanie dokładniejszej oferty. Użytkownik może podać numer rejestracyjny pojazdu; jeśli numer rejestracyjny jest wprowadzony, będzie on przechowywany w koncie pojazdu.
+Kierowca może również opisać problem i podać miasto, w którym chce wykonać usługę. Telefon i e‑mail kierowcy służą do logowania i powiadomień systemowych; nie są przekazywane warsztatowi. Kierowca może wybrać, aby jego imię z inicjałem nazwiska albo pseudonim był widoczny przy opinii.
+3.2. Dane rezerwacji
+W ramach rezerwacji zbierane są dane dotyczące wybranej usługi motoryzacyjnej, warsztatu, proponowanego terminu, orientacyjnej ceny, statusu rezerwacji oraz historia komunikacji z warsztatem. Rezerwacja jest tymczasowo blokowana na określony czas; warsztat może potwierdzić, odrzucić lub zaproponować inny termin.
+3.3. Dane warsztatów
+Przy rejestracji warsztaty podają m.in. nazwę, adres, NIP, numer telefonu, adres e‑mail, rodzaj działalności, zakres usług, orientacyjne ceny „od–do”, czas trwania usługi, godziny pracy oraz link do lokalizacji w Google Maps. Dane kontaktowe warsztatu służą do komunikacji w ramach Serwisu i nie są publicznie udostępniane; warsztat komunikuje się z kierowcami wyłącznie przez wewnętrzny system wiadomości. Administrator weryfikuje poprawność danych warsztatu, w tym lokalizację (współrzędne latitude/longitude).
+3.4. Dane techniczne
+W czasie korzystania z Serwisu zbierane są dane techniczne, takie jak adres IP, informacje o urządzeniu i przeglądarce, ustawienia języka, a także dane przechowywane w plikach cookie i local storage niezbędne do działania Serwisu. Wersja mobilna może wykorzystywać technologię Local Storage do zapamiętywania ustawień. Serwis nie pobiera automatycznie dokładnej geolokalizacji GPS użytkownika; kierowca samodzielnie wpisuje miasto. W przypadku warsztatów Administrator może korzystać z linku Google Maps lub Google Place ID, aby zweryfikować lokalizację, a następnie zapisać współrzędne geograficzne na mapie ServyGo.
+3.5. Dane komunikacji
+Wszelka komunikacja między kierowcą a warsztatem odbywa się wyłącznie poprzez wewnętrzną skrzynkę wiadomości. Kierowca nie powinien udzielać warsztatowi swoich danych kontaktowych (numeru telefonu, adresu e‑mail) i nie powinien korzystać z zewnętrznych kanałów w celu omawiania szczegółów usługi. Wiadomości wymieniane w ramach Serwisu są przechowywane przez okres niezbędny do obsługi rezerwacji i ewentualnych zgłoszeń. Administrator może mieć dostęp do treści wiadomości jedynie w zakresie niezbędnym do świadczenia pomocy technicznej, zapewnienia bezpieczeństwa, wyjaśniania zgłoszeń, rozstrzygania sporów lub w przypadku podejrzenia naruszenia Regulaminu.
+3.6. Opinie i oceny
+Kierowcy mogą wystawiać opinie o warsztatach. Przy opinii będzie widoczne imię z pierwszą literą nazwiska lub pseudonim – pełne nazwisko, adres e‑mail oraz numer telefonu nie są publikowane.
+3.7. Zdjęcia
+Zwykli użytkownicy nie dodają zdjęć. Warsztaty oraz Administrator mogą dodawać zdjęcia warsztatów, stanowisk czy wyposażenia. Dodawane zdjęcia nie powinny zawierać danych osobowych (np. tablic rejestracyjnych, twarzy osób) ani dokumentów. W przyszłości Serwis może umożliwić pobieranie zdjęć z zewnętrznych źródeł (np. Google), jednak będą one wykorzystywane wyłącznie w celu prezentacji warsztatu.
+4. Cele i podstawy prawne przetwarzania danych
+Dane osobowe Użytkowników są przetwarzane w następujących celach i na podstawach prawnych:
+Rejestracja i obsługa konta Użytkownika – art. 6 ust. 1 lit. b RODO (niezbędność do wykonania umowy o świadczenie usług drogą elektroniczną), art. 6 ust. 1 lit. c RODO (wypełnienie obowiązków prawnych).
+Umożliwienie korzystania z Serwisu i rezerwacji wizyt – art. 6 ust. 1 lit. b RODO; obejmuje zbieranie danych pojazdu, przedstawianie ofert warsztatów oraz wymianę informacji dotyczących rezerwacji.
+Przekazywanie danych warsztatom w celu przygotowania oferty i realizacji usługi – art. 6 ust. 1 lit. b RODO. Warsztat otrzymuje tylko dane niezbędne do obsługi konkretnej rezerwacji: imię Użytkownika (bez pełnego nazwiska), oznaczenie pojazdu (marka, model, rocznik, paliwo, numer VIN jeśli podany), opis problemu, miasto i proponowany termin. Dane kontaktowe kierowcy (numer telefonu, e‑mail) nie są standardowo udostępniane warsztatowi.
+Wewnętrzna komunikacja pomiędzy Użytkownikami – art. 6 ust. 1 lit. b oraz f RODO (prawnie uzasadniony interes administratora polegający na zapewnieniu bezpieczeństwa i możliwości dochodzenia roszczeń).
+Obsługa reklamacji i zgłoszeń problemów – art. 6 ust. 1 lit. b i f RODO; Serwis zbiera zgłoszenia problemów w celu ich przekazania warsztatowi i zachowania historii rozmowy.
+Prowadzenie historii rezerwacji i rozliczeń oraz obrona przed roszczeniami – art. 6 ust. 1 lit. f RODO (uzasadniony interes administratora).
+Spełnienie obowiązków prawnych wynikających z przepisów o świadczeniu usług drogą elektroniczną, przepisów podatkowych i o rachunkowości – art. 6 ust. 1 lit. c RODO.
+Cele analityczne i statystyczne – art. 6 ust. 1 lit. f RODO; obejmuje analizę korzystania z Serwisu w celu jego rozwoju i poprawy funkcjonalności. Analiza odbywa się na danych zanonimizowanych lub pseudonimizowanych.
+Marketing bezpośredni – na dzień sporządzenia regulaminu Usługodawca nie prowadzi newslettera ani komunikacji marketingowej. W przypadku uruchomienia newslettera lub reklam dopasowanych przetwarzanie danych będzie odbywało się na podstawie odrębnej zgody Użytkownika, art. 6 ust. 1 lit. a RODO.
+5. Odbiorcy danych
+Dane osobowe mogą być przekazywane następującym kategoriom odbiorców:
+Warsztaty – wyłącznie w zakresie niezbędnym do przygotowania oferty i realizacji rezerwacji (dane pojazdu i imię Użytkownika). Warsztat zobowiązany jest do korzystania z danych tylko w celu realizacji usługi oraz do aktualizowania swoich danych.
+Dostawcy usług technologicznych – w szczególności dostawcy usług hostingu (np. Vercel), bazy danych i uwierzytelniania (Supabase), usług e‑mail oraz dostawcy map i narzędzi programistycznych. Dostawcy ci mogą przetwarzać dane w naszym imieniu na podstawie zawartych umów powierzenia przetwarzania danych.
+Podmioty uprawnione na podstawie przepisów prawa – np. organy publiczne lub uprawnione podmioty, jeśli zwrócą się do Administratora z żądaniem wynikającym z bezwzględnie obowiązujących przepisów.
+Administratorzy systemów bezpieczeństwa – w przypadkach wykrycia nieprawidłowości, naruszeń bezpieczeństwa lub podejrzenia oszustwa.
+Nie udostępniamy danych Użytkowników innym podmiotom do ich własnych celów marketingowych.
+6. Przekazywanie danych do państw trzecich
+Serwis korzysta z usług dostawców infrastruktury informatycznej, którzy mogą mieć siedzibę lub infrastrukturę poza Europejskim Obszarem Gospodarczym (EOG), takich jak Supabase czy Vercel. Dostawcy ci stosują odpowiednie instrumenty prawne, w szczególności standardowe klauzule umowne, gwarantujące ochronę danych osobowych zgodnie z RODO. Użytkownik ma prawo uzyskać kopię zabezpieczeń stosowanych przy przekazywaniu danych do państw trzecich, kontaktując się z administratorem.
+7. Okres przechowywania danych
+Dane osobowe będą przechowywane przez okres niezbędny do realizacji celów określonych w niniejszej Polityce:
+Konto Użytkownika – do czasu usunięcia konta przez Użytkownika lub rozwiązania umowy.
+Dane pojazdów – do czasu usunięcia pojazdu z profilu lub usunięcia konta.
+Historia rezerwacji i rozliczeń – do 5 lat od zakończenia rezerwacji lub rozwiązania sporu, w celu dochodzenia roszczeń i obrony przed nimi.
+Formularze i zgłoszenia – do 12 miesięcy, chyba że dojdzie do współpracy; wtedy dane przechowywane są zgodnie z zasadami dotyczącymi konta i rezerwacji.
+Dane komunikacji (wiadomości) – przez okres potrzebny do obsługi rezerwacji i zgłoszeń oraz do czasu przedawnienia roszczeń.
+Dane techniczne (logi) – do 12 miesięcy.
+Dane marketingowe – do czasu wycofania zgody.
+Pliki cookie i local storage – zgodnie z ustawieniami użytkownika lub do czasu ich samoczynnego wygaśnięcia.
+Po upływie odpowiednich okresów dane są usuwane lub anonimizowane.
+8. Prawa Użytkowników
+Każdej osobie, której dane dotyczą, przysługują następujące prawa wynikające z RODO:
+Prawo dostępu do danych – uzyskanie informacji o przetwarzaniu danych i kopii danych.
+Prawo do sprostowania danych – żądanie poprawienia nieprawidłowych danych lub ich uzupełnienia.
+Prawo do usunięcia danych („prawo do bycia zapomnianym”) – żądanie usunięcia danych przetwarzanych bezpodstawnie lub sprzecznie z prawem.
+Prawo do ograniczenia przetwarzania – żądanie wstrzymania operacji na danych w określonych przypadkach.
+Prawo do przenoszenia danych – otrzymanie danych w ustrukturyzowanym formacie i przeniesienie ich do innego administratora.
+Prawo sprzeciwu – sprzeciw wobec przetwarzania danych opartego na uzasadnionym interesie administratora lub na potrzeby marketingu bezpośredniego.
+Prawo do wycofania zgody – w zakresie, w jakim przetwarzanie odbywa się na podstawie zgody; cofnięcie zgody nie wpływa na zgodność z prawem wcześniejszego przetwarzania.
+Prawo wniesienia skargi do organu nadzorczego – w Polsce organem tym jest Prezes Urzędu Ochrony Danych Osobowych (ul. Stawki 2, 00‑193 Warszawa).
+W celu skorzystania z praw Użytkownicy mogą skontaktować się z Administratorem poprzez adres e‑mail: servygoa@gmail.com.
+9. Bezpieczeństwo danych
+Administrator stosuje odpowiednie środki techniczne i organizacyjne w celu zapewnienia bezpieczeństwa przetwarzanych danych, w szczególności:
+szyfrowanie połączeń (SSL) oraz szyfrowanie haseł w systemie uwierzytelniania;
+system uprawnień ograniczający dostęp do danych tylko do osób uprawnionych;
+regularne aktualizacje oprogramowania i kontrola bezpieczeństwa;
+wewnętrzny system wiadomości jako podstawowy kanał kontaktu między kierowcami a warsztatami;
+procedury ochrony danych i reagowania na incydenty.
+10. Pliki cookie i podobne technologie
+Serwis wykorzystuje pliki cookie oraz lokalną pamięć przeglądarki (Local Storage) wyłącznie w celach technicznych, aby zapewnić prawidłowe działanie Serwisu, zapamiętać ustawienia użytkownika, uwierzytelnianie i zabezpieczenie połączeń. Serwis nie korzysta obecnie z narzędzi analitycznych (np. Google Analytics) ani reklamowych (Google Ads, Meta Pixel). Jeżeli w przyszłości zostaną wprowadzone narzędzia analityczne lub marketingowe, będzie to wymagało uzyskania wyraźnej zgody Użytkowników. Użytkownik może w każdej chwili zmienić ustawienia dotyczące plików cookie w swojej przeglądarce.
+11. Zmiany Polityki prywatności
+Administrator zastrzega sobie prawo do wprowadzania zmian w niniejszej Polityce w celu dostosowania jej do zmian prawnych, rozwoju funkcjonalności Serwisu lub wprowadzenia nowych usług. O wszelkich zmianach Użytkownicy zostaną poinformowani poprzez odpowiednią informację na stronie Serwisu lub mailowo, nie później niż 14 dni przed wejściem zmian w życie. Korzystanie z Serwisu po dacie wejścia w życie zmian oznacza akceptację nowych zasad.
+12. Kontakt
+W przypadku pytań lub wątpliwości dotyczących przetwarzania danych osobowych w ramach Serwisu można skontaktować się z Administratorem:
+e‑mail: servygoa@gmail.com
+adres korespondencyjny: ul. Grażyny 11/24, 43‑330 Bielsko‑Biała.
+
+Niniejsza Polityka prywatności obowiązuje od 3 maja 2026 r. i zastępuje wszystkie wcześniejsze wersje dokumentu.

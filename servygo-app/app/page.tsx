@@ -12,6 +12,7 @@ import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
 import UserCenterCards from "@/components/home/UserCenterCards";
 import { MobileCompactSearchField, searchFormFieldIconMap } from "@/components/home/MobileCompactSearchField";
+import { VinOptionalHint } from "@/components/VinOptionalHint";
 import UserDetailsSection from "@/components/home/UserDetailsSection";
 import ClientNotificationBell from "@/components/home/ClientNotificationBell";
 import { pickDashboardUpcomingBooking, resolveClientBookingBadge } from "@/lib/bookingStatusUi";
@@ -2668,16 +2669,17 @@ function HomePageContent() {
                     className={`${currentFieldClassName}${searchFieldErrors.city ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
                   />
                 </MobileCompactSearchField>
-                <MobileCompactSearchField label="VIN" isDark={isDark} icon={searchFormFieldIconMap.vin}>
+                <MobileCompactSearchField label={t("form.labels.vin")} isDark={isDark} icon={searchFormFieldIconMap.vin}>
                   <input
                     type="text"
                     name="vin"
                     maxLength={17}
                     value={searchVin}
                     onChange={(event) => setSearchVin(event.target.value.toUpperCase().slice(0, 17))}
-                    placeholder="np. WAUZZZ8V6JA000001"
+                    placeholder={t("account.placeholders.vin")}
                     className={`${currentFieldClassName} ${searchFormControlMobileStrip}`}
                   />
+                  <VinOptionalHint text={t("account.vehicle.vinHint")} isDark={isDark} />
                   {SHOW_MANUAL_MISSING_VEHICLE_UI ? (
                     <div className="mt-1 flex items-center gap-2 max-md:mt-1 md:mt-1">
                       <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>lub</span>
@@ -3022,7 +3024,14 @@ function HomePageContent() {
                         </span>
                       </label>
                       <p className={`sm:col-span-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                        Pełne nazwisko, e-mail i telefon nie są publikowane przy opiniach ServyGo — zgodnie z Polityką prywatności.
+                        Pełne nazwisko, e-mail i telefon nie są publikowane przy opiniach ServyGo — zgodnie z{" "}
+                        <Link
+                          href="/polityka-prywatnosci"
+                          className={`font-semibold underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}
+                        >
+                          Polityką prywatności
+                        </Link>
+                        .
                       </p>
                       <AutocompleteSelect
                         label={t("account.profile.country")}
@@ -3140,6 +3149,7 @@ function HomePageContent() {
                             className={currentFieldClassName}
                             placeholder={t("account.placeholders.vin")}
                           />
+                          <VinOptionalHint text={t("account.vehicle.vinHint")} isDark={isDark} className="mt-0" />
                         </label>
                         <AutocompleteSelect
                           label={t("account.vehicle.fuel")}
@@ -3254,6 +3264,11 @@ function HomePageContent() {
                                     <input value={editVehicleDraft.fuel} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, fuel: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.fuel")} />
                                     <input value={editVehicleDraft.city} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, city: e.target.value } : prev)} className={currentFieldClassName} placeholder={t("account.vehicle.city")} />
                                     <input value={editVehicleDraft.vin} onChange={(e) => setEditVehicleDraft((prev) => prev ? { ...prev, vin: e.target.value.toUpperCase() } : prev)} className={`${currentFieldClassName} sm:col-span-2`} placeholder={t("account.vehicle.vin")} />
+                                    <VinOptionalHint
+                                      text={t("account.vehicle.vinHint")}
+                                      isDark={isDark}
+                                      className="sm:col-span-2"
+                                    />
                                     <div className="sm:col-span-2 flex flex-wrap gap-2">
                                       <button type="button" onClick={() => void handleVehicleEditSave()} disabled={accountSaving || accountLoading} className="rounded-lg bg-blue-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-60">
                                         {t("account.vehicle.save")}
