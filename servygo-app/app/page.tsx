@@ -24,6 +24,15 @@ export default function Home() {
   return (
     <>
       <HomePageJsonLd />
+      <noscript>
+        <section>
+          <h1>ServyGo — znajdź warsztat samochodowy i porównaj oferty</h1>
+          <p>
+            ServyGo pomaga kierowcom znaleźć warsztat, porównać oferty, ceny i terminy oraz umówić wizytę online.
+            Startowo działamy w mieście Bielsko-Biała i okolicach.
+          </p>
+        </section>
+      </noscript>
       <HomePageClient />
     </>
   );
