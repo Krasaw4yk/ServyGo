@@ -332,6 +332,10 @@ export default function AdminPage() {
     }
   }, [currentUser]);
 
+  const handleAdminInboxUnreadChange = useCallback((count: number) => {
+    setLiveSidebarBadges((prev) => ({ ...prev, "Moje wiadomości": count }));
+  }, []);
+
   const markTabSeen = useCallback(
     (tab: SidebarItem) => {
       setSeenSidebarBadges((prev) => ({ ...prev, [tab]: liveSidebarBadges[tab] }));
@@ -1434,9 +1438,7 @@ export default function AdminPage() {
                 isDark={isDark}
                 viewerRole="admin"
                 includeAllForAdmin
-                onUnreadCountChange={(count) =>
-                  setLiveSidebarBadges((prev) => ({ ...prev, "Moje wiadomości": count }))
-                }
+                onUnreadCountChange={handleAdminInboxUnreadChange}
               />
             ) : null}
 

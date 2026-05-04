@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompletionCheckNotificationCard from "@/components/CompletionCheckNotificationCard";
 import {
   cancelBooking,
@@ -50,6 +50,21 @@ function formatDate(value: string) {
   return d.toLocaleString("pl-PL");
 }
 
+function formatInboxLoadError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+  const msg = raw.trim() || "Nieznany błąd.";
+  if (/failed to fetch dynamically imported module/i.test(msg) || /loading chunk \d+ failed/i.test(msg)) {
+    return "Nie udało się załadować fragmentu aplikacji. Odśwież stronę (Ctrl+F5) lub spróbuj ponownie przyciskiem „Odśwież”.";
+  }
+  if (/failed to fetch/i.test(msg) || /networkerror/i.test(msg)) {
+    return "Brak połączenia z serwerem. Sprawdź internet i spróbuj ponownie.";
+  }
+  if (msg.length > 220) {
+    return "Wystąpił problem podczas ładowania wiadomości. Spróbuj ponownie za chwilę.";
+  }
+  return msg;
+}
+
 export default function InternalInbox({
   currentUserId,
   isDark,
@@ -83,6 +98,13 @@ export default function InternalInbox({
   const [clientReplyBody, setClientReplyBody] = useState("");
   const [clientReplyBusy, setClientReplyBusy] = useState(false);
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
+
+  const onUnreadCountChangeRef = useRef(onUnreadCountChange);
+  useEffect(() => {
+    onUnreadCountChangeRef.current = onUnreadCountChange;
+  }, [onUnreadCountChange]);
+
+  const reloadGeneration = useRef(0);
 
   const unreadCount = useMemo(() => {
     const msg = inbox.filter((x) => !x.is_read && x.recipient_id === currentUserId).length;
@@ -162,13 +184,33 @@ export default function InternalInbox({
     return rows;
   }, [notifications, activeThreads]);
 
-  const selectedThread = activeThreads.find((thread) => thread.key === selectedId) ?? null;
+  const [wideDesktop, setWideDesktop] = useState(true);
+  useEffect(() => {
+    if (!enableMobileMessenger) {
+      setWideDesktop(true);
+      return;
+    }
+    const mq = window.matchMedia("(min-width:768px)");
+    const sync = () => setWideDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [enableMobileMessenger]);
+
+  const resolvedSelectedKey = useMemo(() => {
+    if (loading || mergedSidebarRows.length === 0) return null;
+    if (enableMobileMessenger && !wideDesktop) return selectedId;
+    if (selectedId && mergedSidebarRows.some((r) => r.key === selectedId)) return selectedId;
+    return mergedSidebarRows[0].key;
+  }, [loading, mergedSidebarRows, enableMobileMessenger, wideDesktop, selectedId]);
+
+  const selectedThread = activeThreads.find((thread) => thread.key === resolvedSelectedKey) ?? null;
   const selectedMessage = selectedThread?.latest ?? null;
   const selectedNotification = useMemo(() => {
-    if (!selectedId?.startsWith("notification:")) return null;
-    const nid = selectedId.slice("notification:".length);
+    if (!resolvedSelectedKey?.startsWith("notification:")) return null;
+    const nid = resolvedSelectedKey.slice("notification:".length);
     return notifications.find((x) => x.id === nid) ?? null;
-  }, [selectedId, notifications]);
+  }, [resolvedSelectedKey, notifications]);
   const threadMessages = useMemo(() => {
     if (!selectedMessage) return [] as InternalMessage[];
     if (selectedMessage.related_booking_id) {
@@ -210,6 +252,7 @@ export default function InternalInbox({
   }, [viewerRole, selectedMessage?.related_booking_id]);
 
   const reload = useCallback(async () => {
+    const gen = ++reloadGeneration.current;
     setLoading(true);
     setError("");
     try {
@@ -219,32 +262,24 @@ export default function InternalInbox({
         getSentMessages(currentUserId),
         getUnifiedUnreadCount(currentUserId, includeAllForAdmin),
       ]);
+      if (gen !== reloadGeneration.current) return;
       setNotifications(noteRows);
       setInbox(inboxRows);
       setSent(sentRows);
-      onUnreadCountChange?.(unread);
+      onUnreadCountChangeRef.current?.(unread);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się pobrać wiadomości.");
+      if (gen !== reloadGeneration.current) return;
+      setError(formatInboxLoadError(e));
     } finally {
-      setLoading(false);
+      if (gen === reloadGeneration.current) {
+        setLoading(false);
+      }
     }
-  }, [currentUserId, includeAllForAdmin, onUnreadCountChange]);
+  }, [currentUserId, includeAllForAdmin]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  useEffect(() => {
-    if (loading) return;
-    if (mergedSidebarRows.length === 0) return;
-    const isNarrowMessenger =
-      enableMobileMessenger && typeof window !== "undefined" && !window.matchMedia("(min-width:768px)").matches;
-    if (isNarrowMessenger) return;
-    setSelectedId((prev) => {
-      if (prev && mergedSidebarRows.some((r) => r.key === prev)) return prev;
-      return mergedSidebarRows[0].key;
-    });
-  }, [loading, mergedSidebarRows, enableMobileMessenger]);
 
   useEffect(() => {
     if (!enableMobileMessenger) return;
@@ -252,15 +287,10 @@ export default function InternalInbox({
     function onMqChange() {
       if (!mq.matches) return;
       setMobileView("list");
-      setSelectedId((prev) => {
-        if (mergedSidebarRows.length === 0) return null;
-        if (prev && mergedSidebarRows.some((r) => r.key === prev)) return prev;
-        return mergedSidebarRows[0]?.key ?? null;
-      });
     }
     mq.addEventListener("change", onMqChange);
     return () => mq.removeEventListener("change", onMqChange);
-  }, [enableMobileMessenger, mergedSidebarRows]);
+  }, [enableMobileMessenger]);
 
   useEffect(() => {
     if (!enableMobileMessenger) return;
@@ -276,18 +306,6 @@ export default function InternalInbox({
       document.body.style.overflow = "";
     };
   }, [enableMobileMessenger, mobileView]);
-
-  useEffect(() => {
-    if (!enableMobileMessenger) return;
-    if (loading) return;
-    if (mergedSidebarRows.length === 0) return;
-    const mq = window.matchMedia("(min-width:768px)");
-    if (!mq.matches) return;
-    setSelectedId((prev) => {
-      if (prev && mergedSidebarRows.some((r) => r.key === prev)) return prev;
-      return mergedSidebarRows[0].key;
-    });
-  }, [enableMobileMessenger, loading, mergedSidebarRows]);
 
   useEffect(() => {
     if (viewerRole !== "workshop" || !selectedMessage?.related_booking_id || !supabase) {
@@ -841,7 +859,7 @@ export default function InternalInbox({
           type="button"
           onClick={() => void openNotification(row.notification)}
           className={`w-full border-b px-3 py-2.5 text-left transition last:border-b-0 ${
-            selectedId === row.key ? (isDark ? "bg-zinc-800" : "bg-blue-50") : ""
+            resolvedSelectedKey === row.key ? (isDark ? "bg-zinc-800" : "bg-blue-50") : ""
           } ${
             !row.notification.is_read
               ? isDark
@@ -868,7 +886,7 @@ export default function InternalInbox({
           type="button"
           onClick={() => void openMessage(row.thread.latest)}
           className={`w-full border-b px-3 py-2.5 text-left transition last:border-b-0 ${
-            selectedId === row.key ? (isDark ? "bg-zinc-800" : "bg-blue-50") : ""
+            resolvedSelectedKey === row.key ? (isDark ? "bg-zinc-800" : "bg-blue-50") : ""
           } ${
             row.thread.unreadCount > 0
               ? isDark
@@ -915,7 +933,7 @@ export default function InternalInbox({
               type="button"
               onClick={() => void openNotification(row.notification)}
               className={`w-full rounded-2xl border p-4 text-left shadow-sm transition ${
-                selectedId === row.key ? (!isDark ? "border-blue-300 bg-blue-50/95" : "border-blue-500/40 bg-zinc-800") : ""
+                resolvedSelectedKey === row.key ? (!isDark ? "border-blue-300 bg-blue-50/95" : "border-blue-500/40 bg-zinc-800") : ""
               } ${!row.notification.is_read ? mobileUnreadCardHighlight : !isDark ? "border-blue-100 bg-white/90" : "border-zinc-700 bg-zinc-900/85"}`}
             >
               <div className="flex items-start justify-between gap-2">
@@ -937,7 +955,7 @@ export default function InternalInbox({
               type="button"
               onClick={() => void openMessage(row.thread.latest)}
               className={`w-full rounded-2xl border p-4 text-left shadow-sm transition ${
-                selectedId === row.key ? (!isDark ? "border-blue-300 bg-blue-50/95" : "border-blue-500/40 bg-zinc-800") : ""
+                resolvedSelectedKey === row.key ? (!isDark ? "border-blue-300 bg-blue-50/95" : "border-blue-500/40 bg-zinc-800") : ""
               } ${row.thread.unreadCount > 0 ? mobileUnreadCardHighlight : !isDark ? "border-blue-100 bg-white/90" : "border-zinc-700 bg-zinc-900/85"}`}
             >
               <div className="flex items-start justify-between gap-2">
@@ -1105,13 +1123,54 @@ export default function InternalInbox({
 
   const inboxAlerts = (
     <>
-      {error ? <p className={`mb-3 rounded-lg border px-3 py-2 text-sm ${isDark ? "border-rose-500/40 bg-rose-950/40 text-rose-100" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{error}</p> : null}
+      {error ? (
+        <div
+          className={`mb-3 rounded-lg border px-3 py-3 text-sm ${isDark ? "border-rose-500/40 bg-rose-950/40 text-rose-100" : "border-rose-200 bg-rose-50 text-rose-800"}`}
+          role="status"
+        >
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => void reload()}
+            className={`mt-3 rounded-lg border px-3 py-1.5 text-xs font-semibold ${isDark ? "border-rose-400/50 hover:bg-rose-950/60" : "border-rose-300 bg-white hover:bg-rose-50"}`}
+          >
+            Odśwież
+          </button>
+        </div>
+      ) : null}
       {info ? <p className={`mb-3 rounded-lg border px-3 py-2 text-sm ${isDark ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-100" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{info}</p> : null}
     </>
   );
 
+  const classicLoadingSkeleton = (
+    <div className="grid grid-cols-1 gap-3 overflow-x-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
+      <div
+        className={`h-[min(420px,55vh)] animate-pulse rounded-xl border ${isDark ? "border-zinc-700 bg-zinc-800/50" : "border-zinc-200 bg-zinc-100/90"}`}
+        aria-hidden
+      />
+      <div
+        className={`h-[min(420px,55vh)] animate-pulse rounded-xl border ${isDark ? "border-zinc-700 bg-zinc-800/50" : "border-zinc-200 bg-zinc-100/90"}`}
+        aria-hidden
+      />
+      <p className={`col-span-full text-center text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Ładowanie wiadomości…</p>
+    </div>
+  );
+
+  const classicEmptyState = (
+    <div
+      className={`rounded-xl border p-10 text-center ${isDark ? "border-zinc-700 bg-zinc-900/60" : "border-blue-200 bg-white/85"}`}
+    >
+      <p className={`text-sm font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{resolvedEmptyListHint}</p>
+      <p className={`mt-3 text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+        Skrzynka jest pusta. Gdy pojawią się wiadomości lub powiadomienia, zobaczysz je na liście po lewej.
+      </p>
+    </div>
+  );
+
   const classicGrid = loading ? (
-    <p className="text-sm">Ładowanie…</p>
+    classicLoadingSkeleton
+  ) : mergedSidebarRows.length === 0 ? (
+    classicEmptyState
   ) : (
     <div className="grid grid-cols-1 gap-3 overflow-x-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
       <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden rounded-xl border">{sidebarListDesktop}</div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { getUnreadMessagesCount } from "@/lib/messagesApi";
 import { supabase } from "@/lib/supabaseClient";
 import { formatSupabaseError } from "@/lib/workshopApi";
 
@@ -60,7 +61,6 @@ export async function markNotificationAsRead(notificationId: string): Promise<vo
 
 /** Licznik nieprzeczytanych wiadomości (internal_messages) + powiadomień aplikacyjnych. */
 export async function getUnifiedUnreadCount(userId: string, messagesIncludeAllForAdmin = false): Promise<number> {
-  const { getUnreadMessagesCount } = await import("@/lib/messagesApi");
   const [a, b] = await Promise.all([
     getUnreadMessagesCount(userId, messagesIncludeAllForAdmin),
     getUnreadNotificationsCount(userId),
