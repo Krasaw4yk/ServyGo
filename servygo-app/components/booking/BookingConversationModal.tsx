@@ -1,14 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  getBookingThreadMessages,
-  markBookingThreadMessagesRead,
-  sendInternalMessage,
-  type InternalMessage,
-} from "@/lib/messagesApi";
-import { supabase } from "@/lib/supabaseClient";
-
+import { getBookingThreadMessages, markBookingThreadMessagesRead, type InternalMessage } from "@/lib/messagesApi";
 type Props = {
   bookingId: string;
   workshopId: string;
@@ -18,6 +12,7 @@ type Props = {
   isDark: boolean;
   /** Prefiks treści / tematu np. przy „dopytaj o wycenę” */
   draftSubject?: string;
+  /** @deprecated Ignorowane — modal pokazuje tylko komunikaty systemowe. */
   draftBody?: string;
   onClose: () => void;
 };
@@ -53,15 +48,12 @@ export default function BookingConversationModal({
   userId,
   isDark,
   draftSubject,
-  draftBody,
+  draftBody: _draftBody,
   onClose,
 }: Props) {
   const [messages, setMessages] = useState<InternalMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [ownerId, setOwnerId] = useState<string | null>(null);
-  const [compose, setCompose] = useState("");
-  const [sending, setSending] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,51 +73,9 @@ export default function BookingConversationModal({
     void load();
   }, [load]);
 
-  useEffect(() => {
-    setCompose(draftBody ?? "");
-  }, [draftBody]);
+  const title = useMemo(() => draftSubject ?? `Zdarzenia rezerwacji: ${serviceName}`, [draftSubject, serviceName]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!supabase) return;
-      const { data: wRow } = await supabase.from("workshops").select("owner_id").eq("id", workshopId).maybeSingle();
-      if (!cancelled) setOwnerId((wRow as { owner_id?: string | null } | null)?.owner_id ?? null);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [workshopId]);
-
-  const title = useMemo(() => draftSubject ?? `Rozmowa: ${serviceName}`, [draftSubject, serviceName]);
-
-  async function handleSend() {
-    const body = compose.trim();
-    if (!body || !ownerId) {
-      setError(!ownerId ? "Brak właściciela warsztatu." : "Wpisz treść wiadomości.");
-      return;
-    }
-    setSending(true);
-    setError("");
-    try {
-      await sendInternalMessage({
-        senderId: userId,
-        recipientId: ownerId,
-        senderRole: "client",
-        recipientRole: "workshop",
-        subject: title,
-        body,
-        relatedBookingId: bookingId,
-        relatedWorkshopId: workshopId,
-      });
-      setCompose("");
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się wysłać.");
-    } finally {
-      setSending(false);
-    }
-  }
+  const systemMessages = useMemo(() => messages.filter((m) => m.sender_role === "system"), [messages]);
 
   const shell = isDark ? "border-zinc-600 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900";
   const backdrop = "fixed inset-0 z-[10050] flex items-end justify-center sm:items-center p-0 sm:p-4";
@@ -154,13 +104,13 @@ export default function BookingConversationModal({
         <div className={`min-h-[200px] flex-1 overflow-y-auto px-4 py-3 ${isDark ? "bg-zinc-950/40" : "bg-blue-50/40"}`}>
           {loading ? (
             <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Ładowanie wiadomości…</p>
-          ) : messages.length === 0 ? (
+          ) : systemMessages.length === 0 ? (
             <p className={`rounded-2xl border px-4 py-6 text-center text-sm ${isDark ? "border-zinc-700 text-zinc-400" : "border-blue-100 text-zinc-600"}`}>
-              Brak wiadomości w tej rozmowie. Napisz pierwszą wiadomość do warsztatu poniżej.
+              Brak komunikatów systemowych dla tej rezerwacji. Pełną rozmowę z warsztatem znajdziesz w Wiadomościach.
             </p>
           ) : (
             <div className="flex flex-col gap-3">
-              {messages.map((msg) => (
+              {systemMessages.map((msg) => (
                 <div key={msg.id} className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${bubbleClasses(msg, userId, isDark)}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-semibold opacity-90">{msg.sender_label}</span>
@@ -179,35 +129,24 @@ export default function BookingConversationModal({
         ) : null}
 
         <div className={`shrink-0 border-t p-4 ${isDark ? "border-zinc-700 bg-zinc-900" : "border-blue-100 bg-white"}`}>
-          <label className={`block text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Wiadomość do warsztatu</label>
-          <textarea
-            value={compose}
-            onChange={(e) => setCompose(e.target.value)}
-            rows={4}
-            disabled={sending || !ownerId}
-            className={`mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 ${
-              isDark
-                ? "border-zinc-600 bg-zinc-950 text-zinc-100 focus:ring-blue-500/40"
-                : "border-zinc-300 bg-white text-zinc-900 focus:ring-blue-400/50"
-            }`}
-            placeholder={ownerId ? "Treść…" : "Ładowanie…"}
-          />
-          <div className="mt-3 flex justify-end gap-2">
+          <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+            Akceptacja i odrzucenie wyceny są w sekcji{" "}
+            <strong className={isDark ? "text-zinc-100" : "text-zinc-900"}>Moje rezerwacje</strong>. Tutaj widać wyłącznie
+            komunikaty systemowe (rezerwacja, wycena, decyzje).
+          </p>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <Link
+              href="/moje-wiadomosci"
+              className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-blue-400/50 text-blue-200 hover:bg-zinc-800" : "border-blue-300 text-blue-800 hover:bg-blue-50"}`}
+            >
+              Otwórz Wiadomości
+            </Link>
             <button
               type="button"
-              disabled={sending}
               onClick={onClose}
               className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
             >
               Zamknij
-            </button>
-            <button
-              type="button"
-              disabled={sending || !ownerId}
-              onClick={() => void handleSend()}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {sending ? "Wysyłanie…" : "Wyślij"}
             </button>
           </div>
         </div>

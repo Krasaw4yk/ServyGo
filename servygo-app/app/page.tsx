@@ -1830,7 +1830,7 @@ function HomePageContent() {
                             </svg>
                           </span>
                           <span>
-                            <span className="block text-sm font-semibold">Moje wiadomości</span>
+                            <span className="block text-sm font-semibold">{t("header.conversationsNav")}</span>
                           </span>
                         </Link>
                         <Link
@@ -2005,6 +2005,8 @@ function HomePageContent() {
                     <ClientNotificationBell
                       isDark={isDark}
                       unreadCount={accountUnreadMessages}
+                      ariaLabel={t("header.notificationBellAria")}
+                      title={t("header.notificationBellTitle")}
                       buttonClassName={`${triggerButtonClass} max-sm:h-[34px] max-sm:min-h-[34px] max-sm:w-[34px] max-sm:min-w-[34px] max-sm:justify-center max-sm:px-0 max-sm:py-0`}
                     />
                   </div>
@@ -2075,7 +2077,7 @@ function HomePageContent() {
                         Mój kalendarz
                       </Link>
                       <Link href="/moje-wiadomosci" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
-                        Moje wiadomości
+                        {t("header.conversationsNav")}
                       </Link>
                       <Link href="/ustawienia" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
                         Ustawienia
@@ -2909,7 +2911,10 @@ function HomePageContent() {
                       { key: "profile", label: t("account.tabs.profile") },
                       { key: "vehicles", label: t("account.tabs.vehicles") },
                       { key: "security", label: t("account.tabs.security") },
-                      { key: "messages", label: `Moje wiadomości${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}` },
+                      {
+                        key: "messages",
+                        label: `${t("header.conversationsTab")}${accountUnreadMessages > 0 ? ` (${accountUnreadMessages > 99 ? "99+" : accountUnreadMessages})` : ""}`,
+                      },
                     ] as { key: AccountTab; label: string }[]).map((tab) => (
                       <button
                         key={tab.key}

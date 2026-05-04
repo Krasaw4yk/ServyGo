@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import InternalInbox from "@/components/InternalInbox";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { resolveMessageViewerContext, type InternalMessageRole } from "@/lib/messagesApi";
+import { createTranslator, type LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 
 export default function MojeWiadomosciPage() {
   const [mounted, setMounted] = useState(false);
+  const [language, setLanguage] = useState<LanguageCode>("pl");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [user, setUser] = useState<User | null>(null);
   const [viewerRole, setViewerRole] = useState<InternalMessageRole>("client");
@@ -21,7 +23,11 @@ export default function MojeWiadomosciPage() {
     setMounted(true);
     const st = window.localStorage.getItem("servygo-theme");
     if (st === "light" || st === "dark") setTheme(st);
+    const lang = window.localStorage.getItem("servygo_language");
+    if (lang === "pl" || lang === "en" || lang === "ua") setLanguage(lang);
   }, []);
+
+  const t = useMemo(() => createTranslator(language), [language]);
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) return;
@@ -87,9 +93,10 @@ export default function MojeWiadomosciPage() {
         <main className="mx-auto min-h-screen w-full max-w-5xl px-3 py-6 sm:px-6 sm:py-8">
           <ServyGoSubpageNavBar isDark={isDark} variant="messages" />
           <div className="mb-6">
-            <h1 className={`text-2xl font-bold sm:text-3xl ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Moje wiadomości</h1>
+            <h1 className={`text-2xl font-bold sm:text-3xl ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{t("inboxPage.title")}</h1>
             <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-              Wiadomości od warsztatu, alerty systemowe i przypomnienia — jedna lista {unread > 0 ? `· ${unread} nieprzeczytanych` : ""}
+              {t("inboxPage.subtitle")}
+              {unread > 0 ? t("inboxPage.unreadSuffix").replace("{count}", String(unread)) : ""}
             </p>
           </div>
           <InternalInbox

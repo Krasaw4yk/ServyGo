@@ -7,12 +7,17 @@ type ClientNotificationBellProps = {
   unreadCount: number;
   /** Gdy podane (np. klasa przycisków język/motyw w headerze), zamiast małego kwadratu. */
   buttonClassName?: string;
+  /** Dzwonek = skrót do skrzynki + licznik nieprzeczytanych (wiadomości i powiadomienia). */
+  ariaLabel: string;
+  title: string;
 };
 
 export default function ClientNotificationBell({
   isDark,
   unreadCount,
   buttonClassName,
+  ariaLabel,
+  title,
 }: ClientNotificationBellProps) {
   const compactBellBtnClass = `relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition ${
     isDark ? "border-zinc-600 text-zinc-100 hover:bg-zinc-800" : "border-blue-200 text-blue-800 hover:bg-blue-50"
@@ -22,11 +27,14 @@ export default function ClientNotificationBell({
     : `relative overflow-visible ${compactBellBtnClass}`;
   const bellIconClass = buttonClassName?.trim() ? "h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:h-6 shrink-0" : "h-5 w-5 shrink-0";
 
+  const countHint =
+    unreadCount > 0 ? ` — ${unreadCount > 99 ? "99+" : String(unreadCount)} nieprzeczyt.` : "";
+
   return (
     <Link
       href="/moje-wiadomosci"
-      aria-label="Moje wiadomości"
-      title="Moje wiadomości"
+      aria-label={`${ariaLabel}${unreadCount > 0 ? ` (${unreadCount > 99 ? "99+" : unreadCount})` : ""}`}
+      title={`${title}${countHint}`}
       className={bellBtnClass}
     >
       <svg viewBox="0 0 24 24" className={bellIconClass} fill="none" stroke="currentColor" strokeWidth="1.8">

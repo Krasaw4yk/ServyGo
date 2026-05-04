@@ -22,6 +22,8 @@ export type WorkshopOwnerBookingRow = {
   end_time?: string | null;
   status: string;
   final_price?: number | null;
+  quoted_price?: number | null;
+  current_quote_id?: string | null;
   quote_sent_at?: string | null;
   quote_expires_at?: string | null;
   quote_note?: string | null;
@@ -235,6 +237,8 @@ export async function listBookingsForWorkshopOwner(
         "service_category",
         "price",
         "final_price",
+        "quoted_price",
+        "current_quote_id",
         "quote_sent_at",
         "quote_expires_at",
         "quote_note",
@@ -420,6 +424,22 @@ export async function sendBookingQuoteAsWorkshopOwner(
 ): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
   if (!Number.isFinite(finalPrice) || finalPrice < 0) throw new Error("Nieprawidłowa cena.");
+
+  const { data: row, error: rowErr } = await supabase.from("bookings").select("status").eq("id", bookingId).maybeSingle();
+  if (rowErr) throw new Error(formatSupabaseError(rowErr));
+  const st = ((row as { status?: string | null } | null)?.status ?? "").trim().toLowerCase();
+  if (st === "confirmed" || st === "completed") {
+    throw new Error("Nie można wysłać nowej wyceny po potwierdzeniu wizyty.");
+  }
+  if (
+    st === "cancelled" ||
+    st === "cancelled_by_client" ||
+    st === "cancelled_by_workshop" ||
+    st === "cancelled_by_system"
+  ) {
+    throw new Error("Nie można wysłać wyceny dla anulowanej rezerwacji.");
+  }
+
   const trimmedNote = quoteNote?.trim() ?? "";
   const { error } = await supabase.rpc("send_booking_quote", {
     p_booking_id: bookingId,

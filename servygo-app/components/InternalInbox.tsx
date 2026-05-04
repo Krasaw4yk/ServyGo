@@ -23,6 +23,7 @@ import {
 } from "@/lib/notificationsApi";
 import { supabase } from "@/lib/supabaseClient";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
+import { useInboxRealtimeSync } from "@/lib/useServyGoRealtime";
 
 type InternalInboxProps = {
   currentUserId: string;
@@ -281,6 +282,12 @@ export default function InternalInbox({
     void reload();
   }, [reload]);
 
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useInboxRealtimeSync(Boolean(supabase && currentUserId), currentUserId, () => {
+    void reloadRef.current();
+  });
+
   useEffect(() => {
     if (!enableMobileMessenger) return;
     const mq = window.matchMedia("(min-width:768px)");
@@ -532,7 +539,7 @@ export default function InternalInbox({
         : "border-zinc-200 bg-white shadow-md";
   }
 
-  async function notifyWorkshopAboutQuoteDecision(message: InternalMessage, accepted: boolean) {
+  async function notifyWorkshopAboutQuoteDecisionEmailOnly(message: InternalMessage, accepted: boolean) {
     if (!supabase) return;
     if (!message.related_workshop_id || !message.related_booking_id) return;
     const { data: workshopRow } = await supabase
@@ -541,17 +548,6 @@ export default function InternalInbox({
       .eq("id", message.related_workshop_id)
       .maybeSingle();
     const ownerId = (workshopRow as { owner_id?: string | null } | null)?.owner_id ?? null;
-    const workshopName = (workshopRow as { name?: string | null } | null)?.name ?? "Warsztat";
-    await sendSystemMessage({
-      recipientId: ownerId,
-      recipientRole: "workshop",
-      subject: accepted ? "Klient zaakceptował wycenę" : "Klient odrzucił wycenę",
-      body: accepted
-        ? `Klient zaakceptował wycenę dla rezerwacji (${message.related_booking_id}) w warsztacie ${workshopName}.`
-        : `Klient odrzucił wycenę dla rezerwacji (${message.related_booking_id}) w warsztacie ${workshopName}.`,
-      relatedBookingId: message.related_booking_id,
-      relatedWorkshopId: message.related_workshop_id,
-    });
     if (ownerId) {
       await sendBookingEmailNotification({
         bookingId: message.related_booking_id,
@@ -566,12 +562,20 @@ export default function InternalInbox({
   }
 
   async function handleQuoteDecision(accept: boolean) {
-    if (!selectedMessage?.related_booking_id) return;
+    if (!selectedMessage?.related_booking_id || !supabase) return;
     setError("");
     setInfo("");
     try {
-      await respondToBookingQuote(selectedMessage.related_booking_id, accept);
-      await notifyWorkshopAboutQuoteDecision(selectedMessage, accept);
+      const { data: bRow, error: bErr } = await supabase
+        .from("bookings")
+        .select("current_quote_id, quoted_price, final_price")
+        .eq("id", selectedMessage.related_booking_id)
+        .maybeSingle();
+      if (bErr) throw new Error(bErr.message);
+      const qid = ((bRow as { current_quote_id?: string | null } | null)?.current_quote_id ?? "").trim();
+      if (!qid) throw new Error("Brak aktywnej wyceny — odśwież listę.");
+      await respondToBookingQuote(selectedMessage.related_booking_id, qid, accept);
+      await notifyWorkshopAboutQuoteDecisionEmailOnly(selectedMessage, accept);
       setInfo(accept ? "Wycena została zaakceptowana." : "Wycena została odrzucona.");
       await reload();
     } catch (e) {

@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import {
+  useBookingsRealtimeSync,
+  useSupportReportsAdminRealtime,
+  useWorkshopLeadsAdminRealtime,
+} from "@/lib/useServyGoRealtime";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import AdminServyGoMapSection from "@/components/admin/AdminServyGoMapSection";
@@ -404,6 +409,38 @@ export default function AdminPage() {
       cancelled = true;
     };
   }, [activeWorkshopPanelId, currentUser]);
+
+  const refreshWorkshopPanelBookingsQuietRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    refreshWorkshopPanelBookingsQuietRef.current = () => {
+      if (!currentUser || !activeWorkshopPanelId) return;
+      void (async () => {
+        try {
+          const detail = await getWorkshopDetailForAdmin(currentUser.id, currentUser.email, activeWorkshopPanelId);
+          setWorkshopPanelDetail(detail);
+          void refreshSidebarBadges();
+        } catch {
+          /* realtime: nie blokujemy panelu */
+        }
+      })();
+    };
+  }, [currentUser, activeWorkshopPanelId, refreshSidebarBadges]);
+
+  useBookingsRealtimeSync({
+    enabled: Boolean(isSupabaseConfigured && supabase && currentUser && activeWorkshopPanelId),
+    workshopId: activeWorkshopPanelId,
+    onRefresh: () => refreshWorkshopPanelBookingsQuietRef.current(),
+  });
+
+  useWorkshopLeadsAdminRealtime(
+    Boolean(isSupabaseConfigured && supabase && currentUser && activeTab === "Zgłoszenia warsztatów"),
+    () => void refreshLeads(),
+  );
+
+  useSupportReportsAdminRealtime(
+    Boolean(isSupabaseConfigured && supabase && currentUser && activeTab === "Zgłoszenia problemów"),
+    () => void refreshSupportReports(),
+  );
 
   useEffect(() => {
     if (!workshopEditId || !workshopPanelDetail || workshopPanelDetail.id !== workshopEditId) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,6 +13,7 @@ import WorkshopServicesPricingSection from "@/components/workshop/WorkshopServic
 import InternalInbox from "@/components/InternalInbox";
 import { getWorkshopDetailForAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { useBookingsRealtimeSync } from "@/lib/useServyGoRealtime";
 import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
 import { runExpirePendingBookingsWorkshopTimeout } from "@/lib/bookingWorkshopResponseExpiry";
 import { notifyClientBookingQuoteSent, quoteDecisionLabel } from "@/lib/bookingQuoteNotifications";
@@ -273,6 +274,7 @@ function formatBookingStatus(status: string) {
   if (x === "quote_sent") return "Wycena gotowa";
   if (x === "quote_accepted") return "Potwierdzona";
   if (x === "quote_rejected") return "Wycena odrzucona";
+  if (x === "awaiting_new_quote") return "Oczekuje na nową wycenę";
   if (x === "awaiting_reschedule") return "Propozycja zmiany terminu";
   if (x === "pending" || x === "new") return "Oczekuje";
   if (x === "confirmed") return "Potwierdzona";
@@ -289,7 +291,16 @@ function statusPillClass(status: string, isDark: boolean) {
   if (x === "awaiting_reschedule") return isDark ? "bg-purple-500/20 text-purple-200" : "bg-purple-100 text-purple-700";
   if (x === "confirmed" || x === "quote_accepted") return isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700";
   if (x === "completed" || x === "done") return isDark ? "bg-blue-500/20 text-blue-200" : "bg-blue-100 text-blue-700";
-  if (x === "rejected" || x === "quote_rejected" || x === "cancelled" || x === "cancelled_by_client" || x === "cancelled_by_workshop" || x === "cancelled_by_system") return isDark ? "bg-rose-500/20 text-rose-200" : "bg-rose-100 text-rose-700";
+  if (
+    x === "rejected" ||
+    x === "quote_rejected" ||
+    x === "awaiting_new_quote" ||
+    x === "cancelled" ||
+    x === "cancelled_by_client" ||
+    x === "cancelled_by_workshop" ||
+    x === "cancelled_by_system"
+  )
+    return isDark ? "bg-rose-500/20 text-rose-200" : "bg-rose-100 text-rose-700";
   return isDark ? "bg-amber-500/20 text-amber-200" : "bg-amber-100 text-amber-700";
 }
 
@@ -614,6 +625,20 @@ function WorkshopPanelPageContent() {
     });
   }, [isAdminPreview]);
 
+  const loadAllRef = useRef(loadAll);
+  loadAllRef.current = loadAll;
+  const workshopRealtimeRef = useRef(workshop);
+  workshopRealtimeRef.current = workshop;
+
+  useBookingsRealtimeSync({
+    enabled: Boolean(!accessDenied && isSupabaseConfigured && workshop?.id),
+    workshopId: workshop?.id ?? null,
+    onRefresh: () => {
+      const w = workshopRealtimeRef.current;
+      if (w) void loadAllRef.current(w);
+    },
+  });
+
   const respondClientRescheduleProposal = useCallback(
     async (b: WorkshopOwnerBookingRow, accept: boolean) => {
       const ws = workshop;
@@ -849,6 +874,8 @@ function WorkshopPanelPageContent() {
         st === "awaiting_quote" ||
         st === "pending_quote" ||
         st === "quote_sent" ||
+        st === "quote_rejected" ||
+        st === "awaiting_new_quote" ||
         st === "awaiting_reschedule"
       );
     }).length;
@@ -1002,6 +1029,7 @@ function WorkshopPanelPageContent() {
     "awaiting_quote",
     "quote_sent",
     "quote_rejected",
+    "awaiting_new_quote",
     "quote_accepted",
     "awaiting_reschedule",
     "confirmed",
@@ -1339,21 +1367,7 @@ function WorkshopPanelPageContent() {
     try {
       const noteText = (quoteNoteByBookingId[id] ?? booking.quote_note ?? "").trim();
       await sendBookingQuoteAsWorkshopOwner(id, finalPrice, noteText || null);
-      const now = new Date().toISOString();
-      setBookings((prev) =>
-        prev.map((b) =>
-          b.id === id
-            ? {
-                ...b,
-                status: "quote_sent",
-                final_price: finalPrice,
-                quote_sent_at: now,
-                quote_note: noteText || null,
-                quote_status: "pending_client_decision",
-              }
-            : b,
-        ),
-      );
+      await loadAll(workshop);
       await notifyClientBookingQuoteSent({
         clientUserId: booking.user_id,
         bookingId: booking.id,
@@ -2063,7 +2077,7 @@ function WorkshopPanelPageContent() {
                                     <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>{formatBookingStatus(b.status)}</span></td>
                                     <td className="px-3 py-2">
                                       <div className="flex flex-wrap gap-1">
-                                        <button type="button" disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")} onClick={() => void sendQuoteForBooking(b.id)} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Wyślij wycenę</button>
+                                        <button type="button" disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "awaiting_new_quote" && st !== "new" && st !== "pending")} onClick={() => void sendQuoteForBooking(b.id)} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Wyślij wycenę</button>
                                         <button type="button" disabled={readOnly || busy || st === "completed" || cancelled} onClick={() => openCancelBookingModal(b)} className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Anuluj</button>
                                         <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Szczegóły</button>
                                       </div>
@@ -2234,7 +2248,7 @@ function WorkshopPanelPageContent() {
                                       />
                                       <button
                                         type="button"
-                                        disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "new" && st !== "pending")}
+                                        disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "awaiting_new_quote" && st !== "new" && st !== "pending")}
                                         onClick={() => void sendQuoteForBooking(b.id)}
                                         className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
                                       >

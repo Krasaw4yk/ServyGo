@@ -1,6 +1,5 @@
 "use client";
 
-import { sendSystemMessage } from "@/lib/messagesApi";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { sendBookingNotificationEmail } from "@/lib/sendBookingNotificationEmail";
 
@@ -24,6 +23,8 @@ export function quoteDecisionLabel(
   if (qs === "rejected") return "Odrzucona przez klienta";
   if (qs === "cancelled") return "Anulowana (wycena)";
   if (bs === "quote_sent") return "Oczekuje na decyzję klienta";
+  if (bs === "awaiting_new_quote") return "Odrzucona — oczekuje na nową wycenę";
+  if (bs === "quote_rejected") return "Wycena odrzucona";
   if (bs === "confirmed" && qs === "") return "Zaakceptowana — potwierdzona";
   return "—";
 }
@@ -44,21 +45,6 @@ export async function notifyClientBookingQuoteSent(payload: {
   const noteLine = payload.quoteNote?.trim()
     ? `\nWiadomość od warsztatu: ${payload.quoteNote.trim()}`
     : "";
-
-  await sendSystemMessage({
-    recipientId: payload.clientUserId,
-    recipientRole: "client",
-    subject: "Wycena gotowa",
-    body: [
-      `Warsztat ${payload.workshopName} wysłał wycenę dla usługi ${payload.serviceName}.`,
-      `Kwota: ${priceFormatted} zł.${noteLine}`,
-      "",
-      `Wejdź w Moje rezerwacje (${link}), aby zaakceptować lub odrzucić.`,
-      `Termin rezerwacji: ${payload.bookingDateLine}`,
-    ].join("\n"),
-    relatedBookingId: payload.bookingId,
-    relatedWorkshopId: payload.workshopId,
-  });
 
   await sendBookingEmailNotification({
     bookingId: payload.bookingId,
@@ -104,17 +90,6 @@ export async function notifyWorkshopOwnerQuoteResponded(payload: {
     payload.accepted && payload.finalPrice != null && Number.isFinite(payload.finalPrice)
       ? ` Kwota: ${payload.finalPrice.toFixed(2)} zł.`
       : "";
-  await sendSystemMessage({
-    recipientId: payload.ownerUserId,
-    recipientRole: "workshop",
-    subject: payload.accepted ? "Klient zaakceptował wycenę" : "Klient odrzucił wycenę",
-    body: payload.accepted
-      ? `Klient zaakceptował wycenę dla usługi „${payload.serviceName}”.${priceBit} Warsztat: ${payload.workshopName}.`
-      : `Klient odrzucił wycenę dla usługi „${payload.serviceName}”. Warsztat: ${payload.workshopName}.`,
-    relatedBookingId: payload.bookingId,
-    relatedWorkshopId: payload.workshopId,
-  });
-
   await sendBookingNotificationEmail({
     type: payload.accepted ? "quote_accepted" : "quote_rejected",
     bookingId: payload.bookingId,

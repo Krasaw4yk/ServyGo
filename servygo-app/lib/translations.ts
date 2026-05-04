@@ -21,6 +21,17 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       themeLight: "Jasny",
       themeDark: "Ciemny",
       registerShort: "Rejestracja",
+      notificationBellAria:
+        "Skrzynka ServyGo — nieprzeczytane wiadomości i powiadomienia. Otwiera listę rozmów.",
+      notificationBellTitle: "Skrzynka (wiadomości i powiadomienia)",
+      conversationsNav: "Wiadomości",
+      conversationsTab: "Wiadomości",
+    },
+    inboxPage: {
+      title: "Wiadomości",
+      subtitle:
+        "Rozmowy z warsztatem, alerty systemowe i przypomnienia — jedna lista. Rezerwacje i akceptacja wyceny są w „Moje rezerwacje”.",
+      unreadSuffix: " · {count} nieprzeczyt.",
     },
     language: {
       pl: "Polski",
@@ -393,6 +404,11 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       sortSlot: "Najszybszy termin",
       sortLabel: "Sortuj",
       filtersLabel: "Filtry",
+      filtersOpen: "Filtry",
+      filtersActive: "Filtry aktywne",
+      filtersSheetTitle: "Filtry wyników",
+      filtersClear: "Wyczyść filtry",
+      filtersDone: "Gotowe",
       filterMaxPrice: "Maks. cena (zł)",
       filterMinRating: "Min. ocena",
       filterMaxDistance: "Maks. odległość (km)",
@@ -406,7 +422,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       compareOpen: "Porównaj oferty",
       compareClose: "Zamknij",
       compareName: "Warsztat",
-      mapNoPins: "Brak pinezek na mapie — warsztat musi mieć współrzędne i opcję „Pokaż na mapie” włączoną przez administratora.",
+      mapNoPins:
+        "Brak pinezek na mapie — włącz „Pokaż na mapie ServyGo” w panelu admina. Przy braku GPS w bazie używamy przybliżenia z miasta.",
       emptyTitle: "Nie znaleźliśmy jeszcze warsztatu dla tych kryteriów.",
       changeCriteria: "Zmień kryteria",
       reportDemand: "Zgłoś zapotrzebowanie",
@@ -533,6 +550,17 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       themeLight: "Light",
       themeDark: "Dark",
       registerShort: "Register",
+      notificationBellAria:
+        "ServyGo inbox — unread messages and notifications. Opens your conversations list.",
+      notificationBellTitle: "Inbox (messages & notifications)",
+      conversationsNav: "Messages",
+      conversationsTab: "Messages",
+    },
+    inboxPage: {
+      title: "Messages",
+      subtitle:
+        "Workshop chats, system alerts and reminders in one list. Bookings and quote acceptance are under “My bookings”.",
+      unreadSuffix: " · {count} unread.",
     },
     language: {
       pl: "Polish",
@@ -905,6 +933,11 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       sortSlot: "Soonest slot",
       sortLabel: "Sort",
       filtersLabel: "Filters",
+      filtersOpen: "Filters",
+      filtersActive: "Filters active",
+      filtersSheetTitle: "Result filters",
+      filtersClear: "Clear filters",
+      filtersDone: "Done",
       filterMaxPrice: "Max price (PLN)",
       filterMinRating: "Min rating",
       filterMaxDistance: "Max distance (km)",
@@ -918,7 +951,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       compareOpen: "Compare offers",
       compareClose: "Close",
       compareName: "Workshop",
-      mapNoPins: "No map pins — the workshop needs coordinates and “Show on ServyGo map” enabled by an admin.",
+      mapNoPins:
+        "No map pins — enable “Show on ServyGo map” in the admin panel. If GPS is missing, we use an approximate city center.",
       emptyTitle: "We have not found a workshop for these criteria yet.",
       changeCriteria: "Change criteria",
       reportDemand: "Report your need",
@@ -1045,6 +1079,17 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       themeLight: "Світла",
       themeDark: "Темна",
       registerShort: "Реєстрація",
+      notificationBellAria:
+        "Скринька ServyGo — непрочитані повідомлення та сповіщення. Відкриває список розмов.",
+      notificationBellTitle: "Скринька (повідомлення та сповіщення)",
+      conversationsNav: "Повідомлення",
+      conversationsTab: "Повідомлення",
+    },
+    inboxPage: {
+      title: "Повідомлення",
+      subtitle:
+        "Розмови зі СТО, системні сповіщення та нагадування — один список. Бронювання й прийняття кошторису — у «Мої бронювання».",
+      unreadSuffix: " · {count} непрочит.",
     },
     language: {
       pl: "Польська",
@@ -1416,6 +1461,11 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       sortSlot: "Найшвидший термін",
       sortLabel: "Сортування",
       filtersLabel: "Фільтри",
+      filtersOpen: "Фільтри",
+      filtersActive: "Фільтри активні",
+      filtersSheetTitle: "Фільтри результатів",
+      filtersClear: "Очистити фільтри",
+      filtersDone: "Готово",
       filterMaxPrice: "Макс. ціна (зл)",
       filterMinRating: "Мін. оцінка",
       filterMaxDistance: "Макс. відстань (км)",
@@ -1429,7 +1479,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       compareOpen: "Порівняти пропозиції",
       compareClose: "Закрити",
       compareName: "СТО",
-      mapNoPins: "Немає маркерів на мапі — потрібні координати та увімкнення «Показати на мапі» адміністратором.",
+      mapNoPins:
+        "Немає маркерів на мапі — увімкніть «Показати на карті ServyGo» в адмін-панелі. Якщо немає GPS, використовуємо приблизний центр міста.",
       emptyTitle: "Поки що не знайшли СТО за цими критеріями.",
       changeCriteria: "Змінити критерії",
       reportDemand: "Повідомити про потребу",

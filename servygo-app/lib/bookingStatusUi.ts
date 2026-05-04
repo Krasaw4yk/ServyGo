@@ -5,6 +5,7 @@ export function normalizeBookingStatus(raw: string | null | undefined): string {
   const s = (raw ?? "").trim().toLowerCase();
   if (s === "awaiting_quote" || s === "new" || s === "pending") return "pending_quote";
   if (s === "quote_accepted") return "confirmed";
+  if (s === "awaiting_new_quote") return "awaiting_new_quote";
   if (s === "cancelled_by_client" || s === "cancelled_by_workshop" || s === "cancelled_by_system") return "cancelled";
   return s;
 }
@@ -57,9 +58,9 @@ export function resolveClientBookingBadge(input: {
     };
   }
 
-  if (st === "quote_rejected") {
+  if (st === "quote_rejected" || st === "awaiting_new_quote") {
     return {
-      label: "Wycena odrzucona",
+      label: st === "awaiting_new_quote" ? "Oczekuje na nową wycenę" : "Wycena odrzucona",
       className: dark
         ? "border border-red-500/45 bg-red-500/15 text-red-100 shadow-sm"
         : "border border-red-200 bg-red-100 text-red-700 shadow-sm",

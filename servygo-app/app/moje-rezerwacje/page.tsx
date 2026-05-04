@@ -24,6 +24,7 @@ import {
   sendSystemMessage,
 } from "@/lib/messagesApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { useBookingsRealtimeSync } from "@/lib/useServyGoRealtime";
 import { inferEndTime } from "@/lib/bookingAvailability";
 
 type ConversationOpen = {
@@ -44,6 +45,8 @@ type BookingRow = {
   status: string | null;
   price: number | null;
   final_price: number | null;
+  quoted_price: number | null;
+  current_quote_id: string | null;
   duration_minutes: number | null;
   created_at: string | null;
   quote_note: string | null;
@@ -72,6 +75,8 @@ function trimTime(value: string | null | undefined) {
 }
 
 function formatPrice(row: BookingRow) {
+  const q = row.quoted_price;
+  if (q != null && Number.isFinite(q)) return `${q} zł`;
   if (row.final_price != null && Number.isFinite(row.final_price)) return `${row.final_price} zł`;
   if (row.price != null && Number.isFinite(row.price) && row.price > 0) return `${row.price} zł`;
   return "Do potwierdzenia";
@@ -102,7 +107,7 @@ function MojeRezerwacjePageContent() {
     const { data, error: queryError } = await supabase
       .from("bookings")
       .select(
-        "id, workshop_id, workshop_name, service_name, service_category, booking_date, start_time, end_time, status, price, final_price, duration_minutes, created_at, quote_note, quote_status, quote_sent_at, vehicle_data, problem_description, proposed_booking_date, proposed_start_time, proposed_end_time, reschedule_reason, reschedule_status, proposed_by, employee_id",
+        "id, workshop_id, workshop_name, service_name, service_category, booking_date, start_time, end_time, status, price, final_price, quoted_price, current_quote_id, duration_minutes, created_at, quote_note, quote_status, quote_sent_at, vehicle_data, problem_description, proposed_booking_date, proposed_start_time, proposed_end_time, reschedule_reason, reschedule_status, proposed_by, employee_id",
       )
       .eq("user_id", user.id)
       .order("booking_date", { ascending: false })
@@ -165,6 +170,16 @@ function MojeRezerwacjePageContent() {
       cancelled = true;
     };
   }, [mounted, user, refreshBookings]);
+
+  const refreshBookingsRef = useRef(refreshBookings);
+  refreshBookingsRef.current = refreshBookings;
+  useBookingsRealtimeSync({
+    enabled: Boolean(mounted && user && supabase),
+    clientUserId: user?.id ?? null,
+    onRefresh: () => {
+      void refreshBookingsRef.current();
+    },
+  });
 
   const isDark = theme === "dark";
   const bookingsWithPickup = useMemo(
@@ -254,16 +269,27 @@ function MojeRezerwacjePageContent() {
 
   async function handleQuoteDecision(row: BookingRow & { pickup: string }, accept: boolean) {
     if (!supabase) return;
+    const quoteId = (row.current_quote_id ?? "").trim();
+    if (!quoteId) {
+      setError("Brak aktywnej wyceny — odśwież stronę.");
+      return;
+    }
     setQuoteBusyId(row.id);
     setError("");
     try {
-      await respondToBookingQuote(row.id, accept);
+      await respondToBookingQuote(row.id, quoteId, accept);
       const { data: wRow } = await supabase
         .from("workshops")
         .select("owner_id, name")
         .eq("id", row.workshop_id)
         .maybeSingle();
       const w = wRow as { owner_id?: string | null; name?: string | null } | null;
+      const priceForEmail =
+        row.quoted_price != null && Number.isFinite(row.quoted_price)
+          ? row.quoted_price
+          : row.final_price != null && Number.isFinite(row.final_price)
+            ? row.final_price
+            : null;
       await notifyWorkshopOwnerQuoteResponded({
         ownerUserId: w?.owner_id ?? null,
         bookingId: row.id,
@@ -271,19 +297,9 @@ function MojeRezerwacjePageContent() {
         workshopName: w?.name ?? row.workshop_name ?? "Warsztat",
         serviceName: row.service_name ?? "Usługa",
         accepted: accept,
-        finalPrice: row.final_price,
+        finalPrice: priceForEmail,
       });
-      setBookings((prev) =>
-        prev.map((b) =>
-          b.id === row.id
-            ? {
-                ...b,
-                status: accept ? "confirmed" : "quote_rejected",
-                quote_status: accept ? "accepted" : "rejected",
-              }
-            : b,
-        ),
-      );
+      await refreshBookings();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji.");
     } finally {
@@ -337,10 +353,15 @@ function MojeRezerwacjePageContent() {
               });
               const quotePending = clientQuoteDecisionPending(row.status, row.quote_status);
               const reschedulePending = clientRescheduleDecisionPending(row.status, row.reschedule_status);
-              const hasQuote =
-                row.quote_sent_at != null || (row.final_price != null && Number.isFinite(row.final_price));
+              const hasActiveClientQuote =
+                Boolean((row.current_quote_id ?? "").trim()) && clientQuoteDecisionPending(row.status, row.quote_status);
+              const showAcceptedPrice =
+                norm === "confirmed" && row.final_price != null && Number.isFinite(row.final_price);
+              const hasQuote = hasActiveClientQuote || showAcceptedPrice;
               const quoteRejected =
-                norm === "quote_rejected" || (row.quote_status ?? "").trim().toLowerCase() === "rejected";
+                norm === "quote_rejected" ||
+                norm === "awaiting_new_quote" ||
+                (row.quote_status ?? "").trim().toLowerCase() === "rejected";
               const problemText = (row.problem_description ?? "").trim();
               const allowContact =
                 norm !== "cancelled" && norm !== "completed" && norm !== "done" && norm !== "rejected";
@@ -466,7 +487,11 @@ function MojeRezerwacjePageContent() {
                               : "text-emerald-900"
                         }`}
                       >
-                        {row.final_price != null && Number.isFinite(row.final_price) ? `${Number(row.final_price).toFixed(2)} zł` : "—"}
+                        {row.quoted_price != null && Number.isFinite(row.quoted_price)
+                          ? `${Number(row.quoted_price).toFixed(2)} zł`
+                          : row.final_price != null && Number.isFinite(row.final_price)
+                            ? `${Number(row.final_price).toFixed(2)} zł`
+                            : "—"}
                       </p>
                       {(row.quote_note ?? "").trim() ? (
                         <p
@@ -514,6 +539,9 @@ function MojeRezerwacjePageContent() {
                   ) : (
                     <p className={`mt-4 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                       {norm === "pending_quote" ? "Oczekuje na wycenę od warsztatu." : null}
+                      {norm === "awaiting_new_quote"
+                        ? "Odrzuciłeś ostatnią wycenę — warsztat może wysłać nową propozycję."
+                        : null}
                     </p>
                   )}
 

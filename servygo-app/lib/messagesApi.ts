@@ -265,10 +265,48 @@ export async function sendSystemMessage(payload: {
   });
 }
 
-export async function respondToBookingQuote(bookingId: string, accept: boolean): Promise<"confirmed" | "quote_rejected"> {
+export async function respondToBookingQuote(
+  bookingId: string,
+  quoteId: string,
+  accept: boolean,
+): Promise<"confirmed" | "quote_rejected"> {
   if (!supabase) throw new Error("Supabase client not available.");
+  const { data: authData } = await supabase.auth.getUser();
+  const uid = authData.user?.id;
+  if (!uid) throw new Error("Musisz być zalogowany.");
+
+  const { data: row, error: rowErr } = await supabase
+    .from("bookings")
+    .select("user_id, status, current_quote_id")
+    .eq("id", bookingId)
+    .maybeSingle();
+  if (rowErr) throw new Error(formatSupabaseError(rowErr));
+  const b = row as { user_id?: string; status?: string | null; current_quote_id?: string | null } | null;
+  if (!b || b.user_id !== uid) throw new Error("Brak dostępu do tej rezerwacji.");
+  const st = (b.status ?? "").trim().toLowerCase();
+  if (
+    st === "cancelled" ||
+    st === "cancelled_by_client" ||
+    st === "cancelled_by_workshop" ||
+    st === "cancelled_by_system"
+  ) {
+    throw new Error("Rezerwacja jest anulowana — nie można odpowiedzieć na wycenę.");
+  }
+  if (st === "confirmed" || st === "completed") {
+    throw new Error("Rezerwacja jest już potwierdzona.");
+  }
+  if (st !== "quote_sent") {
+    throw new Error(accept ? "Brak aktywnej wyceny do akceptacji." : "Brak aktywnej wyceny do odrzucenia.");
+  }
+  const cur = (b.current_quote_id ?? "").trim();
+  const qid = quoteId.trim();
+  if (!cur || !qid || cur !== qid) {
+    throw new Error("To nie jest aktualna wycena — odśwież stronę i spróbuj ponownie.");
+  }
+
   const { data, error } = await supabase.rpc("respond_booking_quote", {
     p_booking_id: bookingId,
+    p_quote_id: quoteId,
     p_accept: accept,
   });
   if (error) throw new Error(formatSupabaseError(error));

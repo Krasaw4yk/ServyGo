@@ -11,6 +11,7 @@ import { resolveAvailableSlotsForWorkshopDay, toLocalDateKey } from "@/lib/booki
 import { getApproxCityCenterCoords, haversineDistanceKm } from "@/lib/offersGeo";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import MobileBottomSheet from "@/components/MobileBottomSheet";
 import { trackEvent } from "@/lib/analytics";
 import type { OffersMapMarker } from "@/components/offers/OffersLeafletMap";
 import OffersLeafletMapErrorBoundary from "@/components/offers/OffersLeafletMapErrorBoundary";
@@ -80,6 +81,7 @@ export default function OffersPage() {
   const [availFilter, setAvailFilter] = useState<AvailFilter>("all");
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [slotAvailability, setSlotAvailability] = useState<Record<string, { today: boolean; tomorrow: boolean }>>({});
   const [slotsLoading, setSlotsLoading] = useState(false);
   const listCardRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -390,6 +392,27 @@ export default function OffersPage() {
     [compareIds, filteredAndSorted],
   );
 
+  const offersFiltersActive = useMemo(() => {
+    return (
+      maxPrice.trim() !== "" ||
+      minRating.trim() !== "" ||
+      maxDistanceKm.trim() !== "" ||
+      serviceCategory.trim() !== "" ||
+      availFilter !== "all"
+    );
+  }, [maxPrice, minRating, maxDistanceKm, serviceCategory, availFilter]);
+
+  const clearOffersFilters = useCallback(() => {
+    setMaxPrice("");
+    setMinRating("");
+    setMaxDistanceKm("");
+    setServiceCategory("");
+    setAvailFilter("all");
+  }, []);
+
+  const filterFieldClass = `rounded-lg border px-2 py-2 text-base ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`;
+  const filterFieldClassSelect = `rounded-lg border px-2 py-2 text-base ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`;
+
   return (
     <ServyGoPageShell isDark={isDark}>
       <main className="min-h-screen px-2 py-5 sm:px-6 sm:py-8 xl:px-8">
@@ -486,93 +509,222 @@ export default function OffersPage() {
           ) : null}
 
           {!loading && baseMatches.length > 0 ? (
-            <div
-              className={`mb-4 flex flex-col gap-3 rounded-2xl border px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4 sm:px-4 ${
-                isDark ? "border-zinc-700 bg-zinc-900/50" : "border-blue-200 bg-white/80"
-              }`}
-            >
-              <div className="flex flex-col gap-1">
-                <label className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.sortLabel")}</label>
-                <select
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value as SortKey)}
-                  className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
-                >
-                  <option value="nearest">{t("offers.sortNearest")}</option>
-                  <option value="cheapest">{t("offers.sortCheapest")}</option>
-                  <option value="rating">{t("offers.sortRating")}</option>
-                  <option value="slot">{t("offers.sortSlot")}</option>
-                </select>
-              </div>
-              <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-                <label className="flex flex-col gap-1">
-                  <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterMaxPrice")}</span>
-                  <input
-                    value={maxPrice}
-                    onChange={(e) => setMaxPrice(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="np. 500"
-                    className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterMinRating")}</span>
-                  <input
-                    value={minRating}
-                    onChange={(e) => setMinRating(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="np. 4"
-                    className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterMaxDistance")}</span>
-                  <input
-                    value={maxDistanceKm}
-                    onChange={(e) => setMaxDistanceKm(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="np. 15"
-                    className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterServiceCategory")}</span>
-                  <select
-                    value={serviceCategory}
-                    onChange={(e) => setServiceCategory(e.target.value)}
-                    className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
-                  >
-                    <option value="">{t("offers.filterAllCategories")}</option>
-                    {categoryOptions.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="col-span-2 flex flex-col gap-1 sm:col-span-1">
-                  <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterAvailability")}</span>
-                  <select
-                    value={availFilter}
-                    onChange={(e) => setAvailFilter(e.target.value as AvailFilter)}
-                    className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
-                  >
-                    <option value="all">{t("offers.filterAvailAll")}</option>
-                    <option value="today">{t("offers.filterAvailToday")}</option>
-                    <option value="soon">{t("offers.filterAvailSoon")}</option>
-                  </select>
-                </label>
-              </div>
-              {compareIds.length > 0 ? (
+            <>
+              <div className="mb-3 md:hidden">
                 <button
                   type="button"
-                  onClick={() => setCompareOpen(true)}
-                  className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600"
+                  onClick={() => setMobileFiltersOpen(true)}
+                  className={`w-full rounded-xl border px-4 py-3 text-base font-semibold ${
+                    offersFiltersActive
+                      ? "border-orange-400/60 bg-orange-500/15 text-orange-900 dark:border-orange-400/40 dark:bg-orange-500/10 dark:text-orange-100"
+                      : isDark
+                        ? "border-zinc-600 bg-zinc-900/70 text-zinc-100"
+                        : "border-zinc-300 bg-white text-zinc-800"
+                  }`}
                 >
-                  {t("offers.compareOpen")} ({compareIds.length})
+                  {offersFiltersActive ? t("offers.filtersActive") : t("offers.filtersOpen")}
                 </button>
-              ) : null}
-            </div>
+              </div>
+
+              <MobileBottomSheet
+                isDark={isDark}
+                tallList
+                title={t("offers.filtersSheetTitle")}
+                isOpen={mobileFiltersOpen}
+                onClose={() => setMobileFiltersOpen(false)}
+              >
+                <div className="flex flex-col gap-4 px-1 pb-2">
+                  <div className="flex flex-col gap-1">
+                    <label className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{t("offers.sortLabel")}</label>
+                    <select
+                      value={sortKey}
+                      onChange={(e) => setSortKey(e.target.value as SortKey)}
+                      className={filterFieldClassSelect}
+                    >
+                      <option value="nearest">{t("offers.sortNearest")}</option>
+                      <option value="cheapest">{t("offers.sortCheapest")}</option>
+                      <option value="rating">{t("offers.sortRating")}</option>
+                      <option value="slot">{t("offers.sortSlot")}</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    <label className="flex flex-col gap-1">
+                      <span className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{t("offers.filterMaxPrice")}</span>
+                      <input
+                        value={maxPrice}
+                        onChange={(e) => setMaxPrice(e.target.value)}
+                        inputMode="decimal"
+                        placeholder="np. 500"
+                        className={filterFieldClass}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{t("offers.filterMinRating")}</span>
+                      <input
+                        value={minRating}
+                        onChange={(e) => setMinRating(e.target.value)}
+                        inputMode="decimal"
+                        placeholder="np. 4"
+                        className={filterFieldClass}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{t("offers.filterMaxDistance")}</span>
+                      <input
+                        value={maxDistanceKm}
+                        onChange={(e) => setMaxDistanceKm(e.target.value)}
+                        inputMode="decimal"
+                        placeholder="np. 15"
+                        className={filterFieldClass}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{t("offers.filterServiceCategory")}</span>
+                      <select value={serviceCategory} onChange={(e) => setServiceCategory(e.target.value)} className={filterFieldClassSelect}>
+                        <option value="">{t("offers.filterAllCategories")}</option>
+                        {categoryOptions.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{t("offers.filterAvailability")}</span>
+                      <select
+                        value={availFilter}
+                        onChange={(e) => setAvailFilter(e.target.value as AvailFilter)}
+                        className={filterFieldClassSelect}
+                      >
+                        <option value="all">{t("offers.filterAvailAll")}</option>
+                        <option value="today">{t("offers.filterAvailToday")}</option>
+                        <option value="soon">{t("offers.filterAvailSoon")}</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                    {compareIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompareOpen(true);
+                          setMobileFiltersOpen(false);
+                        }}
+                        className="w-full rounded-xl bg-orange-500 px-4 py-3 text-base font-semibold text-white hover:bg-orange-600"
+                      >
+                        {t("offers.compareOpen")} ({compareIds.length})
+                      </button>
+                    ) : null}
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={clearOffersFilters}
+                        className={`w-full rounded-xl border px-4 py-3 text-base font-semibold sm:flex-1 ${
+                          isDark ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800" : "border-zinc-300 text-zinc-800 hover:bg-zinc-50"
+                        }`}
+                      >
+                        {t("offers.filtersClear")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMobileFiltersOpen(false)}
+                        className="w-full rounded-xl bg-blue-600 px-4 py-3 text-base font-semibold text-white hover:bg-blue-700 sm:flex-1"
+                      >
+                        {t("offers.filtersDone")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </MobileBottomSheet>
+
+              <div
+                className={`mb-4 hidden flex-col gap-3 rounded-2xl border px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4 sm:px-4 md:flex ${
+                  isDark ? "border-zinc-700 bg-zinc-900/50" : "border-blue-200 bg-white/80"
+                }`}
+              >
+                <div className="flex flex-col gap-1">
+                  <label className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.sortLabel")}</label>
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as SortKey)}
+                    className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                  >
+                    <option value="nearest">{t("offers.sortNearest")}</option>
+                    <option value="cheapest">{t("offers.sortCheapest")}</option>
+                    <option value="rating">{t("offers.sortRating")}</option>
+                    <option value="slot">{t("offers.sortSlot")}</option>
+                  </select>
+                </div>
+                <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                  <label className="flex flex-col gap-1">
+                    <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterMaxPrice")}</span>
+                    <input
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="np. 500"
+                      className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterMinRating")}</span>
+                    <input
+                      value={minRating}
+                      onChange={(e) => setMinRating(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="np. 4"
+                      className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterMaxDistance")}</span>
+                    <input
+                      value={maxDistanceKm}
+                      onChange={(e) => setMaxDistanceKm(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="np. 15"
+                      className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950" : "border-zinc-300 bg-white"}`}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterServiceCategory")}</span>
+                    <select
+                      value={serviceCategory}
+                      onChange={(e) => setServiceCategory(e.target.value)}
+                      className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                    >
+                      <option value="">{t("offers.filterAllCategories")}</option>
+                      {categoryOptions.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="col-span-2 flex flex-col gap-1 sm:col-span-1">
+                    <span className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("offers.filterAvailability")}</span>
+                    <select
+                      value={availFilter}
+                      onChange={(e) => setAvailFilter(e.target.value as AvailFilter)}
+                      className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
+                    >
+                      <option value="all">{t("offers.filterAvailAll")}</option>
+                      <option value="today">{t("offers.filterAvailToday")}</option>
+                      <option value="soon">{t("offers.filterAvailSoon")}</option>
+                    </select>
+                  </label>
+                </div>
+                {compareIds.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setCompareOpen(true)}
+                    className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600"
+                  >
+                    {t("offers.compareOpen")} ({compareIds.length})
+                  </button>
+                ) : null}
+              </div>
+            </>
           ) : null}
 
           {loading ? (
