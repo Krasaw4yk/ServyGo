@@ -94,6 +94,38 @@ using (
 -- -----------------------------------------------------------------------------
 alter table public.bookings drop constraint if exists bookings_status_check;
 
+-- Zanim nałożymy nowy check: ujednolicenie (np. wielkość liter) oraz usunięcie
+-- wartości spoza listy (np. no_show z późniejszej migracji 49, ręczne wpisy, stary staging).
+-- Wiersze z nieznaną wartością mapujemy na anulowanie systemowe — bezpieczniejsze niż błąd migracji.
+update public.bookings
+set status = lower(trim(status))
+where status is not null;
+
+update public.bookings
+set status = 'cancelled_by_system'
+where status is null
+   or status not in (
+      'pending_quote',
+      'quote_sent',
+      'awaiting_new_quote',
+      'awaiting_quote',
+      'new',
+      'pending',
+      'quote_accepted',
+      'confirmed',
+      'quote_rejected',
+      'cancelled',
+      'completed',
+      'awaiting_reschedule',
+      'rejected',
+      'done',
+      'cancelled_by_client',
+      'cancelled_by_workshop',
+      'cancelled_by_system',
+      'service_not_completed',
+      'no_show'
+    );
+
 alter table public.bookings
   add constraint bookings_status_check
   check (
@@ -115,7 +147,8 @@ alter table public.bookings
       'cancelled_by_client',
       'cancelled_by_workshop',
       'cancelled_by_system',
-      'service_not_completed'
+      'service_not_completed',
+      'no_show'
     )
   );
 
