@@ -13,6 +13,7 @@ import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { trackEvent } from "@/lib/analytics";
 import type { OffersMapMarker } from "@/components/offers/OffersLeafletMap";
+import OffersLeafletMapErrorBoundary from "@/components/offers/OffersLeafletMapErrorBoundary";
 
 const OffersLeafletMap = dynamic(() => import("@/components/offers/OffersLeafletMap"), {
   ssr: false,
@@ -349,6 +350,7 @@ export default function OffersPage() {
   const mapMarkers: OffersMapMarker[] = useMemo(() => {
     return filteredAndSorted
       .filter((w) => w.hasMapPin === true)
+      .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
       .map((workshop) => {
         const firstOffer = workshop.services[0];
         const detailsParams = buildDetailsParams(workshop);
@@ -611,12 +613,13 @@ export default function OffersPage() {
             >
               <section className={`${viewMode === "map" ? "hidden md:block" : "block"} md:min-h-0`}>
                 <div className="space-y-2 md:h-full md:overflow-y-auto md:pr-1">
-                  {filteredAndSorted.map((workshop) => {
-                    const firstOffer = workshop.services[0];
+                  {filteredAndSorted.filter((w) => w.services[0]).map((workshop) => {
+                    const firstOffer = workshop.services[0]!;
                     const detailsParams = buildDetailsParams(workshop);
                     const isSelected = activeSelectedWorkshopId === workshop.id;
                     const distKm = haversineDistanceKm(cityCenter, { lat: workshop.lat, lng: workshop.lng });
                     const detailsHref = `/warsztat/${workshop.id}?${detailsParams.toString()}`;
+                    const ratingDisplay = Number.isFinite(Number(workshop.rating)) ? Number(workshop.rating).toFixed(1) : "—";
                     return (
                       <article
                         key={workshop.id}
@@ -648,7 +651,7 @@ export default function OffersPage() {
                         </div>
                         <p className={`mt-0.5 text-xs md:text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{workshop.address}</p>
                         <p className={`mt-1 text-xs md:text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                          <strong>⭐ {workshop.rating.toFixed(1)}</strong> ({workshop.reviewsCount} {t("offers.reviews")}) ·{" "}
+                          <strong>⭐ {ratingDisplay}</strong> ({workshop.reviewsCount} {t("offers.reviews")}) ·{" "}
                           {t("offers.distanceFromCenter")}: {formatDistanceKm(distKm)}
                         </p>
                         <div className="mt-2 grid grid-cols-1 gap-1.5 text-xs leading-snug sm:grid-cols-2 md:text-sm">
@@ -710,12 +713,27 @@ export default function OffersPage() {
                   }`}
                 >
                   {mapMarkers.length > 0 ? (
-                    <OffersLeafletMap
-                      markers={mapMarkers}
-                      selectedId={activeSelectedWorkshopId}
-                      onMarkerClick={(id) => setSelectedWorkshopId(id)}
-                      seeOfferLabel={t("offers.seeOfferOnMap")}
-                    />
+                    <OffersLeafletMapErrorBoundary
+                      fallback={
+                        <div
+                          className={`flex h-full min-h-[320px] flex-col items-center justify-center gap-3 px-4 text-center text-sm ${
+                            isDark ? "text-zinc-300" : "text-zinc-600"
+                          }`}
+                        >
+                          <p className="max-w-sm font-medium">Mapa chwilowo niedostępna.</p>
+                          <p className="max-w-sm text-xs opacity-90">
+                            Lista warsztatów działa normalnie — możesz wybrać warsztat z listy po lewej.
+                          </p>
+                        </div>
+                      }
+                    >
+                      <OffersLeafletMap
+                        markers={mapMarkers}
+                        selectedId={activeSelectedWorkshopId}
+                        onMarkerClick={(id) => setSelectedWorkshopId(id)}
+                        seeOfferLabel={t("offers.seeOfferOnMap")}
+                      />
+                    </OffersLeafletMapErrorBoundary>
                   ) : (
                     <div className="flex h-full items-center justify-center px-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
                       {t("offers.mapNoPins")}
@@ -767,7 +785,7 @@ export default function OffersPage() {
                           <tr key={w.id} className={isDark ? "border-t border-zinc-800" : "border-t border-zinc-100"}>
                             <td className="py-2 pr-2 font-medium">{w.name}</td>
                             <td className="py-2 pr-2">
-                              {w.rating.toFixed(1)} ({w.reviewsCount})
+                              {Number.isFinite(Number(w.rating)) ? Number(w.rating).toFixed(1) : "—"} ({w.reviewsCount})
                             </td>
                             <td className="py-2 pr-2">{formatDistanceKm(d)}</td>
                             <td className="py-2 pr-2">{formatPriceRange(o?.price_from, o?.price_to)}</td>

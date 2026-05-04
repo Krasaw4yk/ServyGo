@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 
 type MobileBottomSheetProps = {
@@ -31,6 +31,7 @@ export default function MobileBottomSheet({
   stackClassName,
 }: MobileBottomSheetProps) {
   const tallList = tallListProp ?? fixedHeight;
+  const titleId = useId();
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isActive, setIsActive] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
@@ -73,7 +74,9 @@ export default function MobileBottomSheet({
   if (!shouldRender || !portalReady) return null;
 
   const zLayer = stackClassName ?? "z-[9999]";
-  const sheetMaxH = "max-h-[min(82dvh,calc(100dvh-env(safe-area-inset-bottom)-10px))]";
+  const sheetMaxH = tallList
+    ? "max-h-[min(88dvh,calc(100dvh-env(safe-area-inset-bottom)-8px))]"
+    : "max-h-[min(72dvh,calc(100dvh-env(safe-area-inset-bottom)-8px))]";
 
   return createPortal(
     <div
@@ -85,46 +88,42 @@ export default function MobileBottomSheet({
         className={`absolute inset-0 z-0 bg-black/30 transition-opacity duration-200 ease-out ${isActive && isOpen ? "opacity-100" : "opacity-0"}`}
         onClick={onClose}
       />
-      <section
-        role="dialog"
-        aria-modal="true"
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onTouchStart={(event) => event.stopPropagation()}
-        className={`absolute bottom-0 left-0 right-0 z-10 flex min-h-0 w-full max-w-[100vw] flex-col overflow-hidden rounded-t-3xl border-t shadow-2xl transition-transform duration-200 ease-out ${
-          isActive ? "translate-y-0" : "translate-y-full"
-        } ${sheetMaxH} ${
-          isDark ? "border-zinc-700 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
-        }`}
-      >
-        <div className="mx-auto mb-1.5 h-1 w-12 shrink-0 rounded-full bg-zinc-400/50" />
-        <header
-          className={`flex shrink-0 items-start justify-between gap-2 border-b px-3 pb-2 pt-0 ${
-            isDark ? "border-zinc-700/90 bg-zinc-900" : "border-blue-100/90 bg-white"
-          }`}
+      <div className="pointer-events-none absolute inset-0 z-[1] flex flex-col justify-end">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          className={`pointer-events-auto relative z-[2] flex w-full max-w-[100vw] flex-col overflow-hidden rounded-t-3xl border-t shadow-2xl transition-transform duration-200 ease-out ${sheetMaxH} ${
+            isActive ? "translate-y-0" : "translate-y-full"
+          } ${isDark ? "border-zinc-700 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"}`}
         >
-          <h3 className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug">{title}</h3>
-          <button
-            type="button"
-            aria-label="Zamknij"
-            onClick={onClose}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-base font-semibold leading-none ${
-              isDark ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-zinc-300 bg-white text-zinc-800"
+          <div className="mx-auto mt-2 mb-1 h-1 w-12 shrink-0 rounded-full bg-zinc-400/50" aria-hidden />
+          <header
+            className={`sticky top-0 z-10 flex shrink-0 items-start justify-between gap-2 border-b px-3 pb-2 pt-[max(4px,env(safe-area-inset-top))] ${
+              isDark ? "border-zinc-700/90 bg-zinc-900" : "border-blue-100/90 bg-white"
             }`}
           >
-            ✕
-          </button>
-        </header>
-        <div
-          className={
-            tallList
-              ? "flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2"
-              : `min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 [-webkit-overflow-scrolling:touch]`
-          }
-        >
-          {children}
-        </div>
-      </section>
+            <h3 id={titleId} className="min-w-0 flex-1 break-words text-base font-semibold leading-snug">
+              {title}
+            </h3>
+            <button
+              type="button"
+              aria-label="Zamknij"
+              onClick={onClose}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-base font-semibold leading-none ${
+                isDark ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-zinc-300 bg-white text-zinc-800"
+              }`}
+            >
+              ✕
+            </button>
+          </header>
+          <div
+            className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]`}
+          >
+            {children}
+          </div>
+        </section>
+      </div>
     </div>,
     document.body,
   );

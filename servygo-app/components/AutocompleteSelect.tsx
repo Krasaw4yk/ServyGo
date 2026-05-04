@@ -210,10 +210,18 @@ export default function AutocompleteSelect({
 
   const displayValue = isOpen ? query : selectedOption?.label ?? value;
 
+  function openMobilePicker() {
+    if (disabled) return;
+    if (shouldIgnoreOpenTrigger()) return;
+    setQuery(selectedOption?.label ?? value);
+    setIsOpen(true);
+    setHighlightedIndex(-1);
+  }
+
   return (
     <div ref={rootRef} className={`relative flex w-full flex-col gap-2 ${rootClassName}`}>
       {label ? <span className="text-sm font-medium">{label}</span> : null}
-      <div className="relative w-full">
+      <div className="relative flex w-full items-center">
         <input
           ref={inputRef}
           name={name}
@@ -276,7 +284,7 @@ export default function AutocompleteSelect({
             }
           }}
           placeholder={placeholder}
-          className={`block w-full ${inputClassName} pr-10`}
+          className={`block min-h-[48px] w-full min-w-0 flex-1 py-2 sm:min-h-0 sm:py-3 ${inputClassName} pr-2 sm:pr-10`}
           autoComplete="off"
         />
         <button
@@ -286,15 +294,19 @@ export default function AutocompleteSelect({
           onClick={() => {
             if (disabled) return;
             if (shouldIgnoreOpenTrigger()) return;
+            if (isMobile) {
+              openMobilePicker();
+              return;
+            }
             setIsOpen((prev) => !prev);
             setHighlightedIndex(-1);
           }}
-          className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${
+          className={`shrink-0 transition-transform sm:absolute sm:right-3 sm:top-1/2 sm:-translate-y-1/2 ${
             isOpen ? "rotate-180" : ""
           } ${isDark ? "text-zinc-300" : "text-zinc-500"} ${toggleButtonClassName}`}
           aria-label="Toggle options"
         >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg viewBox="0 0 20 20" className="pointer-events-none h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="m5 7 5 6 5-6" />
           </svg>
         </button>
@@ -309,18 +321,14 @@ export default function AutocompleteSelect({
           isDark={isDark}
           tallList
         >
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 space-y-2 pb-2">
+          <div className="flex flex-col gap-3">
+            <div className="shrink-0 space-y-2">
               <input
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setHighlightedIndex(-1);
                 }}
-                onPointerDown={(event) => event.stopPropagation()}
-                onMouseDown={(event) => event.stopPropagation()}
-                onTouchStart={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
                     event.preventDefault();
@@ -352,7 +360,7 @@ export default function AutocompleteSelect({
                   }
                 }}
                 placeholder={placeholder ?? "Szukaj..."}
-                className={`w-full rounded-xl border px-3 py-2 text-sm ${
+                className={`min-h-[48px] w-full rounded-xl border px-3 py-2 text-base ${
                   isDark
                     ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
                     : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
@@ -361,11 +369,10 @@ export default function AutocompleteSelect({
               {selectedOption ? (
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
+                  onClick={() => {
                     handleClearSelection();
                   }}
-                  className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
+                  className={`w-full rounded-xl border px-3 py-2 text-base font-medium ${
                     isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-700"
                   }`}
                 >
@@ -373,19 +380,18 @@ export default function AutocompleteSelect({
                 </button>
               ) : null}
             </div>
-            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-4 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
+            <div className="space-y-1">
               {filteredOptions.length === 0 ? (
-                <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
+                <p className={`px-2 py-2 text-base ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
               ) : (
                 filteredOptions.map((option, index) => (
                   <button
                     key={option.value}
                     type="button"
-                    onPointerDown={(event) => {
-                      event.preventDefault();
+                    onClick={() => {
                       handleSelectOption(option);
                     }}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm ${
+                    className={`flex min-h-[48px] w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-base ${
                       isDark
                         ? highlightedIndex === index
                           ? "bg-zinc-800 text-zinc-100"

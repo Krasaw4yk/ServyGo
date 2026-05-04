@@ -102,10 +102,10 @@ type Profile = {
 };
 
 const fieldClassName =
-  "rounded-xl border border-zinc-600/70 bg-zinc-900/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-400 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:shadow-[0_0_0_1px_rgba(249,115,22,0.5),0_0_30px_rgba(37,99,235,0.35)]";
+  "rounded-xl border border-zinc-600/70 bg-zinc-900/70 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-400 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:shadow-[0_0_0_1px_rgba(249,115,22,0.5),0_0_30px_rgba(37,99,235,0.35)]";
 
 const lightFieldClassName =
-  "rounded-xl border border-blue-200/80 bg-slate-100/85 px-4 py-3 text-zinc-900 placeholder:text-zinc-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300/60 focus:shadow-[0_0_0_1px_rgba(249,115,22,0.35),0_0_20px_rgba(37,99,235,0.2)]";
+  "rounded-xl border border-blue-200/80 bg-slate-100/85 px-4 py-3 text-base text-zinc-900 placeholder:text-zinc-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300/60 focus:shadow-[0_0_0_1px_rgba(249,115,22,0.35),0_0_20px_rgba(37,99,235,0.2)]";
 
 const searchFieldErrorRingClass =
   "!border-[#ef4444] shadow-[0_0_0_2px_rgba(239,68,68,0.15)] focus:!border-[#ef4444] focus:shadow-[0_0_0_2px_rgba(239,68,68,0.2)]";
@@ -714,9 +714,10 @@ function HomePageContent() {
   const sortedYears = useMemo(() => sortYearsDesc(years).map(String), [years]);
   const currentFieldClassName = isDark ? fieldClassName : lightFieldClassName;
   const searchFormControlMobileStrip =
-    "max-md:border-0 max-md:bg-transparent max-md:shadow-none max-md:ring-0 max-md:focus:border-transparent max-md:focus:ring-0 max-md:focus:shadow-none max-md:px-0 max-md:py-1 max-md:rounded-none max-md:text-[15px] max-md:leading-snug max-md:placeholder:text-zinc-500";
+    "max-md:border-0 max-md:bg-transparent max-md:shadow-none max-md:ring-0 max-md:focus:border-transparent max-md:focus:ring-0 max-md:focus:shadow-none max-md:px-0 max-md:py-2 max-md:rounded-none max-md:text-base max-md:leading-snug max-md:placeholder:text-zinc-500";
   const searchFormAutocompleteShell = "max-md:gap-0";
-  const searchFormChevronToggleHide = "max-md:hidden";
+  /** Pusta — strzałka w `AutocompleteSelect` jest widoczna na mobile (wspólny cel kliknięcia z polem). */
+  const searchFormChevronToggleHide = "";
   const headerShellClass = isDark
     ? "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-x-hidden border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2 max-sm:overflow-hidden max-md:py-1.5 backdrop-blur-xl sm:overflow-visible sm:px-3 sm:py-2.5 md:mb-7 md:px-4"
     : "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-x-hidden border-b border-blue-100/90 bg-white/92 px-2 py-2 max-sm:overflow-hidden max-md:py-1.5 backdrop-blur-xl sm:overflow-visible sm:px-3 sm:py-2.5 md:mb-7 md:px-4";
@@ -2641,7 +2642,7 @@ function HomePageContent() {
                   name="problem"
                   rows={3}
                   placeholder={t("form.placeholders.problem")}
-                  className={`${currentFieldClassName} min-h-[100px] w-full max-md:min-h-[104px] max-md:px-2 max-md:py-2 max-md:text-[15px] md:min-h-[120px]`}
+                  className={`${currentFieldClassName} min-h-[100px] w-full max-md:min-h-[104px] max-md:px-2 max-md:py-2 max-md:text-base md:min-h-[120px]`}
                 />
               </MobileCompactSearchField>
 

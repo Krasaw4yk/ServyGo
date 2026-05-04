@@ -336,6 +336,7 @@ export default function ServiceCategoryPicker({
 
   return (
     <div ref={rootRef} className={`relative w-full ${rootClassName}`}>
+      <div className="relative flex w-full items-center">
       <input
         ref={inputRef}
         value={displayValue}
@@ -405,7 +406,7 @@ export default function ServiceCategoryPicker({
           }
         }}
         placeholder={placeholder}
-        className={`block w-full ${inputClassName} pr-10`}
+        className={`block min-h-[48px] w-full min-w-0 flex-1 py-2 sm:min-h-0 sm:py-3 ${inputClassName} pr-2 sm:pr-10`}
         autoComplete="off"
       />
       <button
@@ -415,17 +416,25 @@ export default function ServiceCategoryPicker({
         onClick={() => {
           if (disabled) return;
           if (shouldIgnoreOpenTrigger()) return;
+          if (isMobile) {
+            if (!query) {
+              setQuery(value);
+            }
+            setIsOpen(true);
+            return;
+          }
           setIsOpen((prev) => !prev);
           setQuery((prev) => (prev ? prev : value));
         }}
-        className={`absolute right-3 top-1/2 -translate-y-1/2 transition-transform ${
+        className={`shrink-0 transition-transform sm:absolute sm:right-3 sm:top-1/2 sm:-translate-y-1/2 ${
           isOpen ? "rotate-180" : ""
         } ${isDark ? "text-zinc-300" : "text-zinc-500"} ${toggleButtonClassName}`}
       >
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg viewBox="0 0 20 20" className="pointer-events-none h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path d="m5 7 5 6 5-6" />
         </svg>
       </button>
+      </div>
 
       {isOpen && isMobile ? (
         <MobileBottomSheet
@@ -439,21 +448,17 @@ export default function ServiceCategoryPicker({
           isDark={isDark}
           tallList
         >
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 space-y-3 pb-3">
+          <div className="flex flex-col gap-3">
+            <div className="shrink-0 space-y-3">
               {!mobileCustomOpen ? (
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onTouchStart={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.preventDefault();
                   }}
                   placeholder={placeholder}
-                  className={`w-full rounded-xl border px-3 py-2 text-sm ${
+                  className={`min-h-[48px] w-full rounded-xl border px-3 py-2 text-base ${
                     isDark
                       ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
                       : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
@@ -464,27 +469,22 @@ export default function ServiceCategoryPicker({
               <div className="space-y-3">
                 <button
                   type="button"
-                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setMobileCustomOpen(false);
                     setCustomServiceDraft("");
                   }}
-                  className={`w-full rounded-xl px-3 py-2 text-left text-xs font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
+                  className={`w-full rounded-xl px-3 py-2 text-left text-base font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
                 >
                   ← Wróć
                 </button>
                 <input
                   value={customServiceDraft}
                   onChange={(event) => setCustomServiceDraft(event.target.value)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onTouchStart={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.preventDefault();
                   }}
                   placeholder="Opisz usługę..."
-                  className={`w-full rounded-xl border px-3 py-2 text-sm ${
+                  className={`min-h-[48px] w-full rounded-xl border px-3 py-2 text-base ${
                     isDark
                       ? "border-zinc-700 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500"
                       : "border-zinc-300 bg-white text-zinc-900 placeholder:text-zinc-500"
@@ -492,8 +492,7 @@ export default function ServiceCategoryPicker({
                 />
                 <button
                   type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
+                  onClick={() => {
                     const next = customServiceDraft.trim();
                     if (!next) return;
                     onChange(next);
@@ -501,7 +500,7 @@ export default function ServiceCategoryPicker({
                     setMobileCustomOpen(false);
                     setCustomServiceDraft("");
                   }}
-                  className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
+                  className={`w-full rounded-xl border px-3 py-2 text-base font-medium ${
                     isDark ? "border-blue-500/40 bg-blue-950/40 text-blue-200" : "border-blue-300 bg-blue-50 text-blue-900"
                   }`}
                 >
@@ -513,14 +512,13 @@ export default function ServiceCategoryPicker({
                 {value ? (
                   <button
                     type="button"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
+                    onClick={() => {
                       onChange("");
                       setActiveCategory(null);
                       setActiveSubcategory(null);
                       closePicker(true);
                     }}
-                    className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
+                    className={`w-full rounded-xl border px-3 py-2 text-base font-medium ${
                       isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-700"
                     }`}
                   >
@@ -530,7 +528,6 @@ export default function ServiceCategoryPicker({
                 {!hideManualServiceEntry && !normalizeSearchText(query) ? (
                   <button
                     type="button"
-                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
                       setActiveCategory(null);
                       setActiveSubcategory(null);
@@ -538,7 +535,7 @@ export default function ServiceCategoryPicker({
                       setCustomServiceDraft(value);
                       setMobileCustomOpen(true);
                     }}
-                    className={`w-full rounded-xl border border-dashed px-3 py-2 text-left text-sm font-medium ${
+                    className={`w-full rounded-xl border border-dashed px-3 py-2 text-left text-base font-medium ${
                       isDark ? "border-zinc-600 text-zinc-300" : "border-zinc-400 text-zinc-700"
                     }`}
                   >
@@ -549,10 +546,10 @@ export default function ServiceCategoryPicker({
             )}
             </div>
             {!mobileCustomOpen ? (
-              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-4 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
+              <div className="space-y-1">
                   {normalizeSearchText(query) ? (
                     searchResults.length === 0 ? (
-                      <p className={`px-2 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
+                      <p className={`px-2 py-2 text-base ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
                     ) : (
                       searchResults.map((result) => {
                         const svcName = result.type === "service" ? (result.serviceName ?? result.label) : "";
@@ -563,12 +560,11 @@ export default function ServiceCategoryPicker({
                             key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
                             type="button"
                             disabled={blocked}
-                            onPointerDown={(event) => {
-                              event.preventDefault();
+                            onClick={() => {
                               if (blocked) return;
                               applySearchResult(result);
                             }}
-                            className={`w-full rounded-xl px-3 py-3 text-left text-sm ${
+                            className={`min-h-[48px] w-full rounded-xl px-3 py-3 text-left text-base ${
                               blocked
                                 ? isDark
                                   ? "cursor-not-allowed text-zinc-500 opacity-60"
@@ -592,11 +588,10 @@ export default function ServiceCategoryPicker({
                     <>
                       <button
                         type="button"
-                        onPointerDown={(event) => {
-                          event.preventDefault();
+                        onClick={() => {
                           activateBrowseRow({ kind: "back", variant: "from-services" });
                         }}
-                        className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-xs font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
+                        className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-base font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
                       >
                         ← Wróć
                       </button>
@@ -608,12 +603,11 @@ export default function ServiceCategoryPicker({
                             key={`${selectedSubcategory.name}-${service.name}`}
                             type="button"
                             disabled={blocked}
-                            onPointerDown={(event) => {
-                              event.preventDefault();
+                            onClick={() => {
                               if (blocked) return;
                               handleFinalServiceSelection(service.name);
                             }}
-                            className={`flex w-full flex-col items-stretch gap-0.5 rounded-xl px-3 py-3 text-left text-sm ${
+                            className={`flex min-h-[48px] w-full flex-col items-stretch gap-0.5 rounded-xl px-3 py-3 text-left text-base ${
                               blocked
                                 ? isDark
                                   ? "cursor-not-allowed text-zinc-500 opacity-60"
@@ -642,11 +636,10 @@ export default function ServiceCategoryPicker({
                     <>
                       <button
                         type="button"
-                        onPointerDown={(event) => {
-                          event.preventDefault();
+                        onClick={() => {
                           activateBrowseRow({ kind: "back", variant: "from-subcats" });
                         }}
-                        className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-xs font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
+                        className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-base font-semibold ${isDark ? "text-blue-300 hover:bg-zinc-800/90" : "text-blue-700 hover:bg-blue-50"}`}
                       >
                         ← Wróć
                       </button>
@@ -654,11 +647,10 @@ export default function ServiceCategoryPicker({
                         <button
                           key={`${selectedCategory.name}-${subcategory.name}`}
                           type="button"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
+                          onClick={() => {
                             handleSubcategoryDrill(subcategory.name);
                           }}
-                          className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
+                          className={`min-h-[48px] w-full rounded-xl px-3 py-3 text-left text-base ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
                         >
                           {subcategory.name}
                         </button>
@@ -669,11 +661,10 @@ export default function ServiceCategoryPicker({
                       <button
                         key={category.name}
                         type="button"
-                        onPointerDown={(event) => {
-                          event.preventDefault();
+                        onClick={() => {
                           handleCategoryDrill(category.name, category.subcategories);
                         }}
-                        className={`w-full rounded-xl px-3 py-3 text-left text-sm ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
+                        className={`min-h-[48px] w-full rounded-xl px-3 py-3 text-left text-base ${isDark ? "text-zinc-200 hover:bg-zinc-800/90" : "text-zinc-700 hover:bg-blue-50"}`}
                       >
                         {category.name}
                       </button>

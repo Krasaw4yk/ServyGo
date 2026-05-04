@@ -31,6 +31,15 @@ body {
   overflow-x: hidden;
 }
 
+/* iOS Safari: pola <16px wywołują pinch-zoom przy fokusie — formularz ofert na stronie głównej */
+@media (max-width: 639px) {
+  #servygo-search input,
+  #servygo-search textarea,
+  #servygo-search select {
+    font-size: 16px;
+  }
+}
+
 #__next,
 #root {
   width: 100%;

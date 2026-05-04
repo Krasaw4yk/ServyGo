@@ -1,8 +1,33 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 type Variant = "row" | "block";
+
+function activateMobileSearchControl(event: MouseEvent<HTMLDivElement>) {
+  if (typeof window === "undefined" || window.matchMedia("(min-width: 768px)").matches) return;
+  const target = event.target as HTMLElement;
+  if (target.closest("input, textarea, select, button, a, label")) return;
+  const root = event.currentTarget;
+  const combobox = root.querySelector<HTMLInputElement>('input[role="combobox"]');
+  if (combobox && !combobox.disabled) {
+    combobox.focus({ preventScroll: true });
+    combobox.click();
+    return;
+  }
+  const plain = root.querySelector<HTMLInputElement | HTMLTextAreaElement>("input:not([type='hidden']), textarea");
+  if (plain && !(plain as HTMLInputElement).disabled) {
+    plain.focus({ preventScroll: true });
+    plain.click();
+  }
+}
+
+function focusMobileTextareaCard(event: MouseEvent<HTMLDivElement>) {
+  if (typeof window === "undefined" || window.matchMedia("(min-width: 768px)").matches) return;
+  const target = event.target as HTMLElement;
+  if (target.closest("input, textarea, button, a")) return;
+  event.currentTarget.querySelector("textarea")?.focus({ preventScroll: true });
+}
 
 type MobileCompactSearchFieldProps = {
   label: string;
@@ -35,16 +60,20 @@ export function MobileCompactSearchField({
         className={`flex w-full flex-col gap-1.5 max-md:gap-1.5 md:col-span-2 md:gap-2 xl:col-span-3 ${className}`}
       >
         <span className={`hidden text-sm font-medium md:block ${heading}`}>{label}</span>
-        <div className={`max-md:rounded-xl max-md:border max-md:p-3 ${card} md:border-0 md:bg-transparent md:p-0`}>
+        <div
+          role="presentation"
+          onClick={focusMobileTextareaCard}
+          className={`max-md:cursor-pointer max-md:rounded-xl max-md:border max-md:p-3 ${card} md:cursor-default md:border-0 md:bg-transparent md:p-0`}
+        >
           <div className={`mb-2 flex items-center gap-2 md:hidden`}>
             <span
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+              className={`pointer-events-none flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                 isDark ? "bg-zinc-800 text-blue-300" : "bg-blue-50 text-blue-600"
               }`}
             >
               {icon}
             </span>
-            <span className={`text-[12px] font-medium leading-tight ${muted}`}>{label}</span>
+            <span className={`pointer-events-none text-[12px] font-medium leading-tight ${muted}`}>{label}</span>
           </div>
           <div className="w-full">{children}</div>
         </div>
@@ -57,24 +86,22 @@ export function MobileCompactSearchField({
     <div className={`flex w-full flex-col gap-1.5 md:gap-2 ${className}`}>
       <span className={`hidden text-sm font-medium md:block ${heading}`}>{label}</span>
       <div
-        className={`flex w-full min-w-0 items-center gap-2.5 max-md:min-h-[52px] max-md:rounded-xl max-md:border max-md:px-3 max-md:py-2 ${card} md:block md:min-h-0 md:rounded-none md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none`}
+        role="presentation"
+        onClick={activateMobileSearchControl}
+        className={`flex w-full min-w-0 cursor-default items-center gap-2.5 max-md:min-h-[52px] max-md:cursor-pointer max-md:rounded-xl max-md:border max-md:px-3 max-md:py-2 ${card} md:block md:min-h-0 md:cursor-default md:rounded-none md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none`}
       >
         <span
-          className={`hidden h-5 w-5 shrink-0 max-md:block ${isDark ? "text-blue-300" : "text-blue-600"}`}
+          className={`pointer-events-none hidden h-5 w-5 shrink-0 max-md:block ${isDark ? "text-blue-300" : "text-blue-600"}`}
           aria-hidden
         >
           {icon}
         </span>
         <div className="min-w-0 flex-1 md:w-full">
-          <span className={`mb-0.5 text-[12px] font-medium leading-snug max-md:block md:hidden ${muted}`}>{label}</span>
+          <span className={`pointer-events-none mb-0.5 text-[12px] font-medium leading-snug max-md:block md:hidden ${muted}`}>
+            {label}
+          </span>
           <div className="w-full">{children}</div>
         </div>
-        <span
-          className="hidden shrink-0 pb-0.5 text-xl font-light leading-none tracking-tight text-zinc-400 max-md:block"
-          aria-hidden
-        >
-          ›
-        </span>
       </div>
       {error}
     </div>

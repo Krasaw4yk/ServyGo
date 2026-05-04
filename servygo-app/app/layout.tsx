@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -15,6 +15,15 @@ const geistMono = Geist_Mono({
 const defaultTitle = "ServyGo — znajdź warsztat samochodowy i porównaj oferty";
 const defaultDescription =
   "ServyGo pomaga kierowcom znaleźć warsztat samochodowy, porównać usługi, ceny i terminy oraz umówić wizytę online.";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f8fbff" },
+    { media: "(prefers-color-scheme: dark)", color: "#030712" },
+  ],
+};
 
 export const metadata: Metadata = {
   title: defaultTitle,
