@@ -65,7 +65,7 @@ export default function LandingInfoDialogs({
   }, [language]);
 
   const faqSteps = useMemo((): StepCopy[] => {
-    const raw = getTranslationNode("landing.faqItems", language);
+    const raw = getTranslationNode("landing.homeSeoFaqItems", language);
     if (!Array.isArray(raw)) return [];
     return raw.filter(
       (x): x is StepCopy =>
@@ -191,10 +191,29 @@ export default function LandingInfoDialogs({
           <div className="space-y-3">
             <div className="space-y-2">
               {faqSteps.map((step, index) => (
-                <div key={`faq-${step.title}-${index}`} className={`rounded-xl border p-3 ${cardBorder}`}>
-                  <p className={`mt-1 font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{step.title}</p>
-                  <p className={`mt-1 text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{step.desc}</p>
-                </div>
+                <details
+                  key={`faq-${step.title}-${index}`}
+                  className={`group overflow-hidden rounded-xl border ${
+                    isDark ? "border-zinc-600/80 bg-zinc-900/70" : "border-blue-100/90 bg-blue-50/40"
+                  }`}
+                >
+                  <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-left [&::-webkit-details-marker]:hidden">
+                    <span className={`min-w-0 flex-1 text-base font-semibold leading-tight ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+                      {step.title}
+                    </span>
+                    <span
+                      className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none transition-transform duration-300 group-open:rotate-180 ${
+                        isDark ? "border-zinc-600 text-orange-300" : "border-blue-200/90 text-orange-500"
+                      }`}
+                      aria-hidden
+                    >
+                      ▼
+                    </span>
+                  </summary>
+                  <div className={`border-t px-4 pb-3 pt-2.5 ${isDark ? "border-zinc-700/90" : "border-blue-100/90"}`}>
+                    <p className={`text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{step.desc}</p>
+                  </div>
+                </details>
               ))}
             </div>
           </div>

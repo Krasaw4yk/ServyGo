@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 const defaultTitle = "ServyGo — znajdź warsztat samochodowy i porównaj oferty";
 const defaultDescription =
-  "ServyGo pomaga kierowcom znaleźć warsztat samochodowy, porównać usługi, ceny i terminy oraz umówić wizytę online.";
+  "ServyGo pomaga kierowcom znaleźć warsztat samochodowy, porównać oferty, ceny i terminy oraz umówić wizytę online. Startowo Bielsko-Biała i okolice.";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -26,18 +26,21 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://servygo.pl"),
   title: defaultTitle,
   description: defaultDescription,
   manifest: "/manifest.webmanifest",
+  robots: {
+    index: true,
+    follow: true,
+  },
   icons: {
     icon: [
       { url: "/favicon-servygo-v2.ico" },
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
     title: defaultTitle,
@@ -61,10 +64,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="pl" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col overflow-x-hidden">{children}</body>
     </html>
   );

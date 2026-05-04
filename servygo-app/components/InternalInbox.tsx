@@ -24,6 +24,7 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { useInboxRealtimeSync } from "@/lib/useServyGoRealtime";
+import { clientCanRespondToActiveBookingQuote } from "@/lib/bookingStatusUi";
 
 type InternalInboxProps = {
   currentUserId: string;
@@ -99,6 +100,11 @@ export default function InternalInbox({
   const [clientReplyBody, setClientReplyBody] = useState("");
   const [clientReplyBusy, setClientReplyBusy] = useState(false);
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
+  const [clientQuoteUi, setClientQuoteUi] = useState<{
+    loadState: "idle" | "loading" | "ready";
+    canRespond: boolean;
+    confirmedReadonly: boolean;
+  }>({ loadState: "idle", canRespond: false, confirmedReadonly: false });
 
   const onUnreadCountChangeRef = useRef(onUnreadCountChange);
   useEffect(() => {
@@ -251,6 +257,51 @@ export default function InternalInbox({
       cancelled = true;
     };
   }, [viewerRole, selectedMessage?.related_booking_id]);
+
+  useEffect(() => {
+    const sb = supabase;
+    if (viewerRole !== "client" || !selectedMessage?.related_booking_id || !sb) {
+      setClientQuoteUi({ loadState: "idle", canRespond: false, confirmedReadonly: false });
+      return;
+    }
+    let cancelled = false;
+    setClientQuoteUi((prev) => ({ ...prev, loadState: "loading" }));
+    void (async () => {
+      const bid = selectedMessage.related_booking_id!;
+      const { data: bRow, error: bErr } = await sb.from("bookings").select("status, current_quote_id").eq("id", bid).maybeSingle();
+      if (cancelled) return;
+      if (bErr || !bRow) {
+        setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: false });
+        return;
+      }
+      const st = ((bRow as { status?: string | null }).status ?? "").trim().toLowerCase();
+      const cur = ((bRow as { current_quote_id?: string | null }).current_quote_id ?? "").trim();
+      if (st === "confirmed" && cur) {
+        setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: true });
+        return;
+      }
+      if (st !== "quote_sent" || !cur) {
+        setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: false });
+        return;
+      }
+      const { data: qRow, error: qErr } = await sb.from("booking_quotes").select("status").eq("id", cur).maybeSingle();
+      if (cancelled) return;
+      if (qErr) {
+        setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: false });
+        return;
+      }
+      const qStatus = ((qRow as { status?: string | null } | null)?.status ?? null) as string | null;
+      const canRespond = clientCanRespondToActiveBookingQuote({
+        bookingStatusRaw: (bRow as { status?: string | null }).status,
+        currentQuoteId: cur,
+        currentQuoteRowStatus: qStatus,
+      });
+      setClientQuoteUi({ loadState: "ready", canRespond, confirmedReadonly: false });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerRole, selectedMessage?.related_booking_id, selectedMessage?.id, loading]);
 
   const reload = useCallback(async () => {
     const gen = ++reloadGeneration.current;
@@ -503,12 +554,17 @@ export default function InternalInbox({
 
   const canRespondToQuote = useMemo(() => {
     if (!selectedMessage) return false;
+    if (viewerRole !== "client") return false;
     if (selectedMessage.recipient_id !== currentUserId) return false;
     if (!selectedMessage.related_booking_id) return false;
     if (selectedMessage.sender_role !== "system") return false;
     const subject = (selectedMessage.subject ?? "").toLowerCase();
-    return subject.includes("wycena") || subject.includes("wycenę");
-  }, [currentUserId, selectedMessage]);
+    const aboutQuote =
+      subject.includes("wycena") || subject.includes("wycenę") || subject.includes("nowa wycena");
+    if (!aboutQuote) return false;
+    if (clientQuoteUi.loadState !== "ready") return false;
+    return clientQuoteUi.canRespond;
+  }, [currentUserId, selectedMessage, viewerRole, clientQuoteUi]);
 
   const canRespondToReschedule = useMemo(() => {
     if (!selectedMessage) return false;
@@ -1092,30 +1148,41 @@ export default function InternalInbox({
             </div>
           ) : null}
           {viewerRole === "client" && selectedMessage.related_booking_id ? (
-            <div className="flex flex-wrap gap-2">
-              {canRespondToQuote ? (
-                <>
-                  <button type="button" onClick={() => void handleQuoteDecision(true)} className="rounded-lg border border-emerald-500/60 px-3 py-1 text-sm font-semibold">
-                    Akceptuję wycenę
-                  </button>
-                  <button type="button" onClick={() => void handleQuoteDecision(false)} className="rounded-lg border border-rose-500/60 px-3 py-1 text-sm font-semibold">
-                    Odrzucam wycenę
-                  </button>
-                </>
+            <div className="flex flex-col gap-2">
+              {clientQuoteUi.loadState === "ready" && clientQuoteUi.confirmedReadonly ? (
+                <p
+                  className={`rounded-lg border px-3 py-2 text-sm ${
+                    isDark ? "border-emerald-500/35 bg-emerald-950/30 text-emerald-100" : "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  }`}
+                >
+                  Wycena zaakceptowana. Wizyta potwierdzona.
+                </p>
               ) : null}
-              {canRespondToReschedule ? (
-                <>
-                  <button type="button" onClick={() => void handleRescheduleDecision(true)} className="rounded-lg border border-purple-500/60 px-3 py-1 text-sm font-semibold">
-                    Akceptuję nowy termin
-                  </button>
-                  <button type="button" onClick={() => void handleRescheduleDecision(false)} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm font-semibold">
-                    Odrzucam nowy termin
-                  </button>
-                </>
-              ) : null}
-              <button type="button" onClick={() => void handleCancelBooking()} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm">
-                Anuluj rezerwację
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {canRespondToQuote ? (
+                  <>
+                    <button type="button" onClick={() => void handleQuoteDecision(true)} className="rounded-lg border border-emerald-500/60 px-3 py-1 text-sm font-semibold">
+                      Akceptuję wycenę
+                    </button>
+                    <button type="button" onClick={() => void handleQuoteDecision(false)} className="rounded-lg border border-rose-500/60 px-3 py-1 text-sm font-semibold">
+                      Odrzucam wycenę
+                    </button>
+                  </>
+                ) : null}
+                {canRespondToReschedule ? (
+                  <>
+                    <button type="button" onClick={() => void handleRescheduleDecision(true)} className="rounded-lg border border-purple-500/60 px-3 py-1 text-sm font-semibold">
+                      Akceptuję nowy termin
+                    </button>
+                    <button type="button" onClick={() => void handleRescheduleDecision(false)} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm font-semibold">
+                      Odrzucam nowy termin
+                    </button>
+                  </>
+                ) : null}
+                <button type="button" onClick={() => void handleCancelBooking()} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm">
+                  Anuluj rezerwację
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
@@ -1246,50 +1313,61 @@ export default function InternalInbox({
             })
           )}
           {viewerRole === "client" && selectedMessage.related_booking_id ? (
-            <div className="flex flex-wrap gap-2">
-              {canRespondToQuote ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => void handleQuoteDecision(true)}
-                    className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-emerald-500/35" : "border-emerald-500/60"}`}
-                  >
-                    Akceptuję wycenę
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleQuoteDecision(false)}
-                    className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-rose-500/35" : "border-rose-500/60"}`}
-                  >
-                    Odrzucam wycenę
-                  </button>
-                </>
+            <div className="flex flex-col gap-2">
+              {clientQuoteUi.loadState === "ready" && clientQuoteUi.confirmedReadonly ? (
+                <p
+                  className={`rounded-2xl border px-3 py-2 text-xs ${
+                    isDark ? "border-emerald-500/35 bg-emerald-950/30 text-emerald-100" : "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  }`}
+                >
+                  Wycena zaakceptowana. Wizyta potwierdzona.
+                </p>
               ) : null}
-              {canRespondToReschedule ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => void handleRescheduleDecision(true)}
-                    className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-purple-500/35" : "border-purple-500/60"}`}
-                  >
-                    Akceptuję nowy termin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleRescheduleDecision(false)}
-                    className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-zinc-600" : "border-zinc-500/60"}`}
-                  >
-                    Odrzucam nowy termin
-                  </button>
-                </>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void handleCancelBooking()}
-                className={`rounded-2xl border px-3 py-2 text-xs ${isDark ? "border-zinc-600" : "border-zinc-500/60"}`}
-              >
-                Anuluj rezerwację
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {canRespondToQuote ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleQuoteDecision(true)}
+                      className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-emerald-500/35" : "border-emerald-500/60"}`}
+                    >
+                      Akceptuję wycenę
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleQuoteDecision(false)}
+                      className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-rose-500/35" : "border-rose-500/60"}`}
+                    >
+                      Odrzucam wycenę
+                    </button>
+                  </>
+                ) : null}
+                {canRespondToReschedule ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleRescheduleDecision(true)}
+                      className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-purple-500/35" : "border-purple-500/60"}`}
+                    >
+                      Akceptuję nowy termin
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleRescheduleDecision(false)}
+                      className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-zinc-600" : "border-zinc-500/60"}`}
+                    >
+                      Odrzucam nowy termin
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void handleCancelBooking()}
+                  className={`rounded-2xl border px-3 py-2 text-xs ${isDark ? "border-zinc-600" : "border-zinc-500/60"}`}
+                >
+                  Anuluj rezerwację
+                </button>
+              </div>
             </div>
           ) : null}
         </div>

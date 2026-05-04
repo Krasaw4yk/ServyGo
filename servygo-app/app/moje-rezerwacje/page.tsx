@@ -11,7 +11,7 @@ import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
 import { quoteDecisionLabel, notifyWorkshopOwnerQuoteResponded } from "@/lib/bookingQuoteNotifications";
 import {
-  clientQuoteDecisionPending,
+  clientCanRespondToActiveBookingQuote,
   clientRescheduleDecisionPending,
   clientWorkshopReschedulePending,
   normalizeBookingStatus,
@@ -61,6 +61,8 @@ type BookingRow = {
   reschedule_status: string | null;
   proposed_by: string | null;
   employee_id: string | null;
+  /** Uzupełniane po pobraniu z `booking_quotes` (current_quote_id). */
+  current_quote_status?: string | null;
 };
 
 function formatDate(dateRaw: string | null | undefined) {
@@ -117,7 +119,21 @@ function MojeRezerwacjePageContent() {
       setError(queryError.message);
       return;
     }
-    setBookings((data as BookingRow[] | null) ?? []);
+    let list = (data as BookingRow[] | null) ?? [];
+    const quoteIds = [...new Set(list.map((b) => (b.current_quote_id ?? "").trim()).filter(Boolean))] as string[];
+    if (quoteIds.length > 0) {
+      const { data: qRows, error: qErr } = await supabase.from("booking_quotes").select("id, status").in("id", quoteIds);
+      if (qErr) {
+        setError(qErr.message);
+        return;
+      }
+      const statusById = new Map((qRows as { id: string; status: string | null }[] | null)?.map((q) => [q.id, q.status]) ?? []);
+      list = list.map((b) => {
+        const qid = (b.current_quote_id ?? "").trim();
+        return { ...b, current_quote_status: qid ? (statusById.get(qid) ?? null) : null };
+      });
+    }
+    setBookings(list);
   }, [user]);
 
   useEffect(() => {
@@ -351,13 +367,30 @@ function MojeRezerwacjePageContent() {
                 proposedBy: row.proposed_by,
                 isDark,
               });
-              const quotePending = clientQuoteDecisionPending(row.status, row.quote_status);
+              const statusLc = (row.status ?? "").trim().toLowerCase();
+              const qidTrim = (row.current_quote_id ?? "").trim();
+              const quoteRowSt = (row.current_quote_status ?? "").trim().toLowerCase();
+              const canQuoteButtons = clientCanRespondToActiveBookingQuote({
+                bookingStatusRaw: row.status,
+                currentQuoteId: row.current_quote_id,
+                currentQuoteRowStatus: row.current_quote_status,
+              });
               const reschedulePending = clientRescheduleDecisionPending(row.status, row.reschedule_status);
-              const hasActiveClientQuote =
-                Boolean((row.current_quote_id ?? "").trim()) && clientQuoteDecisionPending(row.status, row.quote_status);
               const showAcceptedPrice =
                 norm === "confirmed" && row.final_price != null && Number.isFinite(row.final_price);
-              const hasQuote = hasActiveClientQuote || showAcceptedPrice;
+              const quoteReadonlyNonActionable =
+                Boolean(qidTrim) &&
+                !canQuoteButtons &&
+                (statusLc !== "quote_sent" || (statusLc === "quote_sent" && quoteRowSt !== "active"));
+              const quotePanelAccepted = norm === "confirmed" && Boolean(qidTrim) && !canQuoteButtons;
+              const hasQuote =
+                canQuoteButtons ||
+                showAcceptedPrice ||
+                (norm === "confirmed" && Boolean(qidTrim)) ||
+                (quoteReadonlyNonActionable &&
+                  (row.quoted_price != null ||
+                    (row.final_price != null && Number.isFinite(row.final_price)) ||
+                    (row.quote_note ?? "").trim().length > 0));
               const quoteRejected =
                 norm === "quote_rejected" ||
                 norm === "awaiting_new_quote" ||
@@ -365,11 +398,10 @@ function MojeRezerwacjePageContent() {
               const problemText = (row.problem_description ?? "").trim();
               const allowContact =
                 norm !== "cancelled" && norm !== "completed" && norm !== "done" && norm !== "rejected";
-              const statusLc = (row.status ?? "").trim().toLowerCase();
               const awaitingWorkshopOnClientProposal = clientWorkshopReschedulePending(row.reschedule_status, row.proposed_by);
               const allowReschedule =
                 allowContact &&
-                !quotePending &&
+                !canQuoteButtons &&
                 !reschedulePending &&
                 !awaitingWorkshopOnClientProposal &&
                 (norm === "confirmed" || norm === "quote_sent") &&
@@ -469,13 +501,32 @@ function MojeRezerwacjePageContent() {
                             ? isDark
                               ? "text-red-200"
                               : "text-red-800"
-                            : isDark
-                              ? "text-emerald-200"
-                              : "text-emerald-800"
+                            : quotePanelAccepted
+                              ? isDark
+                                ? "text-emerald-200"
+                                : "text-emerald-800"
+                              : quoteReadonlyNonActionable && statusLc !== "quote_sent"
+                                ? isDark
+                                  ? "text-zinc-300"
+                                  : "text-zinc-600"
+                                : isDark
+                                  ? "text-emerald-200"
+                                  : "text-emerald-800"
                         }`}
                       >
-                        Wycena warsztatu
+                        {quoteRejected
+                          ? "Wycena warsztatu"
+                          : quotePanelAccepted
+                            ? "Wycena zaakceptowana"
+                            : quoteReadonlyNonActionable && statusLc !== "quote_sent"
+                              ? "Wycena (informacja)"
+                              : "Wycena warsztatu"}
                       </p>
+                      {quotePanelAccepted && !quoteRejected ? (
+                        <p className={`mt-1 text-xs font-medium ${isDark ? "text-emerald-100/90" : "text-emerald-900/90"}`}>
+                          Wizyta potwierdzona — decyzji o wycenie nie trzeba powtarzać.
+                        </p>
+                      ) : null}
                       <p
                         className={`mt-2 text-lg font-semibold ${
                           quoteRejected
@@ -600,7 +651,7 @@ function MojeRezerwacjePageContent() {
                     </div>
                   ) : null}
 
-                  {quotePending ? (
+                  {canQuoteButtons ? (
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button
                         type="button"

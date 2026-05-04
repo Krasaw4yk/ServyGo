@@ -171,6 +171,23 @@ export function pickDashboardUpcomingBooking<T extends BookingLikeForDashboard>(
   return candidates[0]?.row ?? null;
 }
 
+/**
+ * Czy klient może użyć „Akceptuj / Odrzuć wycenę”.
+ * Wymaga: rezerwacja `quote_sent`, wskaźnik `current_quote_id` oraz wiersz wyceny ze statusem `active`.
+ * Gdy brak `currentQuoteRowStatus` (np. stary cache), zwraca false — bezpieczniej niż zgadywać.
+ */
+export function clientCanRespondToActiveBookingQuote(args: {
+  bookingStatusRaw: string | null | undefined;
+  currentQuoteId: string | null | undefined;
+  currentQuoteRowStatus: string | null | undefined;
+}): boolean {
+  const st = (args.bookingStatusRaw ?? "").trim().toLowerCase();
+  if (st !== "quote_sent") return false;
+  const qid = (args.currentQuoteId ?? "").trim();
+  if (!qid) return false;
+  return (args.currentQuoteRowStatus ?? "").trim().toLowerCase() === "active";
+}
+
 export function clientQuoteDecisionPending(status: string | null | undefined, quoteStatus: string | null | undefined): boolean {
   const st = normalizeBookingStatus(status);
   const qs = (quoteStatus ?? "").trim().toLowerCase();

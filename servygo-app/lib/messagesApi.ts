@@ -304,6 +304,23 @@ export async function respondToBookingQuote(
     throw new Error("To nie jest aktualna wycena — odśwież stronę i spróbuj ponownie.");
   }
 
+  const { data: quoteRow, error: quoteErr } = await supabase
+    .from("booking_quotes")
+    .select("id, booking_id, status")
+    .eq("id", qid)
+    .maybeSingle();
+  if (quoteErr) throw new Error(formatSupabaseError(quoteErr));
+  const qr = quoteRow as { booking_id?: string; status?: string | null } | null;
+  if (!qr || (qr.booking_id ?? "").trim() !== bookingId.trim()) {
+    throw new Error("Nie znaleziono tej wyceny dla rezerwacji.");
+  }
+  const quoteSt = (qr.status ?? "").trim().toLowerCase();
+  if (quoteSt !== "active") {
+    throw new Error(
+      accept ? "Ta wycena nie jest już aktywna — odśwież stronę." : "Nie można odrzucić tej wyceny (nie jest aktywna).",
+    );
+  }
+
   const { data, error } = await supabase.rpc("respond_booking_quote", {
     p_booking_id: bookingId,
     p_quote_id: quoteId,

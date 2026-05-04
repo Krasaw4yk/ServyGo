@@ -47,6 +47,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       titleHighlightDiagnostics: "diagnostyki.",
       subtitle:
         "Wybierz auto, usługę i miasto. My pomożemy Ci znaleźć najlepszą ofertę.",
+      seoLead:
+        "ServyGo łączy kierowców z warsztatami: porównujesz oferty, ceny i terminy oraz umawiasz wizytę online. Startowo działamy głównie w Bielsku-Białej i okolicach.",
       chips: ["Porównaj ceny", "Oszczędź czas", "Wybierz sprawdzony warsztat"],
     },
     form: {
@@ -237,6 +239,27 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         {
           title: "Czy ServyGo rozpatruje reklamację naprawy?",
           desc: "Nie — reklamacje jakości usługi naprawy kieruj bezpośrednio do warsztatu. ServyGo może przyjąć zgłoszenie dotyczące platformy lub warsztatu dla moderacji i bezpieczeństwa.",
+        },
+      ],
+      homeSeoFaqTitle: "Najczęstsze pytania",
+      homeSeoFaqIntro:
+        "Krótko wyjaśniamy, jak działa ServyGo dla kierowców i warsztatów.",
+      homeSeoFaqItems: [
+        {
+          title: "Czym jest ServyGo?",
+          desc: "Marketplace wizyt warsztatowych: wyszukujesz usługę i lokalizację, widzisz oferty i możesz wybrać termin.",
+        },
+        {
+          title: "Czy mogę porównać ceny?",
+          desc: "Tak — przy każdym warsztacie widać orientacyjne widełki i czas realizacji tam, gdzie warsztat je podał.",
+        },
+        {
+          title: "Dla kogo jest platforma?",
+          desc: "Dla kierowców szukających terminu i dla warsztatów, które chcą obsługiwać zapytania i rezerwacje online.",
+        },
+        {
+          title: "Jak umawia się wizytę?",
+          desc: "Uzupełnij formularz na stronie głównej: auto, usługa i miasto. Zobaczysz oferty warsztatów, wybierzesz termin, a potwierdzenie lub propozycję zmiany otrzymasz w ServyGo — bez obdzwaniania kilku serwisów.",
         },
       ],
     },
@@ -576,6 +599,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       titleHighlightDiagnostics: "diagnostics.",
       subtitle:
         "Choose your car, service, and city. We will help you find the best offer.",
+      seoLead:
+        "ServyGo connects drivers with workshops: compare offers, prices and time slots, and book online. We are initially focused on Bielsko-Biała and the surrounding area.",
       chips: ["Compare prices", "Save time", "Choose a trusted workshop"],
     },
     form: {
@@ -766,6 +791,26 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         {
           title: "Does ServyGo handle repair-quality complaints?",
           desc: "No — send repair-quality complaints directly to the workshop. ServyGo may collect reports about the platform or a workshop for moderation and safety.",
+        },
+      ],
+      homeSeoFaqTitle: "Common questions",
+      homeSeoFaqIntro: "A quick overview of how ServyGo works for drivers and workshops.",
+      homeSeoFaqItems: [
+        {
+          title: "What is ServyGo?",
+          desc: "A marketplace for garage visits: you search by service and location, see offers, and pick an appointment.",
+        },
+        {
+          title: "Can I compare prices?",
+          desc: "Yes — where the workshop publishes them you will see indicative price ranges and expected lead time.",
+        },
+        {
+          title: "Who is the platform for?",
+          desc: "For drivers booking service and for workshops that want enquiries and bookings handled online.",
+        },
+        {
+          title: "How do I book a visit?",
+          desc: "Use the form on the home page: vehicle, service and city. Browse workshop offers, pick a time slot, and receive confirmation or change proposals in ServyGo — without calling several garages.",
         },
       ],
     },
@@ -1105,6 +1150,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       titleHighlightDiagnostics: "діагностики.",
       subtitle:
         "Оберіть авто, послугу і місто. Ми допоможемо знайти найкращу пропозицію.",
+      seoLead:
+        "ServyGo з'єднує водіїв зі СТО: порівнюєте пропозиції, ціни та час, записуєтеся онлайн. Спочатку працюємо переважно в Бельсько-Білій та околицях.",
       chips: ["Порівняйте ціни", "Економте час", "Оберіть перевірене СТО"],
     },
     form: {
@@ -1294,6 +1341,27 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         {
           title: "Чи ServyGo розглядає рекламацію щодо якості ремонту?",
           desc: "Ні — такі рекламації надсилайте безпосередньо до СТО. ServyGo може прийняти звернення щодо платформи або майданчика для модерації й безпеки.",
+        },
+      ],
+      homeSeoFaqTitle: "Найпоширеніші запитання",
+      homeSeoFaqIntro:
+        "Коротко пояснюємо, як ServyGo працює для водіїв і для СТО.",
+      homeSeoFaqItems: [
+        {
+          title: "Що таке ServyGo?",
+          desc: "Маркетплейс візитів до СТО: шукаєте послугу й локацію, бачите пропозиції та обираєте час.",
+        },
+        {
+          title: "Чи можу порівняти ціни?",
+          desc: "Так — де СТО їх указує, видно орієнтовні суми й час виконання.",
+        },
+        {
+          title: "Для кого платформа?",
+          desc: "Для водіїв, які шукають запис, і для СТО, які хочуть онлайн-заявки та бронювання.",
+        },
+        {
+          title: "Як записатися на візит?",
+          desc: "Заповніть форму на головній: авто, послуга й місто. Перегляньте пропозиції СТО, оберіть час; підтвердження або зміни отримаєте в ServyGo — без десятків дзвінків.",
         },
       ],
     },
