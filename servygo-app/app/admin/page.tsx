@@ -244,6 +244,8 @@ type WorkshopEditDraft = {
   latitude: string;
   longitude: string;
   show_on_map: boolean;
+  is_demo: boolean;
+  visibility_status: "hidden" | "pending" | "active" | "archived";
   rating: string;
   reviews_count: string;
   opening_hours: string;
@@ -668,6 +670,8 @@ export default function AdminPage() {
           ? String(workshopPanelDetail.longitude)
           : "",
       show_on_map: workshopPanelDetail.show_on_map === true,
+      is_demo: workshopPanelDetail.is_demo === true,
+      visibility_status: workshopPanelDetail.visibility_status ?? "hidden",
       rating:
         workshopPanelDetail.rating != null && String(workshopPanelDetail.rating).trim() !== ""
           ? String(workshopPanelDetail.rating)
@@ -950,6 +954,8 @@ export default function AdminPage() {
         rating: ratingStr === "" ? null : Number(ratingStr),
         reviews_count: reviewsStr === "" ? null : Number(reviewsStr),
         show_on_map: editDraft.show_on_map,
+        is_demo: editDraft.is_demo,
+        visibility_status: editDraft.visibility_status,
         opening_hours: editDraft.opening_hours || null,
         status: editDraft.status,
       };
@@ -1955,6 +1961,8 @@ export default function AdminPage() {
                           <th className="px-3 py-2.5 text-left lg:px-4 lg:py-3">E-mail</th>
                           <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Google Maps</th>
                           <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Status</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Demo</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Widoczność</th>
                           <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Usługi</th>
                           <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Akcje</th>
                         </tr>
@@ -1962,7 +1970,7 @@ export default function AdminPage() {
                       <tbody>
                         {adminWorkshops.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className={`px-3 py-6 text-center text-sm ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
+                            <td colSpan={11} className={`px-3 py-6 text-center text-sm ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
                               Brak warsztatów w bazie. Zaakceptuj zgłoszenie w zakładce „Zgłoszenia warsztatów”, aby utworzyć wpis.
                             </td>
                           </tr>
@@ -1997,6 +2005,12 @@ export default function AdminPage() {
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-2.5 lg:px-4 lg:py-3">
                                   {formatAdminWorkshopEntityStatusLabel(workshop.status)}
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-2.5 lg:px-4 lg:py-3">
+                                  {workshop.is_demo ? "tak" : "nie"}
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-2.5 lg:px-4 lg:py-3">
+                                  {workshop.visibility_status ?? "hidden"}
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-2.5 text-center lg:px-4 lg:py-3">
                                   {workshop.service_count ?? 0}
@@ -3024,6 +3038,17 @@ export default function AdminPage() {
                     Pokaż na mapie ServyGo (/oferty)
                   </span>
                 </label>
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-medium">
+                    <input
+                      type="checkbox"
+                      checked={editDraft.is_demo}
+                      onChange={(e) => setEditDraft((d) => (d ? { ...d, is_demo: e.target.checked } : d))}
+                      className="h-4 w-4 rounded border-zinc-400"
+                    />
+                    Profil demonstracyjny (nie udaje prawdziwego partnera)
+                  </span>
+                </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-xs font-medium">Slug (opcjonalnie)</span>
                   <input
@@ -3077,6 +3102,23 @@ export default function AdminPage() {
                     <option value="active">active (publiczny)</option>
                     <option value="suspended">suspended (zawieszony)</option>
                     <option value="hidden">hidden (ukryty)</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  <span className="text-xs font-medium">visibility_status (publiczna widoczność)</span>
+                  <select
+                    value={editDraft.visibility_status}
+                    onChange={(e) =>
+                      setEditDraft((d) =>
+                        d ? { ...d, visibility_status: e.target.value as WorkshopEditDraft["visibility_status"] } : d,
+                      )
+                    }
+                    className={`rounded-lg border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"}`}
+                  >
+                    <option value="hidden">hidden (niewidoczny publicznie)</option>
+                    <option value="pending">pending (oczekuje na weryfikację)</option>
+                    <option value="active">active (widoczny publicznie)</option>
+                    <option value="archived">archived (zarchiwizowany)</option>
                   </select>
                 </label>
               </div>

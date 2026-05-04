@@ -694,6 +694,12 @@ function WorkshopDetailsPageContent() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="break-words text-2xl font-bold sm:text-3xl">{workshop.name}</h2>
+                  {workshop.isDemo ? (
+                    <div className={`mt-2 rounded-xl border px-3 py-2 text-xs sm:text-sm ${isDark ? "border-amber-400/35 bg-amber-500/15 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
+                      <p className="font-semibold">Profil demonstracyjny</p>
+                      <p className="mt-0.5 opacity-90">Ten profil służy do testowania działania ServyGo.</p>
+                    </div>
+                  ) : null}
                   <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                     {workshop.address}
                   </p>
@@ -802,7 +808,14 @@ function WorkshopDetailsPageContent() {
                     )}
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className={`mt-6 overflow-hidden rounded-2xl border ${isDark ? "border-zinc-700 bg-zinc-900/50" : "border-blue-100 bg-white/80"}`}>
+                  <div className="h-40 bg-[linear-gradient(120deg,rgba(59,130,246,0.16),rgba(249,115,22,0.16),rgba(30,41,59,0.08))] dark:bg-[linear-gradient(120deg,rgba(59,130,246,0.22),rgba(249,115,22,0.2),rgba(2,6,23,0.28))]" />
+                  <div className={`px-4 py-3 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                    Zdjęcie warsztatu wkrótce
+                  </div>
+                </div>
+              )}
 
               <div className="mt-6 rounded-2xl border border-blue-400/25 bg-blue-500/5 p-4 sm:p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">

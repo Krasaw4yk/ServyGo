@@ -11,10 +11,29 @@ export function isPubliclyListedWorkshopStatus(status: string | null | undefined
   return s === "active";
 }
 
+export type WorkshopVisibilityStatus = "hidden" | "pending" | "active" | "archived";
+
+function normalizeVisibilityStatus(value: string | null | undefined): WorkshopVisibilityStatus {
+  const normalized = (value ?? "").toLowerCase().trim();
+  if (normalized === "active" || normalized === "pending" || normalized === "archived") return normalized;
+  return "hidden";
+}
+
+export function isWorkshopPubliclyVisible(
+  status: string | null | undefined,
+  visibilityStatus: string | null | undefined,
+): boolean {
+  return isPubliclyListedWorkshopStatus(status) && normalizeVisibilityStatus(visibilityStatus) === "active";
+}
+
 /** Lista ofert: wszystkie aktywne warsztaty (mapa ma własny filtr pinów). */
-export function isWorkshopVisibleOnOffersPage(status: string | null | undefined, showOnMap: boolean | null | undefined): boolean {
+export function isWorkshopVisibleOnOffersPage(
+  status: string | null | undefined,
+  showOnMap: boolean | null | undefined,
+  visibilityStatus: string | null | undefined,
+): boolean {
   void showOnMap;
-  return isPubliclyListedWorkshopStatus(status);
+  return isWorkshopPubliclyVisible(status, visibilityStatus);
 }
 
 const DEFAULT_BASE_SLOTS = [
@@ -131,6 +150,8 @@ type WorkshopWithNestedServices = {
   address: string | null;
   description: string | null;
   status: string | null;
+  is_demo?: boolean | null;
+  visibility_status?: string | null;
   google_maps_url: string | null;
   services_summary: string | null;
   latitude?: number | null;
@@ -399,6 +420,7 @@ export function buildMockWorkshopFromDbRow(w: WorkshopWithNestedServices): MockW
   const mapsUrl = storedMaps || buildGoogleSearchUrl(w.name, w.address, w.city);
   const showOnMap = w.show_on_map === true;
   const placeId = (w.google_place_id ?? "").trim();
+  const visibilityStatus = normalizeVisibilityStatus(w.visibility_status);
 
   return {
     id: w.id,
@@ -415,6 +437,8 @@ export function buildMockWorkshopFromDbRow(w: WorkshopWithNestedServices): MockW
     lat,
     lng,
     showOnMap,
+    isDemo: w.is_demo === true,
+    visibilityStatus,
     /** Na mapie /oferty: wystarczy włączenie „na mapę” + poprawne lat/lng (z bazy lub przybliżenie z miasta). */
     hasMapPin: Boolean(showOnMap && Number.isFinite(lat) && Number.isFinite(lng)),
     hasPreciseMapCoords: hasDbCoords,
@@ -441,6 +465,8 @@ const PUBLIC_WORKSHOP_SELECT = `
   address,
   description,
   status,
+  is_demo,
+  visibility_status,
   google_maps_url,
   services_summary,
   latitude,
@@ -460,7 +486,7 @@ export async function fetchPublicWorkshopsAsMock(): Promise<MockWorkshop[]> {
   const { data, error } = await supabase.from("workshops").select(PUBLIC_WORKSHOP_SELECT).order("name", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
   const rows = (data as WorkshopWithNestedServices[] | null) ?? [];
-  const visibleRows = rows.filter((w) => isWorkshopVisibleOnOffersPage(w.status, w.show_on_map));
+  const visibleRows = rows.filter((w) => isWorkshopPubliclyVisible(w.status, w.visibility_status));
   const workshopIds = visibleRows.map((w) => w.id);
   const { data: vehiclePricesRaw, error: vehiclePricesError } = workshopIds.length
     ? await supabase
@@ -489,7 +515,7 @@ export async function fetchPublicWorkshopByIdAsMock(id: string): Promise<MockWor
   const { data, error } = await supabase.from("workshops").select(PUBLIC_WORKSHOP_SELECT).eq("id", id.trim()).maybeSingle();
   if (error) throw new Error(formatSupabaseError(error));
   const row = data as WorkshopWithNestedServices | null;
-  if (!row || !isPubliclyListedWorkshopStatus(row.status)) return null;
+  if (!row || !isWorkshopPubliclyVisible(row.status, row.visibility_status)) return null;
   const base = buildMockWorkshopFromDbRow(row);
   const { data: vehiclePricesRaw, error: vehiclePricesError } = await supabase
     .from("workshop_service_vehicle_prices")

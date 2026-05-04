@@ -857,7 +857,14 @@ export default function OffersPageClient() {
                         }`}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-2">
-                          <h3 className="break-words text-base font-semibold leading-tight md:text-lg">{workshop.name}</h3>
+                          <div>
+                            <h3 className="break-words text-base font-semibold leading-tight md:text-lg">{workshop.name}</h3>
+                            {workshop.isDemo ? (
+                              <p className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${isDark ? "border-amber-400/40 bg-amber-500/15 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
+                                Profil demonstracyjny
+                              </p>
+                            ) : null}
+                          </div>
                           <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium whitespace-nowrap">
                             <input
                               type="checkbox"

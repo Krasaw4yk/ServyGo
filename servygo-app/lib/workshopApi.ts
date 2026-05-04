@@ -13,6 +13,8 @@ export type Workshop = {
   address: string | null;
   description: string | null;
   status: string | null;
+  is_demo?: boolean | null;
+  visibility_status?: "hidden" | "pending" | "active" | "archived" | null;
   google_maps_url?: string | null;
   services_summary?: string | null;
   opening_hours?: string | null;

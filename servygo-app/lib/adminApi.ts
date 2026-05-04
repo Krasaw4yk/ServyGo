@@ -46,6 +46,8 @@ export type AdminWorkshopListRow = {
   address: string | null;
   description: string | null;
   status: string | null;
+  is_demo?: boolean | null;
+  visibility_status?: "hidden" | "pending" | "active" | "archived" | null;
   google_maps_url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -137,6 +139,8 @@ export type AdminWorkshopUpdatePayload = {
   google_maps_url: string | null;
   opening_hours: string | null;
   status: AdminWorkshopEntityStatus;
+  is_demo?: boolean;
+  visibility_status?: "hidden" | "pending" | "active" | "archived";
   latitude?: number | null;
   longitude?: number | null;
   rating?: number | null;
@@ -266,7 +270,7 @@ export async function listWorkshopsForAdmin(
   const { data, error } = await supabase
     .from("workshops")
     .select(
-      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, lead_test_mode, lead_fee_amount, lead_test_ended_at, created_at, updated_at",
+      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, is_demo, visibility_status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, lead_test_mode, lead_fee_amount, lead_test_ended_at, created_at, updated_at",
     )
     .order("created_at", { ascending: false });
   if (error) throw new Error(formatSupabaseError(error));
@@ -293,7 +297,7 @@ export async function getWorkshopDetailForAdmin(
   const { data: workshop, error: wError } = await supabase
     .from("workshops")
     .select(
-      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, lead_test_mode, lead_fee_amount, lead_test_ended_at, created_at, updated_at",
+      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, is_demo, visibility_status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, lead_test_mode, lead_fee_amount, lead_test_ended_at, created_at, updated_at",
     )
     .eq("id", workshopId)
     .single();
@@ -469,6 +473,10 @@ export async function updateWorkshopAsAdmin(
   if (st !== "active" && st !== "suspended" && st !== "hidden") {
     throw new Error("Niedozwolony status warsztatu.");
   }
+  const visibility = payload.visibility_status?.toLowerCase().trim();
+  if (visibility && visibility !== "hidden" && visibility !== "pending" && visibility !== "active" && visibility !== "archived") {
+    throw new Error("Niedozwolona wartość visibility_status.");
+  }
   const slugRaw = (payload.slug ?? "").trim();
   const placeRaw = (payload.google_place_id ?? "").trim();
   const lat =
@@ -505,6 +513,8 @@ export async function updateWorkshopAsAdmin(
       google_place_id: placeRaw || null,
       show_on_map: Boolean(payload.show_on_map),
       status: st,
+      is_demo: payload.is_demo === true,
+      ...(visibility ? { visibility_status: visibility } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("id", workshopId);

@@ -39,6 +39,10 @@ export type MockWorkshop = {
   slug?: string | null;
   /** Publiczna lista ofert: domyślnie true dla mocków lokalnych. */
   showOnMap?: boolean;
+  /** Oznaczenie profilu demonstracyjnego. */
+  isDemo?: boolean;
+  /** Dodatkowy stan publikacji profilu (MVP demo/public). */
+  visibilityStatus?: "hidden" | "pending" | "active" | "archived";
   /** Pinezka na mapie OSM — wymaga współrzędnych i showOnMap (mock: zawsze true). */
   hasMapPin?: boolean;
   /** Współrzędne zapisane w bazie (nie przybliżenie z miasta). */
@@ -614,6 +618,8 @@ export const mockWorkshops: MockWorkshop[] = rawWorkshops.map((workshop) => {
   return {
     ...workshop,
     showOnMap: true,
+    isDemo: false,
+    visibilityStatus: "active",
     hasMapPin: true,
     hasPreciseMapCoords: true,
     usesLocalCalendar: true,
