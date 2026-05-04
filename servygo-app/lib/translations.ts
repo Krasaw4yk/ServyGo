@@ -247,19 +247,19 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       homeSeoFaqItems: [
         {
           title: "Czym jest ServyGo?",
-          desc: "Marketplace wizyt warsztatowych: wyszukujesz usługę i lokalizację, widzisz oferty i możesz wybrać termin.",
+          desc: "ServyGo to platforma, która pomaga kierowcom znaleźć warsztat samochodowy i szybciej umówić wizytę. Wybierasz auto, usługę i lokalizację, a my pokazujemy warsztaty, które mogą przyjąć Twoje zgłoszenie.",
         },
         {
           title: "Czy mogę porównać ceny?",
-          desc: "Tak — przy każdym warsztacie widać orientacyjne widełki i czas realizacji tam, gdzie warsztat je podał.",
+          desc: "Tak. Przy ofertach możesz zobaczyć orientacyjne ceny, czas wykonania usługi i dostępne terminy. Dzięki temu łatwiej porównasz warsztaty i wybierzesz opcję, która najlepiej pasuje do Twojego auta, budżetu i czasu.",
         },
         {
           title: "Dla kogo jest platforma?",
-          desc: "Dla kierowców szukających terminu i dla warsztatów, które chcą obsługiwać zapytania i rezerwacje online.",
+          desc: "ServyGo jest dla kierowców, którzy chcą szybko znaleźć sprawdzony warsztat, oraz dla warsztatów, które chcą otrzymywać zgłoszenia online, obsługiwać rezerwacje i wygodniej kontaktować się z klientami.",
         },
         {
           title: "Jak umawia się wizytę?",
-          desc: "Uzupełnij formularz na stronie głównej: auto, usługa i miasto. Zobaczysz oferty warsztatów, wybierzesz termin, a potwierdzenie lub propozycję zmiany otrzymasz w ServyGo — bez obdzwaniania kilku serwisów.",
+          desc: "Wypełniasz formularz: wybierasz typ auta, markę, model, rocznik, usługę, miasto i opisujesz problem. Następnie wybierasz warsztat i termin. Warsztat może potwierdzić wizytę albo wysłać dokładniejszą wycenę.",
         },
       ],
     },
