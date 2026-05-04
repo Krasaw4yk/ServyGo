@@ -2,64 +2,92 @@
 
 Krótka dokumentacja warstwy rozliczeniowej leadów bez płatności online i bez faktur.
 
-## Kiedy lead jest płatny (rozliczalny)
+## Definicje biznesowe (skrót)
 
-W modelu MVP lead staje się **rozliczalny** (`settlement_status = billable`), gdy jednocześnie:
+- **Lead**: rezerwacja (`bookings`) widziana jako potencjalny przychód/korzyść dla warsztatu, rozliczana przez ServyGo z warsztatem.
+- **Lead wartościowy**: wizyta się odbyła i została oznaczona jako zakończona (`mark_booking_visit_completed`).
+- **Lead testowy**: wartościowy lead w okresie testowym (bez opłaty), raportowany jako `waived_test`.
+- **Lead płatny**: wartościowy lead poza testem, raportowany jako `billable`.
 
-- rezerwacja została **zakończona** przez warsztat (`bookings.status = completed`),
-- powiązany rekord rozliczenia ma **`test_mode = false`** (koniec okresu testowego / produkcja),
-- brak ścieżki „niepłatny” (anulowanie, no-show, spór itd.).
+## Mapowanie statusów (techniczne → biznesowe)
 
-Do momentu wyłączenia trybu testowego domyślnie obowiązuje **`waived_test`**: lead jest **wartościowy**, ale **bez opłaty** — system pokazuje wartość (`lead_fee_amount`, zwykle 5 PLN) w raporcie.
+### `bookings.status`
 
-## Kiedy lead nie jest płatny
+- **`pending_quote` / `awaiting_quote` / `new` / `pending`**: klient utworzył rezerwację, warsztat jeszcze nie doprowadził jej do potwierdzenia.
+- **`quote_sent`**: warsztat wysłał wycenę; klient ma podjąć decyzję.
+- **`awaiting_new_quote`**: klient odrzucił wycenę; warsztat może wysłać kolejną.
+- **`confirmed`**: termin jest potwierdzony (warsztat potwierdził lub klient zaakceptował wycenę).
+- **`completed` / `done`**: wizyta została wykonana i zakończona (lead wartościowy).
+- **`no_show`**: klient nie stawił się na wizytę (lead niepłatny).
+- **`cancelled` / `cancelled_by_*`**: anulowanie (lead niepłatny).
+- **`rejected`**: odrzucone przez warsztat/proces (lead niepłatny).
+- **`service_not_completed`**: usługa niewykonana / problem (lead niepłatny lub sporny zależnie od decyzji admina).
 
-Status rozliczenia **`not_billable`** między innymi gdy:
+### `booking_quotes.status`
 
-- warsztat **nie odpowiedział** / rezerwacja wygasła (status końcowy anulowania),
-- warsztat **odrzucił** rezerwację,
-- **klient anulował**,
-- **klient odrzucił wycenę** (ścieżki kończące rezerwację),
-- klient **nie przyjechał** — akcja **no-show** (`bookings.status = no_show`, powód `not_eligible_reason = no_show`),
-- sprawa jest **sporna** (`disputed`) — do wyjaśnienia; nie jest traktowana jako rozliczalna w sensie opłaty.
+- **`active`**: obowiązująca (aktualna) wycena.
+- **`replaced`**: zastąpiona kolejną wyceną.
+- **`accepted`**: zaakceptowana przez klienta (rezerwacja zwykle przechodzi w `confirmed`).
+- **`rejected`**: odrzucona przez klienta.
+- **`cancelled`**: anulowana (np. anulowanie rezerwacji, wygaśnięcie, itp.).
 
-Automatycznie, dla rekordów w stanie **`pending`**, przy przejściu rezerwacji w wybrane statusy końcowe (anulowanie, odrzucenie, `service_not_completed`) ustawiane jest **`not_billable`** (jeśli wcześniej nie było rozliczenia pozytywnego).
+### `booking_lead_settlements.settlement_status`
 
-## Znaczenie `waived_test`
+- **`pending`**: jeszcze nie wiadomo, czy lead będzie płatny (rezerwacja w toku).
+- **`waived_test`**: lead wartościowy w teście — liczony informacyjnie, bez opłaty.
+- **`billable`**: lead wartościowy poza testem — rozliczalny.
+- **`not_billable`**: lead niepłatny (no-show, anulowanie, odrzucenie, itd.).
+- **`disputed`**: lead sporny — do rozstrzygnięcia przez admina.
+- **`invoiced`**: zarezerwowane pod przyszłe rozliczenie/fakturę (poza MVP faktur).
 
-**`waived_test`** = lead spełnia warunki wartościowej wizyty (zakończona), ale **w okresie testowym** **nie naliczamy opłaty** — pokazujemy **wartość testową** (np. 5 PLN) w panelu i w raporcie (`test_value_pln`).
+## Kiedy przechodzimy do konkretnych settlement_status
 
-## Pierwszy miesiąc testowy
+- **`pending`**: automatycznie przy utworzeniu rezerwacji (trigger) lub pierwszym RPC (ensure).
+- **`waived_test`**: `mark_booking_visit_completed`, gdy settlement ma `test_mode = true` (w praktyce: warsztat ma `workshops.lead_test_mode = true` i nowe settlementy dziedziczą to ustawienie).
+- **`billable`**: `mark_booking_visit_completed`, gdy settlement ma `test_mode = false`.
+- **`not_billable`**:
+  - `mark_booking_no_show` → `not_eligible_reason = 'no_show'`.
+  - automatycznie dla settlementów `pending`, gdy rezerwacja przechodzi w status końcowy typu anulowanie/odrzucenie (`cancelled*`, `rejected`, `service_not_completed`, `quote_rejected` — wg triggera).
+- **`disputed`**: `mark_booking_settlement_disputed` (warsztat lub admin) + powód.
+- **`invoiced`**: tylko przyszłościowo (w MVP nie generujemy faktur) — może być użyte ręcznie przez admina w kolejnych iteracjach.
 
-Domyślnie **`test_mode = true`** dla nowych rekordów rozliczenia. **Wyłączenie testu** (np. po pierwszym miesiącu) to osobna decyzja biznesowa — w tej iteracji **nie** dodano harmonogramu automatycznego; po zmianie `test_mode` na `false` kolejne zakończone wizyty dostają **`billable`** zamiast **`waived_test`**.
+## Checklist testu ręcznego (A–F)
 
-## Statusy `settlement_status`
+A. rezerwacja utworzona → settlement `pending`
 
-| Status         | Znaczenie |
-|----------------|-----------|
-| `pending`      | Jeszcze nie wiadomo, czy lead będzie płatny. |
-| `billable`     | Rozliczalny (produkcja, `test_mode = false`). |
-| `not_billable` | Nie do rozliczenia / niepłatny. |
-| `disputed`     | Spór — wymaga decyzji (poza zakresem MVP). |
-| `invoiced`     | Zarezerwowane pod przyszłe faktury / zestawienia. |
-| `waived_test`  | Wartościowy lead w teście — wartość liczona, opłata zdjęta. |
+B. wycena zaakceptowana / wizyta potwierdzona → settlement nadal `pending`
 
-## Jak admin czyta raport „Rozliczenie leadów MVP”
+C. wizyta zakończona w okresie testowym → settlement `waived_test`
 
-W panelu admina (**Rozliczenie leadów MVP**) widać **zbiorczo per warsztat i miesiąc**:
+D. wizyta zakończona poza testem → settlement `billable`
 
-- liczby rezerwacji i statusów wizyt (potwierdzone, zakończone, no-show, anulowane),
-- liczbę leadów testowych (`waived_test`) i płatnych (`billable`),
-- spory (`disputed`),
-- **wartość testową PLN** (`test_value_pln`) oraz **szacowaną kwotę do zapłaty PLN** (`estimated_amount_pln` dla `billable`).
+E. klient nie przyszedł → settlement `not_billable`
 
-**Uwaga:** widok agreguje po miesiącu z dat powiązanych z rezerwacją lub zdarzeniami rozliczenia — szczegóły w migracji SQL `supabase-49-lead-settlement-mvp.sql`.
+F. spór → settlement `disputed`
+
+## Raport miesięczny
+
+Widok `workshop_monthly_lead_metrics` pokazuje per warsztat/miesiąc:
+
+- `test_value_pln` = wartość informacyjna leadów testowych (`waived_test`)
+- `estimated_amount_pln` = kwota do zapłaty (tylko leady `billable`)
 
 ## RPC (Supabase)
 
 - `ensure_booking_lead_settlement(booking_id)` — utwórz rekord rozliczenia, jeśli brak.
-- `mark_booking_visit_completed(booking_id)` — zakończ wizytę, ustaw settlement (`waived_test` lub `billable`), komunikat systemowy do klienta.
-- `mark_booking_no_show(booking_id, reason)` — no-show, settlement `not_billable`.
-- `mark_booking_settlement_disputed(booking_id, reason)` — spór.
+- `mark_booking_visit_completed(booking_id)` — zakończ wizytę, ustaw settlement (`waived_test` lub `billable`), wpis do `booking_status_events`, komunikat systemowy.
+- `mark_booking_no_show(booking_id, reason)` — no-show, settlement `not_billable`, wpis do `booking_status_events`, komunikat systemowy.
+- `mark_booking_settlement_disputed(booking_id, reason)` — spór, wpis do `booking_status_events`, komunikat systemowy.
+- `admin_set_workshop_lead_billing_settings(workshop_id, lead_test_mode, lead_fee_amount)` — admin: kończy test i/lub ustawia stawkę dla nowych leadów warsztatu.
 
-Admin nadzoruje przez **`admin_users`** (role `admin` / `owner`) — ten sam wzorzec co w innych tabelach.
+## Kryteria zamknięcia punktu 4
+
+- Istnieje definicja płatnego leada (billable) i testowego (waived_test).
+- Każdy status rezerwacji ma znaczenie biznesowe (mapowanie powyżej).
+- Każdy status wyceny ma znaczenie biznesowe (mapowanie powyżej).
+- Każdy status settlement ma znaczenie biznesowe (mapowanie powyżej).
+- Admin widzi rozliczenia i raport miesięczny.
+- Warsztat widzi własne rozliczenia i raport miesięczny.
+- Można oznaczyć `completed`, `no_show`, `disputed`.
+- Admin może zakończyć test dla warsztatu (wpływa na nowe settlementy).
+- Można policzyć miesięczny raport oraz wyeksportować go do CSV (MVP).

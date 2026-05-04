@@ -381,6 +381,17 @@ export async function markBookingNoShowAsWorkshopOwner(bookingId: string, reason
   if (error) throw new Error(formatSupabaseError(error));
 }
 
+export async function markBookingSettlementDisputedAsWorkshopOwner(bookingId: string, reason: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const trimmed = reason.trim();
+  if (!trimmed) throw new Error("Podaj powód sporu.");
+  const { error } = await supabase.rpc("mark_booking_settlement_disputed", {
+    p_booking_id: bookingId,
+    p_reason: trimmed,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
 export async function listWorkshopEmployeesForOwner(workshopId: string): Promise<WorkshopEmployeeRow[]> {
   if (!supabase) throw new Error("Supabase client not available.");
   const { data, error } = await supabase

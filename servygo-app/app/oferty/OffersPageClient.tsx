@@ -29,6 +29,19 @@ type ViewMode = "list" | "map";
 type SortKey = "nearest" | "cheapest" | "rating" | "slot";
 type AvailFilter = "all" | "today" | "soon";
 
+function normalizeSearchToken(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/ł/g, "l")
+    .replace(/Ł/g, "l")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function formatPriceRange(priceFrom?: number | null, priceTo?: number | null) {
   if (priceFrom != null && priceTo != null && priceTo >= priceFrom) return `${priceFrom}-${priceTo} zł`;
   if (priceFrom != null) return `od ${priceFrom} zł`;
@@ -90,6 +103,8 @@ export default function OffersPageClient() {
     city: "",
     cityLabel: "",
     service: "",
+    category: "",
+    subcategory: "",
     vehicleType: "",
     brand: "",
     model: "",
@@ -152,11 +167,13 @@ export default function OffersPageClient() {
     const frameId = window.requestAnimationFrame(() => {
       const params = new URLSearchParams(window.location.search);
       const cityRaw = (params.get("city") ?? "").trim();
-      const cityNorm = cityRaw.toLowerCase();
+      const cityNorm = normalizeSearchToken(cityRaw);
       setQueryFilters({
         city: cityNorm,
         cityLabel: cityRaw,
         service: (params.get("service") ?? "").trim(),
+        category: (params.get("category") ?? "").trim(),
+        subcategory: (params.get("subcategory") ?? "").trim(),
         vehicleType: (params.get("vehicleType") ?? "").trim(),
         brand: (params.get("brand") ?? "").trim().toLowerCase(),
         model: (params.get("model") ?? "").trim().toLowerCase(),
@@ -195,8 +212,9 @@ export default function OffersPageClient() {
 
     return workshops
       .map((workshop) => {
+        const workshopCityNorm = normalizeSearchToken(workshop.city ?? "");
         const cityMatch =
-          !queryFilters.city || workshop.city.toLowerCase().includes(queryFilters.city);
+          !queryFilters.city || workshopCityNorm.includes(queryFilters.city);
         if (!cityMatch) return { ...workshop, services: [] };
         const matchingServices = matchWorkshopServicesForVehicle(workshop.services, {
           service: queryFilters.service,
@@ -217,7 +235,7 @@ export default function OffersPageClient() {
       return [];
     }
     return workshops
-      .filter((workshop) => workshop.city.toLowerCase().includes(queryFilters.city))
+      .filter((workshop) => normalizeSearchToken(workshop.city ?? "").includes(queryFilters.city))
       .map((workshop) => ({
         ...workshop,
         services: workshop.services.length > 0 ? [workshop.services[0]] : [],
@@ -227,6 +245,56 @@ export default function OffersPageClient() {
 
   const baseMatches = exactMatches.length > 0 ? exactMatches : cityFallbackMatches;
   const hasFallback = exactMatches.length === 0 && cityFallbackMatches.length > 0;
+
+  const filteringDebug = useMemo(() => {
+    if (process.env.NODE_ENV === "production") return null;
+    const reasons = workshops.map((w) => {
+      const cityNorm = normalizeSearchToken(w.city ?? "");
+      const cityOk = !queryFilters.city || cityNorm.includes(queryFilters.city);
+      if (!cityOk) return { workshop: w.name, rejected: "city_mismatch" as const };
+      const yearFilter = Number.isFinite(Number.parseInt(queryFilters.year, 10)) ? Number.parseInt(queryFilters.year, 10) : null;
+      const svc = matchWorkshopServicesForVehicle(w.services, {
+        service: queryFilters.service,
+        vehicleType: queryFilters.vehicleType,
+        brand: queryFilters.brand,
+        model: queryFilters.model,
+        year: yearFilter,
+        engine: queryFilters.engine,
+        fuel: queryFilters.fuel,
+      });
+      if (svc.length === 0) return { workshop: w.name, rejected: "service_or_vehicle_mismatch" as const };
+      return { workshop: w.name, rejected: "passed" as const };
+    });
+    return {
+      params: queryFilters,
+      totalBefore: workshops.length,
+      afterService: exactMatches.length,
+      afterCityFallback: cityFallbackMatches.length,
+      finalShown: baseMatches.length,
+      reasons,
+    };
+  }, [workshops, queryFilters, exactMatches.length, cityFallbackMatches.length, baseMatches.length]);
+
+  useEffect(() => {
+    if (!filteringDebug) return;
+    // Debug tylko w development.
+    // eslint-disable-next-line no-console
+    console.groupCollapsed("[Offers Debug] /oferty filters");
+    // eslint-disable-next-line no-console
+    console.log("query params", filteringDebug.params);
+    // eslint-disable-next-line no-console
+    console.log("workshops before filter", filteringDebug.totalBefore);
+    // eslint-disable-next-line no-console
+    console.log("after service filter", filteringDebug.afterService);
+    // eslint-disable-next-line no-console
+    console.log("after city fallback", filteringDebug.afterCityFallback);
+    // eslint-disable-next-line no-console
+    console.log("final shown", filteringDebug.finalShown);
+    // eslint-disable-next-line no-console
+    console.table(filteringDebug.reasons);
+    // eslint-disable-next-line no-console
+    console.groupEnd();
+  }, [filteringDebug]);
 
   useEffect(() => {
     if (baseMatches.length === 0) {

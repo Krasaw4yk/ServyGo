@@ -8,7 +8,7 @@ export async function WorkshopServerSeoBlock({ id }: Props) {
 
   if (!workshop) {
     return (
-      <header className="border-b border-blue-200/70 bg-slate-50 px-4 py-5 dark:border-zinc-700 dark:bg-zinc-900/90 sm:px-6">
+      <header className="border-b border-blue-200/70 bg-slate-50/90 px-4 py-5 dark:border-zinc-700 dark:bg-zinc-950/40 sm:px-6">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">Warsztat — ServyGo</h1>
         <p className="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
           Nie znaleziono aktywnego warsztatu o podanym identyfikatorze. Wróć do listy ofert lub wybierz inny link.
@@ -36,7 +36,7 @@ export async function WorkshopServerSeoBlock({ id }: Props) {
     .slice(0, 12);
 
   return (
-    <header className="border-b border-blue-200/70 bg-slate-50 px-4 py-5 dark:border-zinc-700 dark:bg-zinc-900/90 sm:px-6">
+    <header className="border-b border-blue-200/70 bg-slate-50/90 px-4 py-5 dark:border-zinc-700 dark:bg-zinc-950/40 sm:px-6">
       <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 sm:text-2xl">{workshop.name}</h1>
       <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
         {workshop.city}
@@ -48,7 +48,7 @@ export async function WorkshopServerSeoBlock({ id }: Props) {
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-500">Usługi</p>
           <ul className="mt-1 flex flex-wrap gap-1.5 text-xs text-zinc-800 dark:text-zinc-200">
             {services.map((name) => (
-              <li key={name} className="rounded-md bg-white/80 px-2 py-0.5 dark:bg-zinc-800/80">
+              <li key={name} className="rounded-md bg-white/80 px-2 py-0.5 dark:bg-zinc-900/60">
                 {name}
               </li>
             ))}

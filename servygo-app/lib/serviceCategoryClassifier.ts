@@ -313,7 +313,10 @@ function stripDiacritics(value: string) {
 
 /** Tekst do dopasowania słów kluczowych (małe litery, bez polskich znaków). */
 export function normalizeServiceTextForMatch(serviceName: string) {
-  return stripDiacritics(serviceName.trim().toLowerCase()).replace(/\s+/g, " ");
+  return stripDiacritics(serviceName.trim().toLowerCase())
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 type CategoryScore = {

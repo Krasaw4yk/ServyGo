@@ -55,6 +55,10 @@ export type AdminWorkshopListRow = {
   show_on_map?: boolean | null;
   services_summary?: string | null;
   opening_hours?: string | null;
+  /** MVP rozliczeń leadów (per warsztat) */
+  lead_test_mode?: boolean | null;
+  lead_fee_amount?: number | null;
+  lead_test_ended_at?: string | null;
   created_at: string | null;
   updated_at: string | null;
   service_count?: number;
@@ -114,6 +118,7 @@ export type AdminBookingListRow = {
   settlement_status: string | null;
   lead_fee_amount: number | null;
   test_mode: boolean | null;
+  dispute_reason?: string | null;
 };
 
 export type AdminWorkshopDetail = AdminWorkshopListRow & {
@@ -261,7 +266,7 @@ export async function listWorkshopsForAdmin(
   const { data, error } = await supabase
     .from("workshops")
     .select(
-      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, created_at, updated_at",
+      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, lead_test_mode, lead_fee_amount, lead_test_ended_at, created_at, updated_at",
     )
     .order("created_at", { ascending: false });
   if (error) throw new Error(formatSupabaseError(error));
@@ -288,7 +293,7 @@ export async function getWorkshopDetailForAdmin(
   const { data: workshop, error: wError } = await supabase
     .from("workshops")
     .select(
-      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, created_at, updated_at",
+      "id, owner_id, owner_user_id, name, slug, nip, phone, email, city, address, description, status, google_maps_url, latitude, longitude, rating, reviews_count, google_place_id, show_on_map, services_summary, opening_hours, lead_test_mode, lead_fee_amount, lead_test_ended_at, created_at, updated_at",
     )
     .eq("id", workshopId)
     .single();
@@ -341,7 +346,7 @@ export async function listBookingsWithLeadSettlementForAdmin(
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, workshop_id, workshop_name, service_name, status, created_at, booking_date, date, time, start_time, booking_lead_settlements ( settlement_status, lead_fee_amount, test_mode )",
+      "id, workshop_id, workshop_name, service_name, status, created_at, booking_date, date, time, start_time, booking_lead_settlements ( settlement_status, lead_fee_amount, test_mode, dispute_reason )",
     )
     .order("created_at", { ascending: false })
     .limit(400);
@@ -357,7 +362,7 @@ export async function listBookingsWithLeadSettlementForAdmin(
     date: string | null;
     time: string | null;
     start_time: string | null;
-    booking_lead_settlements?: { settlement_status: string; lead_fee_amount: number; test_mode: boolean } | null;
+    booking_lead_settlements?: { settlement_status: string; lead_fee_amount: number; test_mode: boolean; dispute_reason?: string | null } | null;
   };
   return ((data ?? []) as unknown as Raw[]).map((b) => {
     const emb = b.booking_lead_settlements;
@@ -376,8 +381,45 @@ export async function listBookingsWithLeadSettlementForAdmin(
       settlement_status: s?.settlement_status ?? null,
       lead_fee_amount: s?.lead_fee_amount ?? null,
       test_mode: s?.test_mode ?? null,
+      dispute_reason: (s as { dispute_reason?: string | null } | null)?.dispute_reason ?? null,
     };
   });
+}
+
+export async function markBookingSettlementDisputedAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+  bookingId: string,
+  reason: string,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do oznaczenia sporu.");
+  const trimmed = reason.trim();
+  if (!trimmed) throw new Error("Podaj powód sporu.");
+  const { error } = await supabase.rpc("mark_booking_settlement_disputed", {
+    p_booking_id: bookingId,
+    p_reason: trimmed,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function setWorkshopLeadBillingSettingsAsAdmin(
+  userId: string,
+  email: string | null | undefined,
+  workshopId: string,
+  leadTestMode: boolean,
+  leadFeeAmount?: number | null,
+): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do ustawień leadów.");
+  const { error } = await supabase.rpc("admin_set_workshop_lead_billing_settings", {
+    p_workshop_id: workshopId,
+    p_lead_test_mode: leadTestMode,
+    p_lead_fee_amount: leadFeeAmount ?? null,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
 }
 
 export async function listWorkshopMonthlyLeadMetricsForAdmin(

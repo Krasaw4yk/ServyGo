@@ -11,9 +11,10 @@ export function isPubliclyListedWorkshopStatus(status: string | null | undefined
   return s === "active";
 }
 
-/** Lista / mapa ofert: tylko aktywne i włączone przez admina na mapę ServyGo. */
+/** Lista ofert: wszystkie aktywne warsztaty (mapa ma własny filtr pinów). */
 export function isWorkshopVisibleOnOffersPage(status: string | null | undefined, showOnMap: boolean | null | undefined): boolean {
-  return isPubliclyListedWorkshopStatus(status) && showOnMap === true;
+  void showOnMap;
+  return isPubliclyListedWorkshopStatus(status);
 }
 
 const DEFAULT_BASE_SLOTS = [
@@ -451,7 +452,7 @@ const PUBLIC_WORKSHOP_SELECT = `
   workshop_services ( id, service_name, service_key, category, price_from, price_to, duration_minutes, required_roles, is_active )
 `;
 
-/** Lista warsztatów z Supabase do strony ofert (aktywne + włączone na mapę ServyGo przez admina). */
+/** Lista warsztatów z Supabase do strony ofert (aktywne). */
 export async function fetchPublicWorkshopsAsMock(): Promise<MockWorkshop[]> {
   if (!supabase) {
     return mockWorkshops.filter((w) => (w.showOnMap ?? true) !== false);

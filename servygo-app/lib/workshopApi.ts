@@ -16,6 +16,10 @@ export type Workshop = {
   google_maps_url?: string | null;
   services_summary?: string | null;
   opening_hours?: string | null;
+  /** MVP rozliczeń leadów (per warsztat) */
+  lead_test_mode?: boolean | null;
+  lead_fee_amount?: number | null;
+  lead_test_ended_at?: string | null;
   created_at: string | null;
   updated_at: string | null;
 };

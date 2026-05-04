@@ -51,11 +51,13 @@ import {
   listWorkshopLeadsForAdmin,
   listWorkshopMonthlyLeadMetricsForAdmin,
   listWorkshopsForAdmin,
+  markBookingSettlementDisputedAsAdmin,
   normalizeWorkshopStatus,
   replaceWorkshopServicesAsAdmin,
   resendWorkshopOwnerAccessEmail,
   seedTestWorkshopLeadAsAdmin,
   setWorkshopStatusAsAdmin,
+  setWorkshopLeadBillingSettingsAsAdmin,
   updateWorkshopAsAdmin,
   updateWorkshopLeadStatusAsAdmin,
 } from "@/lib/adminApi";
@@ -124,6 +126,64 @@ function formatMetricMonth(isoDate: string): string {
   const d = new Date(isoDate);
   if (Number.isNaN(d.getTime())) return isoDate;
   return d.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+}
+
+function downloadCsv(filename: string, csvText: string) {
+  const blob = new Blob([`\uFEFF${csvText}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function toCsvCell(value: unknown): string {
+  const s = value == null ? "" : String(value);
+  const escaped = s.replaceAll("\"", "\"\"");
+  return /[\",\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
+}
+
+function leadMetricsToCsv(rows: WorkshopMonthlyLeadMetricsRow[]): string {
+  const header = [
+    "workshop_id",
+    "workshop_name",
+    "month",
+    "total_bookings",
+    "confirmed_bookings",
+    "completed_bookings",
+    "no_show_bookings",
+    "cancelled_bookings",
+    "waived_test_leads",
+    "billable_leads",
+    "disputed_leads",
+    "not_billable_leads",
+    "test_value_pln",
+    "estimated_amount_pln",
+  ];
+  const lines = [header.join(",")];
+  for (const r of rows) {
+    const row = [
+      r.workshop_id,
+      r.workshop_name ?? "",
+      r.month,
+      r.total_bookings,
+      r.confirmed_bookings,
+      r.completed_bookings,
+      r.no_show_bookings,
+      r.cancelled_bookings,
+      r.waived_test_leads,
+      r.billable_leads,
+      r.disputed_leads,
+      r.not_billable_leads,
+      r.test_value_pln,
+      r.estimated_amount_pln,
+    ];
+    lines.push(row.map(toCsvCell).join(","));
+  }
+  return lines.join("\n");
 }
 
 type WorkshopLeadListFilter = "all" | "pending" | "approved" | "rejected" | "archived";
@@ -241,6 +301,10 @@ export default function AdminPage() {
   const [leadMetricsRows, setLeadMetricsRows] = useState<WorkshopMonthlyLeadMetricsRow[]>([]);
   const [leadMetricsLoading, setLeadMetricsLoading] = useState(false);
   const [leadMetricsError, setLeadMetricsError] = useState("");
+  const [disputeModalBookingId, setDisputeModalBookingId] = useState<string | null>(null);
+  const [disputeModalReason, setDisputeModalReason] = useState("");
+  const [disputeBusy, setDisputeBusy] = useState(false);
+  const [leadSettingsBusyWorkshopId, setLeadSettingsBusyWorkshopId] = useState<string | null>(null);
 
   const detailLead = useMemo(() => rows.find((r) => r.id === leadDetailId) ?? null, [rows, leadDetailId]);
 
@@ -382,6 +446,67 @@ export default function AdminPage() {
       setLeadMetricsLoading(false);
     }
   }, [currentUser]);
+
+  const openDisputeModal = useCallback((bookingId: string) => {
+    setDisputeModalBookingId(bookingId);
+    setDisputeModalReason("");
+  }, []);
+
+  const closeDisputeModal = useCallback(() => {
+    if (disputeBusy) return;
+    setDisputeModalBookingId(null);
+    setDisputeModalReason("");
+  }, [disputeBusy]);
+
+  const confirmDisputeModal = useCallback(async () => {
+    if (!currentUser || !disputeModalBookingId) return;
+    const reason = disputeModalReason.trim();
+    if (!reason) {
+      setSuccessMessage("");
+      setWorkshopsError("");
+      setLeadsError("");
+      return;
+    }
+    setDisputeBusy(true);
+    try {
+      await markBookingSettlementDisputedAsAdmin(currentUser.id, currentUser.email ?? null, disputeModalBookingId, reason);
+      setSuccessMessage("Spór został oznaczony.");
+      await refreshAdminBookings();
+      await refreshLeadMetrics();
+    } catch (err) {
+      setSuccessMessage("");
+      setWorkshopsError(err instanceof Error ? err.message : "Nie udało się oznaczyć sporu.");
+    } finally {
+      setDisputeBusy(false);
+      setDisputeModalBookingId(null);
+      setDisputeModalReason("");
+    }
+  }, [currentUser, disputeModalBookingId, disputeModalReason, refreshAdminBookings, refreshLeadMetrics]);
+
+  const endWorkshopLeadTest = useCallback(async (workshopId: string) => {
+    if (!currentUser) return;
+    const target = adminWorkshops.find((w) => w.id === workshopId);
+    const currentFee = target?.lead_fee_amount != null ? Number(target.lead_fee_amount) : 5;
+    const input = window.prompt("Zakończyć test dla warsztatu?\n\nOpcjonalnie wpisz nową stawkę leada (PLN), np. 5.00.\nZostaw puste, aby nie zmieniać stawki.", String(currentFee));
+    if (input == null) return;
+    const trimmed = input.trim();
+    const fee = trimmed ? Number(trimmed.replace(",", ".")) : null;
+    if (trimmed && !Number.isFinite(fee)) {
+      setWorkshopsError("Nieprawidłowa stawka.");
+      return;
+    }
+    setLeadSettingsBusyWorkshopId(workshopId);
+    setWorkshopsError("");
+    try {
+      await setWorkshopLeadBillingSettingsAsAdmin(currentUser.id, currentUser.email ?? null, workshopId, false, fee);
+      setSuccessMessage("Okres testowy zakończony dla warsztatu (dla nowych leadów).");
+      await refreshWorkshops();
+    } catch (err) {
+      setWorkshopsError(err instanceof Error ? err.message : "Nie udało się zakończyć testu.");
+    } finally {
+      setLeadSettingsBusyWorkshopId(null);
+    }
+  }, [adminWorkshops, currentUser, refreshWorkshops]);
 
   const refreshSidebarBadges = useCallback(async () => {
     if (!currentUser) return;
@@ -2170,12 +2295,13 @@ export default function AdminPage() {
                         <th className="px-3 py-2 text-left">Termin</th>
                         <th className="px-3 py-2 text-left">Status</th>
                         <th className="px-3 py-2 text-left">Rozliczenie leada</th>
+                        <th className="px-3 py-2 text-left">Akcje</th>
                       </tr>
                     </thead>
                     <tbody>
                       {adminBookingsRows.length === 0 && !adminBookingsLoading ? (
                         <tr>
-                          <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
+                          <td colSpan={7} className="px-3 py-8 text-center text-zinc-500">
                             Brak rezerwacji lub brak dostępu do widoku.
                           </td>
                         </tr>
@@ -2198,6 +2324,21 @@ export default function AdminPage() {
                                 {formatAdminLeadSettlementLine(b)}
                                 {b.test_mode === false ? " · produkcja (test_mode off)" : ""}
                               </span>
+                              {(b.dispute_reason ?? "").trim() ? (
+                                <span className={`mt-1 block whitespace-pre-wrap text-[10px] ${isDark ? "text-rose-200" : "text-rose-800"}`}>
+                                  Powód sporu: {b.dispute_reason}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2 align-top">
+                              <button
+                                type="button"
+                                disabled={!b.settlement_status || (b.settlement_status ?? "").toLowerCase() === "disputed"}
+                                onClick={() => openDisputeModal(b.id)}
+                                className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                              >
+                                Oznacz jako sporne
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -2212,18 +2353,34 @@ export default function AdminPage() {
               <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h2 className="text-lg font-semibold">Rozliczenie leadów MVP</h2>
-                  <button
-                    type="button"
-                    onClick={() => void refreshLeadMetrics()}
-                    disabled={leadMetricsLoading}
-                    className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
-                  >
-                    {leadMetricsLoading ? "Ładowanie…" : "Odśwież"}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const csv = leadMetricsToCsv(leadMetricsRows);
+                        downloadCsv(`servygo_leady_mvp_${new Date().toISOString().slice(0, 10)}.csv`, csv);
+                      }}
+                      disabled={leadMetricsRows.length === 0}
+                      className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                    >
+                      Eksport CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void refreshLeadMetrics()}
+                      disabled={leadMetricsLoading}
+                      className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                    >
+                      {leadMetricsLoading ? "Ładowanie…" : "Odśwież"}
+                    </button>
+                  </div>
                 </div>
                 <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                   Zliczenia wg miesiąca kalendarzowego (rezerwacje po dacie wizyt / utworzenia; leady po dacie zdarzenia rozliczenia). Kwoty szacunkowe — bez faktur.
                 </p>
+                <div className={`mt-3 rounded-xl border px-4 py-3 text-xs ${isDark ? "border-zinc-700 bg-zinc-950/40 text-zinc-300" : "border-blue-100 bg-blue-50/40 text-zinc-700"}`}>
+                  <span className="font-semibold">Wskazówki:</span> wartość testowa = ile leady byłyby warte poza testem; kwota do zapłaty = tylko leady <span className="font-mono">billable</span>.
+                </div>
                 {leadMetricsError ? (
                   <p className={`mt-3 text-sm ${isDark ? "text-orange-200" : "text-orange-800"}`}>{leadMetricsError}</p>
                 ) : null}
@@ -2241,14 +2398,16 @@ export default function AdminPage() {
                         <th className="px-2 py-2 text-right">Ledy test.</th>
                         <th className="px-2 py-2 text-right">Ledy płat.</th>
                         <th className="px-2 py-2 text-right">Spory</th>
+                        <th className="px-2 py-2 text-right">Niepłatne</th>
                         <th className="px-2 py-2 text-right">Wart. test PLN</th>
                         <th className="px-2 py-2 text-right">Do zapłaty PLN</th>
+                        <th className="px-2 py-2 text-left">Test warsztatu</th>
                       </tr>
                     </thead>
                     <tbody>
                       {leadMetricsRows.length === 0 && !leadMetricsLoading ? (
                         <tr>
-                          <td colSpan={12} className="px-3 py-8 text-center text-zinc-500">
+                          <td colSpan={14} className="px-3 py-8 text-center text-zinc-500">
                             Brak danych (uruchom migrację SQL lub odśwież po czasie).
                           </td>
                         </tr>
@@ -2267,8 +2426,34 @@ export default function AdminPage() {
                             <td className="px-2 py-2 text-right tabular-nums">{r.waived_test_leads}</td>
                             <td className="px-2 py-2 text-right tabular-nums">{r.billable_leads}</td>
                             <td className="px-2 py-2 text-right tabular-nums">{r.disputed_leads}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.not_billable_leads}</td>
                             <td className="px-2 py-2 text-right tabular-nums">{r.test_value_pln.toFixed(2)}</td>
                             <td className="px-2 py-2 text-right tabular-nums font-semibold">{r.estimated_amount_pln.toFixed(2)}</td>
+                            <td className="px-2 py-2 align-top">
+                              {(() => {
+                                const ws = adminWorkshops.find((w) => w.id === r.workshop_id);
+                                const inTest = ws?.lead_test_mode !== false;
+                                const fee = ws?.lead_fee_amount != null ? Number(ws.lead_fee_amount).toFixed(2) : "5.00";
+                                return (
+                                  <div className="min-w-[170px]">
+                                    <div className={`text-xs font-semibold ${inTest ? (isDark ? "text-sky-200" : "text-sky-900") : (isDark ? "text-emerald-200" : "text-emerald-900")}`}>
+                                      {inTest ? "test aktywny" : "test zakończony"}
+                                    </div>
+                                    <div className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Stawka: {fee} PLN</div>
+                                    {inTest ? (
+                                      <button
+                                        type="button"
+                                        disabled={leadSettingsBusyWorkshopId === r.workshop_id}
+                                        onClick={() => void endWorkshopLeadTest(r.workshop_id)}
+                                        className="mt-1 rounded-lg border border-orange-500/50 px-2 py-1 text-[11px] font-semibold disabled:opacity-40"
+                                      >
+                                        {leadSettingsBusyWorkshopId === r.workshop_id ? "…" : "Zakończ okres testowy"}
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                );
+                              })()}
+                            </td>
                           </tr>
                         ))
                       )}
@@ -2917,6 +3102,56 @@ export default function AdminPage() {
               </div>
                 </>
               )}
+            </div>
+          </div>
+        ) : null}
+
+        {disputeModalBookingId ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
+            <button
+              type="button"
+              className="absolute inset-0 bg-zinc-950/75 backdrop-blur-[2px]"
+              aria-label="Zamknij"
+              onClick={closeDisputeModal}
+            />
+            <div
+              role="dialog"
+              aria-modal="true"
+              className={`relative z-[1] w-full max-w-lg rounded-t-2xl border border-b-0 p-5 shadow-2xl sm:rounded-2xl sm:border-b sm:p-6 ${
+                isDark ? "border-rose-500/35 bg-zinc-900" : "border-rose-200 bg-white"
+              }`}
+            >
+              <h2 className="text-lg font-bold">Oznacz lead jako sporny</h2>
+              <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                Podaj powód sporu. Warsztat zobaczy status <span className="font-mono">disputed</span> i komunikat.
+              </p>
+              <textarea
+                rows={4}
+                value={disputeModalReason}
+                onChange={(e) => setDisputeModalReason(e.target.value)}
+                placeholder="Np. klient twierdzi, że anulował poza systemem / dane błędne / usługa się nie odbyła…"
+                className={`mt-4 w-full resize-y rounded-xl border px-3 py-2 text-sm ${
+                  isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300"
+                }`}
+              />
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeDisputeModal}
+                  disabled={disputeBusy}
+                  className={`rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void confirmDisputeModal()}
+                  disabled={disputeBusy || !disputeModalReason.trim()}
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {disputeBusy ? "Zapisywanie…" : "Oznacz spór"}
+                </button>
+              </div>
             </div>
           </div>
         ) : null}

@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { getCachedPublicWorkshopById } from "@/lib/cachedPublicWorkshop";
 import WorkshopDetailsClient from "./WorkshopDetailsClient";
 import { WorkshopJsonLd } from "./WorkshopJsonLd";
-import { WorkshopServerSeoBlock } from "./WorkshopServerSeoBlock";
 
 const SITE = "https://servygo.pl";
 
@@ -27,11 +26,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     .filter(Boolean)
     .slice(0, 8)
     .join(", ");
+  const locationLabel = [workshop.city, workshop.address]
+    .filter((item) => item && item !== "—")
+    .join(", ");
+  const normalizedLocation = locationLabel || workshop.city || "Polska";
   const rawDesc = workshop.description && workshop.description !== "—" ? workshop.description.trim() : "";
   const description = (
     rawDesc
-      ? `${rawDesc.slice(0, 100)}${rawDesc.length > 100 ? "…" : ""} ${serviceNames ? `Usługi: ${serviceNames}.` : ""}`
-      : `${workshop.name} — warsztat samochodowy w ${workshop.city}. ${serviceNames ? `Usługi: ${serviceNames}.` : ""} Porównaj ofertę i umów wizytę przez ServyGo.`
+      ? `${workshop.name} — ${normalizedLocation}. ${rawDesc.slice(0, 80)}${rawDesc.length > 80 ? "…" : ""} ${serviceNames ? `Usługi: ${serviceNames}.` : ""}`
+      : `${workshop.name} — warsztat samochodowy w ${normalizedLocation}. ${serviceNames ? `Usługi: ${serviceNames}.` : ""} Porównaj ofertę i umów wizytę przez ServyGo.`
   )
     .replace(/\s+/g, " ")
     .trim()
@@ -57,7 +60,6 @@ export default async function WorkshopPage({ params }: PageProps) {
   return (
     <>
       <WorkshopJsonLd id={id} />
-      <WorkshopServerSeoBlock id={id} />
       <WorkshopDetailsClient />
     </>
   );
