@@ -80,6 +80,40 @@ export type AdminWorkshopBookingRow = {
   time: string;
   status: string;
   created_at: string;
+  settlement_status?: string | null;
+  lead_fee_amount?: number | null;
+  test_mode?: boolean | null;
+};
+
+export type WorkshopMonthlyLeadMetricsRow = {
+  workshop_id: string;
+  workshop_name: string | null;
+  month: string;
+  total_bookings: number;
+  confirmed_bookings: number;
+  completed_bookings: number;
+  no_show_bookings: number;
+  cancelled_bookings: number;
+  billable_leads: number;
+  waived_test_leads: number;
+  disputed_leads: number;
+  not_billable_leads: number;
+  estimated_amount_pln: number;
+  test_value_pln: number;
+};
+
+export type AdminBookingListRow = {
+  id: string;
+  workshop_id: string;
+  workshop_name: string;
+  service_name: string;
+  status: string;
+  created_at: string;
+  booking_date: string | null;
+  time: string | null;
+  settlement_status: string | null;
+  lead_fee_amount: number | null;
+  test_mode: boolean | null;
 };
 
 export type AdminWorkshopDetail = AdminWorkshopListRow & {
@@ -266,19 +300,118 @@ export async function getWorkshopDetailForAdmin(
     .eq("workshop_id", workshopId)
     .order("created_at", { ascending: true });
   if (sError) throw new Error(formatSupabaseError(sError));
-  const { data: bookings, error: bError } = await supabase
+  const { data: bookingsRaw, error: bError } = await supabase
     .from("bookings")
-    .select("id, user_id, workshop_id, workshop_name, service_name, price, duration_minutes, date, time, status, created_at")
+    .select(
+      "id, user_id, workshop_id, workshop_name, service_name, price, duration_minutes, date, time, status, created_at, booking_lead_settlements ( settlement_status, lead_fee_amount, test_mode )",
+    )
     .eq("workshop_id", workshopId)
     .order("created_at", { ascending: false })
     .limit(200);
   if (bError) throw new Error(formatSupabaseError(bError));
+  type BRow = Omit<AdminWorkshopBookingRow, "settlement_status" | "lead_fee_amount" | "test_mode"> & {
+    booking_lead_settlements?: { settlement_status: string; lead_fee_amount: number; test_mode: boolean } | null;
+  };
+  const bookings = ((bookingsRaw ?? []) as unknown as BRow[]).map((b) => {
+    const emb = b.booking_lead_settlements;
+    const s = emb && !Array.isArray(emb) ? emb : Array.isArray(emb) ? emb[0] : null;
+    const { booking_lead_settlements: _x, ...rest } = b;
+    return {
+      ...rest,
+      settlement_status: s?.settlement_status ?? null,
+      lead_fee_amount: s?.lead_fee_amount ?? null,
+      test_mode: s?.test_mode ?? null,
+    } satisfies AdminWorkshopBookingRow;
+  });
   return {
     ...base,
     service_count: (services as AdminWorkshopServiceRow[] | null)?.length ?? 0,
     services: (services as AdminWorkshopServiceRow[] | null) ?? [],
-    bookings: (bookings as AdminWorkshopBookingRow[] | null) ?? [],
+    bookings,
   };
+}
+
+export async function listBookingsWithLeadSettlementForAdmin(
+  userId: string,
+  email: string | null | undefined,
+): Promise<AdminBookingListRow[]> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do listy rezerwacji.");
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(
+      "id, workshop_id, workshop_name, service_name, status, created_at, booking_date, date, time, start_time, booking_lead_settlements ( settlement_status, lead_fee_amount, test_mode )",
+    )
+    .order("created_at", { ascending: false })
+    .limit(400);
+  if (error) throw new Error(formatSupabaseError(error));
+  type Raw = {
+    id: string;
+    workshop_id: string;
+    workshop_name: string;
+    service_name: string;
+    status: string;
+    created_at: string;
+    booking_date: string | null;
+    date: string | null;
+    time: string | null;
+    start_time: string | null;
+    booking_lead_settlements?: { settlement_status: string; lead_fee_amount: number; test_mode: boolean } | null;
+  };
+  return ((data ?? []) as unknown as Raw[]).map((b) => {
+    const emb = b.booking_lead_settlements;
+    const s = emb && !Array.isArray(emb) ? emb : Array.isArray(emb) ? emb[0] : null;
+    const dateLine = (b.booking_date ?? b.date ?? "").trim();
+    const timeLine = (b.start_time ? b.start_time.slice(0, 5) : null) ?? (b.time ? b.time.slice(0, 5) : null);
+    return {
+      id: b.id,
+      workshop_id: b.workshop_id,
+      workshop_name: b.workshop_name,
+      service_name: b.service_name,
+      status: b.status,
+      created_at: b.created_at,
+      booking_date: dateLine || null,
+      time: timeLine,
+      settlement_status: s?.settlement_status ?? null,
+      lead_fee_amount: s?.lead_fee_amount ?? null,
+      test_mode: s?.test_mode ?? null,
+    };
+  });
+}
+
+export async function listWorkshopMonthlyLeadMetricsForAdmin(
+  userId: string,
+  email: string | null | undefined,
+): Promise<WorkshopMonthlyLeadMetricsRow[]> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const hasAccess = await isAdmin(userId, email);
+  if (!hasAccess) throw new Error("Brak dostępu do raportu leadów.");
+  const { data, error } = await supabase.from("workshop_monthly_lead_metrics").select("*");
+  if (error) throw new Error(formatSupabaseError(error));
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const mapped = rows.map((r) => ({
+    workshop_id: String(r.workshop_id ?? ""),
+    workshop_name: (r.workshop_name as string | null) ?? null,
+    month: typeof r.month === "string" ? r.month : String(r.month ?? ""),
+    total_bookings: Number(r.total_bookings ?? 0),
+    confirmed_bookings: Number(r.confirmed_bookings ?? 0),
+    completed_bookings: Number(r.completed_bookings ?? 0),
+    no_show_bookings: Number(r.no_show_bookings ?? 0),
+    cancelled_bookings: Number(r.cancelled_bookings ?? 0),
+    billable_leads: Number(r.billable_leads ?? 0),
+    waived_test_leads: Number(r.waived_test_leads ?? 0),
+    disputed_leads: Number(r.disputed_leads ?? 0),
+    not_billable_leads: Number(r.not_billable_leads ?? 0),
+    estimated_amount_pln: Number(r.estimated_amount_pln ?? 0),
+    test_value_pln: Number(r.test_value_pln ?? 0),
+  }));
+  mapped.sort((a, b) => {
+    const byMonth = b.month.localeCompare(a.month);
+    if (byMonth !== 0) return byMonth;
+    return (a.workshop_name ?? "").localeCompare(b.workshop_name ?? "", "pl");
+  });
+  return mapped;
 }
 
 export async function updateWorkshopAsAdmin(

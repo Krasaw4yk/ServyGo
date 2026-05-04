@@ -400,10 +400,18 @@ export default function UstawieniaPage() {
               <h3 className="text-lg font-semibold">Potrzebujesz pomocy?</h3>
               <p className="mt-1 text-sm text-blue-50">Skontaktuj się z naszym zespołem supportu — odpowiadamy zwykle w ciągu 24h.</p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Link href="/?info=faq" className="rounded-xl bg-white/20 px-4 py-2 text-sm font-semibold backdrop-blur hover:bg-white/30">
+                <Link
+                  href="/#kontakt"
+                  className="rounded-xl bg-white/20 px-4 py-2 text-sm font-semibold backdrop-blur hover:bg-white/30"
+                  title="Strona główna — sekcja Pomoc; FAQ otwierasz przyciskiem na stronie"
+                >
                   FAQ
                 </Link>
-                <Link href="/?info=contact" className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                <Link
+                  href="/#kontakt"
+                  className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                  title="Strona główna — sekcja Pomoc; kontakt przyciskiem „Skontaktuj się z nami”"
+                >
                   Kontakt
                 </Link>
                 <Link href="/zglos-problem" className="rounded-xl bg-white/90 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-white">

@@ -13,7 +13,7 @@ import WorkshopServicesPricingSection from "@/components/workshop/WorkshopServic
 import InternalInbox from "@/components/InternalInbox";
 import { getWorkshopDetailForAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
-import { useBookingsRealtimeSync } from "@/lib/useServyGoRealtime";
+import { useBookingsRealtimeSync, useWorkshopLeadSettlementRealtime } from "@/lib/useServyGoRealtime";
 import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
 import { runExpirePendingBookingsWorkshopTimeout } from "@/lib/bookingWorkshopResponseExpiry";
 import { notifyClientBookingQuoteSent, quoteDecisionLabel } from "@/lib/bookingQuoteNotifications";
@@ -43,6 +43,8 @@ import {
   getOwnedWorkshopForUser,
   googleReviewsHintUrl,
   listBookingsForWorkshopOwner,
+  listRecentLeadSettlementsForOwner,
+  listWorkshopMonthlyLeadMetricsForOwner,
   listAvailabilityExceptionsForOwner,
   listWorkshopServiceConfigsForOwner,
   listWorkshopServiceVehiclePricesForOwner,
@@ -54,15 +56,18 @@ import {
   type WorkshopOwnerBookingRow,
   type WorkshopEmployeeRow,
   type WorkshopOwnerProfilePatch,
+  type WorkshopOwnerLeadSettlementListRow,
+  type WorkshopOwnerMonthlyLeadMetricsRow,
   listWorkshopEmployeesForOwner,
   upsertWorkshopEmployeeForOwner,
   upsertAvailabilityExceptionForOwner,
   upsertWorkshopServiceConfigsForOwner,
   upsertWorkshopServiceVehiclePricesForOwner,
   cancelBookingAsWorkshopOwner,
+  markBookingNoShowAsWorkshopOwner,
+  markBookingVisitCompletedAsWorkshopOwner,
   sendBookingQuoteAsWorkshopOwner,
   proposeBookingRescheduleAsWorkshopOwner,
-  updateBookingStatusAsWorkshopOwner,
   updateOwnedWorkshopProfile,
 } from "@/lib/workshopOwnerApi";
 import { slugifyServiceKey } from "@/lib/serviceCategoryClassifier";
@@ -70,6 +75,7 @@ import { slugifyServiceKey } from "@/lib/serviceCategoryClassifier";
 const WORKSHOP_SECTIONS = [
   "Dashboard",
   "Rezerwacje",
+  "Leady i rozliczenia",
   "Moje wiadomości",
   "Kalendarz / dostępność",
   "Usługi i ceny",
@@ -280,6 +286,7 @@ function formatBookingStatus(status: string) {
   if (x === "confirmed") return "Potwierdzona";
   if (x === "cancelled" || x === "cancelled_by_client" || x === "cancelled_by_workshop" || x === "cancelled_by_system") return "Anulowana";
   if (x === "completed" || x === "done") return "Zakończona";
+  if (x === "no_show") return "Nie przyjechał (no-show)";
   if (x === "rejected") return "Odrzucona";
   return status;
 }
@@ -291,6 +298,7 @@ function statusPillClass(status: string, isDark: boolean) {
   if (x === "awaiting_reschedule") return isDark ? "bg-purple-500/20 text-purple-200" : "bg-purple-100 text-purple-700";
   if (x === "confirmed" || x === "quote_accepted") return isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700";
   if (x === "completed" || x === "done") return isDark ? "bg-blue-500/20 text-blue-200" : "bg-blue-100 text-blue-700";
+  if (x === "no_show") return isDark ? "bg-slate-500/25 text-slate-200" : "bg-slate-200 text-slate-800";
   if (
     x === "rejected" ||
     x === "quote_rejected" ||
@@ -307,6 +315,73 @@ function statusPillClass(status: string, isDark: boolean) {
 function isBookingCancelledStatus(status: string) {
   const x = status.toLowerCase();
   return x === "cancelled" || x.startsWith("cancelled_by");
+}
+
+function addMinutesToTimeString(t: string, mins: number): string {
+  const [hRaw, mRaw] = t.split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return t;
+  const total = h * 60 + m + mins;
+  const th = Math.floor(total / 60) % 24;
+  const tm = ((total % 60) + 60) % 60;
+  return `${String(th).padStart(2, "0")}:${String(tm).padStart(2, "0")}`;
+}
+
+/** Minimalna heurystyka: termin wizyty minął (do akcji no-show). */
+function isBookingVisitWindowEnded(b: WorkshopOwnerBookingRow): boolean {
+  const d = (b.booking_date ?? b.date ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const endH =
+    b.end_time && b.end_time.length >= 5
+      ? b.end_time.slice(0, 5)
+      : null;
+  const startH = b.start_time?.slice(0, 5) ?? b.time?.slice(0, 5) ?? null;
+  const dur = Number(b.duration_minutes) || 0;
+  const end = endH ?? (startH && dur > 0 ? addMinutesToTimeString(startH, dur) : startH);
+  if (!end) {
+    const day = new Date(`${d}T12:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    day.setHours(0, 0, 0, 0);
+    return day.getTime() < today.getTime();
+  }
+  const endMs = new Date(`${d}T${end}:00`).getTime();
+  return Number.isFinite(endMs) && endMs < Date.now();
+}
+
+function leadSettlementHint(b: WorkshopOwnerBookingRow): string | null {
+  const st = (b.status ?? "").toLowerCase();
+  if (st !== "completed" && st !== "done") return null;
+  const fee = Number(b.lead_fee_amount ?? 5);
+  const amount = Number.isFinite(fee) ? fee.toFixed(0) : "5";
+  const cur = (b.settlement_currency ?? "PLN").trim() || "PLN";
+  const test = b.test_mode !== false;
+  const s = (b.settlement_status ?? "").toLowerCase();
+  if (s === "waived_test" || (test && s !== "billable")) {
+    return `Lead testowy — ${amount} ${cur} wartości, bez opłaty w okresie testowym`;
+  }
+  if (s === "billable") {
+    return `Lead rozliczalny — ${amount} ${cur}`;
+  }
+  return null;
+}
+
+function formatWorkshopLeadMonth(isoDate: string): string {
+  const d = new Date(isoDate);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  return d.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+}
+
+function workshopLeadBillingLabel(settlementStatus: string): string {
+  const s = settlementStatus.toLowerCase();
+  if (s === "waived_test") return "testowy — bez opłaty";
+  if (s === "billable") return "płatny";
+  if (s === "not_billable") return "niepłatny";
+  if (s === "disputed") return "sporny";
+  if (s === "invoiced") return "w rozliczeniu";
+  if (s === "pending") return "oczekuje";
+  return settlementStatus.trim() || "—";
 }
 
 function hasWorkshopPanelAccess(workshop: Workshop, userId: string) {
@@ -388,6 +463,8 @@ function WorkshopPanelPageContent() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [activeSection, setActiveSection] = useState<WorkshopSection>("Dashboard");
+  const activeSectionRef = useRef<WorkshopSection>(activeSection);
+  activeSectionRef.current = activeSection;
   const [selectedBooking, setSelectedBooking] = useState<WorkshopOwnerBookingRow | null>(null);
   const [opening, setOpening] = useState<WorkshopOpeningSchedule>(defaultOpeningSchedule);
   const [calendarMonthCursor, setCalendarMonthCursor] = useState(() => {
@@ -442,6 +519,10 @@ function WorkshopPanelPageContent() {
   const [rescheduleModalReason, setRescheduleModalReason] = useState("");
   const [servygoReviewsPanel, setServygoReviewsPanel] = useState<WorkshopServygoReviewRow[]>([]);
   const [servygoReviewReportBusy, setServygoReviewReportBusy] = useState(false);
+  const [leadMetricsRows, setLeadMetricsRows] = useState<WorkshopOwnerMonthlyLeadMetricsRow[]>([]);
+  const [leadRecentRows, setLeadRecentRows] = useState<WorkshopOwnerLeadSettlementListRow[]>([]);
+  const [leadSettlementLoading, setLeadSettlementLoading] = useState(false);
+  const [leadSettlementError, setLeadSettlementError] = useState("");
 
   const isDark = mounted ? theme === "dark" : false;
   const formInputClassName = `rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 bg-white text-black" : "border-zinc-300 bg-white text-black"}`;
@@ -456,6 +537,12 @@ function WorkshopPanelPageContent() {
     }
     return map;
   }, [availabilityExceptions]);
+
+  const leadLatestMonthSnapshot = useMemo(() => leadMetricsRows[0] ?? null, [leadMetricsRows]);
+  const showLeadTestModeInfoBanner = useMemo(
+    () => leadMetricsRows.some((m) => m.waived_test_leads > 0),
+    [leadMetricsRows],
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -540,6 +627,28 @@ function WorkshopPanelPageContent() {
     };
   }, [workshop?.id, activeSection]);
 
+  const loadLeadSettlementSection = useCallback(async (workshopId: string) => {
+    setLeadSettlementLoading(true);
+    setLeadSettlementError("");
+    try {
+      const [metrics, recent] = await Promise.all([
+        listWorkshopMonthlyLeadMetricsForOwner(workshopId),
+        listRecentLeadSettlementsForOwner(workshopId, 50),
+      ]);
+      setLeadMetricsRows(metrics);
+      setLeadRecentRows(recent);
+    } catch (e) {
+      setLeadSettlementError(e instanceof Error ? e.message : "Nie udało się wczytać leadów.");
+      setLeadMetricsRows([]);
+      setLeadRecentRows([]);
+    } finally {
+      setLeadSettlementLoading(false);
+    }
+  }, []);
+
+  const loadLeadSettlementSectionRef = useRef(loadLeadSettlementSection);
+  loadLeadSettlementSectionRef.current = loadLeadSettlementSection;
+
   const loadAll = useCallback(async (ws: Workshop) => {
     setError("");
     try {
@@ -623,6 +732,9 @@ function WorkshopPanelPageContent() {
       google_maps_url: ws.google_maps_url ?? "",
       opening_hours: ws.opening_hours ?? "",
     });
+    if (activeSectionRef.current === "Leady i rozliczenia") {
+      void loadLeadSettlementSectionRef.current(ws.id);
+    }
   }, [isAdminPreview]);
 
   const loadAllRef = useRef(loadAll);
@@ -638,6 +750,23 @@ function WorkshopPanelPageContent() {
       if (w) void loadAllRef.current(w);
     },
   });
+
+  useWorkshopLeadSettlementRealtime({
+    enabled: Boolean(
+      !accessDenied && isSupabaseConfigured && workshop?.id && activeSection === "Leady i rozliczenia",
+    ),
+    workshopId: workshop?.id ?? null,
+    onRefresh: () => {
+      if (activeSectionRef.current !== "Leady i rozliczenia") return;
+      const w = workshopRealtimeRef.current;
+      if (w) void loadLeadSettlementSectionRef.current(w.id);
+    },
+  });
+
+  useEffect(() => {
+    if (activeSection !== "Leady i rozliczenia" || !workshop?.id) return;
+    void loadLeadSettlementSection(workshop.id);
+  }, [activeSection, workshop?.id, loadLeadSettlementSection]);
 
   const respondClientRescheduleProposal = useCallback(
     async (b: WorkshopOwnerBookingRow, accept: boolean) => {
@@ -1319,37 +1448,40 @@ function WorkshopPanelPageContent() {
   }
 
   async function setBookingStatus(id: string, status: "completed") {
-    if (readOnly) return;
-    const booking = bookings.find((item) => item.id === id);
+    if (readOnly || !workshop) return;
+    if (status !== "completed") return;
     setBookingActionId(id);
     setError("");
     try {
-      await updateBookingStatusAsWorkshopOwner(id, status);
-      setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)));
-      if (booking && workshop) {
-        const statusLabel = "Zakończona";
-        await sendSystemMessage({
-          recipientId: booking.user_id,
-          recipientRole: "client",
-          subject: `Aktualizacja rezerwacji: ${booking.service_name}`,
-          body: [
-            `Warsztat: ${workshop.name}`,
-            `Usługa: ${booking.service_name}`,
-            `Termin: ${booking.date} ${booking.start_time?.slice(0, 5) ?? booking.time}`,
-            `Status: ${statusLabel}`,
-            "",
-            "Wizyta została oznaczona jako zakończona.",
-          ].join("\n"),
-          relatedBookingId: booking.id,
-          relatedWorkshopId: workshop.id,
-        });
-      }
-      setSuccess("Status rezerwacji został zaktualizowany.");
+      await markBookingVisitCompletedAsWorkshopOwner(id);
+      await loadAll(workshop);
+      setSuccess("Wizyta oznaczona jako zakończona (rozliczenie leada zaktualizowane).");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Błąd aktualizacji rezerwacji.");
     } finally {
       setBookingActionId(null);
     }
+  }
+
+  async function markNoShowForBooking(id: string) {
+    if (readOnly || !workshop) return;
+    setBookingActionId(id);
+    setError("");
+    try {
+      await markBookingNoShowAsWorkshopOwner(id, null);
+      await loadAll(workshop);
+      setSuccess("Oznaczono no-show (lead nie rozliczalny).");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Nie udało się oznaczyć no-show.");
+    } finally {
+      setBookingActionId(null);
+    }
+  }
+
+  function openReservationFromLeads(bookingId: string) {
+    setActiveSection("Rezerwacje");
+    const row = bookings.find((x) => x.id === bookingId);
+    if (row) setSelectedBooking(row);
   }
 
   async function sendQuoteForBooking(id: string) {
@@ -2185,6 +2317,8 @@ function WorkshopPanelPageContent() {
                               const crBusy = clientRescheduleBusyId === b.id;
                               const st = b.status.toLowerCase();
                               const cancelled = isBookingCancelledStatus(b.status);
+                              const canNoShow = st === "confirmed" && isBookingVisitWindowEnded(b) && !cancelled;
+                              const leadHint = leadSettlementHint(b);
                               const clientPending =
                                 (b.reschedule_status ?? "").trim().toLowerCase() === "pending_workshop_decision" &&
                                 (b.proposed_by ?? "").trim().toLowerCase() === "client";
@@ -2225,6 +2359,15 @@ function WorkshopPanelPageContent() {
                                         Wycena: {Number(b.final_price).toFixed(2)} zł · {quoteDecisionLabel(b.quote_status, b.status)}
                                       </div>
                                     ) : null}
+                                    {leadHint ? (
+                                      <div
+                                        className={`mt-1 max-w-[14rem] text-[10px] font-medium leading-snug ${
+                                          isDark ? "text-emerald-300/95" : "text-emerald-800"
+                                        }`}
+                                      >
+                                        {leadHint}
+                                      </div>
+                                    ) : null}
                                   </td>
                                   <td className="px-3 py-2 align-top">
                                     <div className="flex min-w-[200px] max-w-[220px] flex-col gap-1">
@@ -2236,7 +2379,7 @@ function WorkshopPanelPageContent() {
                                         onChange={(e) => setQuoteDraftByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
                                         placeholder="Cena"
                                         className="w-full rounded-lg border px-2 py-1 text-xs text-black"
-                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || cancelled}
+                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || st === "no_show" || cancelled}
                                       />
                                       <textarea
                                         rows={2}
@@ -2244,7 +2387,7 @@ function WorkshopPanelPageContent() {
                                         onChange={(e) => setQuoteNoteByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
                                         placeholder="Notatka do wyceny (opcjonalnie)"
                                         className="w-full resize-y rounded-lg border px-2 py-1 text-xs text-black"
-                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || cancelled}
+                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || st === "no_show" || cancelled}
                                       />
                                       <button
                                         type="button"
@@ -2256,7 +2399,7 @@ function WorkshopPanelPageContent() {
                                       </button>
                                       <button
                                         type="button"
-                                        disabled={readOnly || busy || st === "completed" || st === "done" || cancelled}
+                                        disabled={readOnly || busy || st === "completed" || st === "done" || st === "no_show" || cancelled}
                                         onClick={() => openCancelBookingModal(b)}
                                         className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
                                       >
@@ -2285,15 +2428,259 @@ function WorkshopPanelPageContent() {
                                       <button
                                         type="button"
                                         disabled={
-                                          readOnly || busy || st === "completed" || st === "done" || cancelled || st === "awaiting_reschedule" || clientPending
+                                          readOnly ||
+                                          busy ||
+                                          st === "completed" ||
+                                          st === "done" ||
+                                          st === "no_show" ||
+                                          cancelled ||
+                                          st === "awaiting_reschedule" ||
+                                          clientPending
                                         }
                                         onClick={() => openRescheduleModal(b)}
                                         className="rounded-lg border border-purple-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
                                       >
                                         Zmień termin
                                       </button>
-                                      <button type="button" disabled={readOnly || busy || st !== "confirmed"} onClick={() => void setBookingStatus(b.id, "completed")} className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Oznacz jako zakończone</button>
+                                      <button
+                                        type="button"
+                                        disabled={readOnly || busy || st !== "confirmed"}
+                                        onClick={() => void setBookingStatus(b.id, "completed")}
+                                        className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                      >
+                                        Oznacz jako zakończone
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={readOnly || busy || !canNoShow}
+                                        title={canNoShow ? "Oznacz brak stawienia się klienta po zakończeniu terminu" : "Dostępne po zakończeniu zaplanowanego terminu (potwierdzona rezerwacja)"}
+                                        onClick={() => void markNoShowForBooking(b.id)}
+                                        className="rounded-lg border border-amber-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                      >
+                                        Klient nie przyjechał
+                                      </button>
                                       <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Zobacz</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                ) : null}
+
+                {activeSection === "Leady i rozliczenia" && workshop ? (
+                  <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg font-semibold">Leady i rozliczenia</h2>
+                        <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                          Podsumowanie miesięczne i ostatnie rozliczenia leadów dla Twojego warsztatu (tylko Twoje dane).
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={leadSettlementLoading}
+                        onClick={() => void loadLeadSettlementSection(workshop.id)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                      >
+                        {leadSettlementLoading ? "Ładowanie…" : "Odśwież"}
+                      </button>
+                    </div>
+
+                    {leadSettlementError ? (
+                      <p className={`mt-3 text-sm ${isDark ? "text-orange-200" : "text-orange-800"}`}>{leadSettlementError}</p>
+                    ) : null}
+
+                    {showLeadTestModeInfoBanner ? (
+                      <div
+                        className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+                          isDark ? "border-sky-500/35 bg-sky-950/40 text-sky-100" : "border-sky-200 bg-sky-50 text-sky-950"
+                        }`}
+                      >
+                        Okres testowy: wartościowe leady są liczone informacyjnie, ale nie są jeszcze płatne.
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                      {(
+                        [
+                          { label: "Rezerwacje", value: leadLatestMonthSnapshot?.total_bookings ?? 0 },
+                          { label: "Potwierdzone", value: leadLatestMonthSnapshot?.confirmed_bookings ?? 0 },
+                          { label: "Zakończone", value: leadLatestMonthSnapshot?.completed_bookings ?? 0 },
+                          { label: "No-show", value: leadLatestMonthSnapshot?.no_show_bookings ?? 0 },
+                          { label: "Ledy test.", value: leadLatestMonthSnapshot?.waived_test_leads ?? 0 },
+                          { label: "Ledy płatne", value: leadLatestMonthSnapshot?.billable_leads ?? 0 },
+                        ] as const
+                      ).map((c) => (
+                        <div
+                          key={c.label}
+                          className={`rounded-xl border px-3 py-2.5 ${isDark ? "border-zinc-600 bg-zinc-950/50" : "border-blue-100 bg-blue-50/50"}`}
+                        >
+                          <p className={`text-[11px] font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                            {c.label}
+                          </p>
+                          <p className="mt-1 text-xl font-bold tabular-nums">{c.value}</p>
+                          <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                            {leadLatestMonthSnapshot ? formatWorkshopLeadMonth(leadLatestMonthSnapshot.month) : "—"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-6 min-w-0 overflow-x-auto">
+                      <h3 className="text-base font-semibold">Podsumowanie miesięczne</h3>
+                      <table className="mt-2 w-full min-w-[920px] table-auto text-sm">
+                        <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
+                          <tr>
+                            <th className="px-2 py-2 text-left">Miesiąc</th>
+                            <th className="px-2 py-2 text-right">Wszystkie</th>
+                            <th className="px-2 py-2 text-right">Potw.</th>
+                            <th className="px-2 py-2 text-right">Zakończ.</th>
+                            <th className="px-2 py-2 text-right">No-show</th>
+                            <th className="px-2 py-2 text-right">Anul.</th>
+                            <th className="px-2 py-2 text-right">Test</th>
+                            <th className="px-2 py-2 text-right">Płatne</th>
+                            <th className="px-2 py-2 text-right">Spory</th>
+                            <th className="px-2 py-2 text-right">Wart. test PLN</th>
+                            <th className="px-2 py-2 text-right">Do zapłaty PLN</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leadMetricsRows.length === 0 && !leadSettlementLoading ? (
+                            <tr>
+                              <td colSpan={11} className="px-2 py-6 text-center text-zinc-500">
+                                Brak danych agregacji (po migracji leadów pojawią się tutaj).
+                              </td>
+                            </tr>
+                          ) : (
+                            leadMetricsRows.map((r) => (
+                              <tr key={`${r.workshop_id}-${r.month}`} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                                <td className="whitespace-nowrap px-2 py-2">{formatWorkshopLeadMonth(r.month)}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.total_bookings}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.confirmed_bookings}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.completed_bookings}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.no_show_bookings}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.cancelled_bookings}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.waived_test_leads}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.billable_leads}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.disputed_leads}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{r.test_value_pln.toFixed(2)}</td>
+                                <td className="px-2 py-2 text-right tabular-nums font-semibold">{r.estimated_amount_pln.toFixed(2)}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div
+                      className={`mt-6 rounded-xl border px-4 py-3 text-xs leading-relaxed ${isDark ? "border-zinc-600 bg-zinc-950/40 text-zinc-300" : "border-blue-100 bg-slate-50/90 text-zinc-700"}`}
+                    >
+                      <p className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">Statusy rozliczenia leada</p>
+                      <ul className="mt-2 list-inside list-disc space-y-1">
+                        <li>
+                          <span className="font-medium">pending</span> — jeszcze nie wiadomo, czy lead będzie płatny
+                        </li>
+                        <li>
+                          <span className="font-medium">waived_test</span> — wartościowy lead testowy, bez opłaty
+                        </li>
+                        <li>
+                          <span className="font-medium">billable</span> — lead płatny
+                        </li>
+                        <li>
+                          <span className="font-medium">not_billable</span> — lead niepłatny
+                        </li>
+                        <li>
+                          <span className="font-medium">disputed</span> — lead sporny
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="mt-6 min-w-0 overflow-x-auto">
+                      <h3 className="text-base font-semibold">Ostatnie leady</h3>
+                      <table className="mt-2 w-full min-w-[1080px] table-auto text-sm">
+                        <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
+                          <tr>
+                            <th className="px-2 py-2 text-left">Data wizyty</th>
+                            <th className="px-2 py-2 text-left">Usługa</th>
+                            <th className="px-2 py-2 text-left">Klient</th>
+                            <th className="px-2 py-2 text-left">Status rezerwacji</th>
+                            <th className="px-2 py-2 text-left">Status leada</th>
+                            <th className="px-2 py-2 text-right">Kwota</th>
+                            <th className="px-2 py-2 text-center">Test</th>
+                            <th className="px-2 py-2 text-left">Rozliczenie</th>
+                            <th className="px-2 py-2 text-left">Akcje</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leadRecentRows.length === 0 && !leadSettlementLoading ? (
+                            <tr>
+                              <td colSpan={9} className="px-2 py-6 text-center text-zinc-500">
+                                Brak wpisów rozliczenia.
+                              </td>
+                            </tr>
+                          ) : (
+                            leadRecentRows.map((row) => {
+                              const bookingRow = bookings.find((x) => x.id === row.booking_id);
+                              const st = (bookingRow?.status ?? row.booking_status ?? "").toLowerCase();
+                              const cancelled = bookingRow ? isBookingCancelledStatus(bookingRow.status) : false;
+                              const canNoShow =
+                                Boolean(bookingRow) && st === "confirmed" && isBookingVisitWindowEnded(bookingRow!) && !cancelled;
+                              const canComplete = Boolean(bookingRow) && st === "confirmed";
+                              const busyLead = bookingRow ? bookingActionId === bookingRow.id : false;
+                              return (
+                                <tr key={row.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                                  <td className="whitespace-nowrap px-2 py-2">
+                                    {(row.booking_date ?? "—") + (row.start_time ? ` · ${row.start_time}` : "")}
+                                  </td>
+                                  <td className="max-w-[200px] truncate px-2 py-2">{row.service_name}</td>
+                                  <td className="max-w-[140px] truncate px-2 py-2">{bookingRow?.clientLabel ?? row.client_display}</td>
+                                  <td className="px-2 py-2 font-mono text-xs">{bookingRow?.status ?? row.booking_status}</td>
+                                  <td className="px-2 py-2 font-mono text-xs">{row.settlement_status}</td>
+                                  <td className="px-2 py-2 text-right tabular-nums">
+                                    {Number(row.lead_fee_amount).toFixed(2)} {row.currency}
+                                  </td>
+                                  <td className="px-2 py-2 text-center">{row.test_mode ? "tak" : "nie"}</td>
+                                  <td className={`max-w-[220px] px-2 py-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                    {workshopLeadBillingLabel(row.settlement_status)}
+                                  </td>
+                                  <td className="px-2 py-2 align-top">
+                                    <div className="flex min-w-[200px] flex-col gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => openReservationFromLeads(row.booking_id)}
+                                        className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold"
+                                      >
+                                        Zobacz rezerwację
+                                      </button>
+                                      {bookingRow ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            disabled={readOnly || busyLead || !canComplete}
+                                            onClick={() => void setBookingStatus(bookingRow.id, "completed")}
+                                            className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                          >
+                                            Oznacz jako zakończone
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={readOnly || busyLead || !canNoShow}
+                                            onClick={() => void markNoShowForBooking(bookingRow.id)}
+                                            className="rounded-lg border border-amber-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                          >
+                                            Klient nie przyjechał
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                                          Akcje dostępne po zsynchronizowaniu listy rezerwacji — przejdź do „Rezerwacje” lub odśwież.
+                                        </p>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>

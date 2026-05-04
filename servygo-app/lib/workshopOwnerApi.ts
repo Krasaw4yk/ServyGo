@@ -53,6 +53,11 @@ export type WorkshopOwnerBookingRow = {
   clientEmail: string;
   clientPhone: string;
   carLabel: string;
+  /** Z public.booking_lead_settlements (1:1) */
+  settlement_status?: string | null;
+  lead_fee_amount?: number | null;
+  test_mode?: boolean | null;
+  settlement_currency?: string | null;
 };
 
 export type WorkshopEmployeeRow = {
@@ -270,16 +275,20 @@ export async function listBookingsForWorkshopOwner(
         "client_email",
         "client_phone",
         "employee_id",
+        "booking_lead_settlements ( settlement_status, lead_fee_amount, test_mode, currency )",
       ].join(", "),
     )
     .eq("workshop_id", workshopId)
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw new Error(formatSupabaseError(error));
-  const list = ((rows ?? []) as unknown) as Omit<
+  type RowWithSettlement = Omit<
     WorkshopOwnerBookingRow,
-    "clientLabel" | "clientEmail" | "clientPhone" | "carLabel"
-  >[];
+    "clientLabel" | "clientEmail" | "clientPhone" | "carLabel" | "settlement_status" | "lead_fee_amount" | "test_mode" | "settlement_currency"
+  > & {
+    booking_lead_settlements?: { settlement_status: string; lead_fee_amount: number; test_mode: boolean; currency: string } | null;
+  };
+  const list = ((rows ?? []) as unknown) as RowWithSettlement[];
   if (list.length === 0) return [];
   const userIds = [...new Set(list.map((r) => r.user_id))];
   const { data: profiles, error: pErr } = await supabase.from("profiles").select("*").in("id", userIds);
@@ -337,15 +346,39 @@ export async function listBookingsForWorkshopOwner(
     const bits = [one.brand, one.model, one.year != null ? String(one.year) : null, one.plate_number].filter(Boolean);
     return bits.join(" · ") || "—";
   }
-  return list.map((r) => ({
-    ...r,
-    date: r.booking_date ?? r.date,
-    time: (r.start_time ? r.start_time.slice(0, 5) : null) ?? r.time,
-    clientLabel: workshopVisibleDriverDisplayName(profileMap.get(r.user_id), r.client_name),
-    clientEmail: exposeDriverDirectContact ? resolveClientEmail(r.user_id, r.client_email) : WORKSHOP_VISITOR_CONTACT_UNAVAILABLE,
-    clientPhone: exposeDriverDirectContact ? resolveClientPhone(r.user_id, r.client_phone) : WORKSHOP_VISITOR_CONTACT_UNAVAILABLE,
-    carLabel: carLabel(r.user_id, r.car_id, r.vehicle_data),
-  }));
+  return list.map((r) => {
+    const emb = r.booking_lead_settlements;
+    const stRow = emb && !Array.isArray(emb) ? emb : Array.isArray(emb) ? emb[0] : null;
+    const { booking_lead_settlements: _drop, ...rest } = r;
+    return {
+      ...rest,
+      date: r.booking_date ?? r.date,
+      time: (r.start_time ? r.start_time.slice(0, 5) : null) ?? r.time,
+      settlement_status: stRow?.settlement_status ?? null,
+      lead_fee_amount: stRow?.lead_fee_amount ?? null,
+      test_mode: stRow?.test_mode ?? null,
+      settlement_currency: stRow?.currency ?? null,
+      clientLabel: workshopVisibleDriverDisplayName(profileMap.get(r.user_id), r.client_name),
+      clientEmail: exposeDriverDirectContact ? resolveClientEmail(r.user_id, r.client_email) : WORKSHOP_VISITOR_CONTACT_UNAVAILABLE,
+      clientPhone: exposeDriverDirectContact ? resolveClientPhone(r.user_id, r.client_phone) : WORKSHOP_VISITOR_CONTACT_UNAVAILABLE,
+      carLabel: carLabel(r.user_id, r.car_id, r.vehicle_data),
+    };
+  });
+}
+
+export async function markBookingVisitCompletedAsWorkshopOwner(bookingId: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { error } = await supabase.rpc("mark_booking_visit_completed", { p_booking_id: bookingId });
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function markBookingNoShowAsWorkshopOwner(bookingId: string, reason?: string | null): Promise<void> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const { error } = await supabase.rpc("mark_booking_no_show", {
+    p_booking_id: bookingId,
+    p_reason: reason?.trim() ? reason.trim() : null,
+  });
+  if (error) throw new Error(formatSupabaseError(error));
 }
 
 export async function listWorkshopEmployeesForOwner(workshopId: string): Promise<WorkshopEmployeeRow[]> {
@@ -660,4 +693,127 @@ export function googleReviewsHintUrl(workshop: Pick<Workshop, "google_maps_url" 
   if (direct) return direct;
   const q = [workshop.name, workshop.city].filter(Boolean).join(" ");
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q || workshop.name)}`;
+}
+
+/** Wiersz widoku public.workshop_monthly_lead_metrics (filtrowany po workshop_id w aplikacji). */
+export type WorkshopOwnerMonthlyLeadMetricsRow = {
+  workshop_id: string;
+  workshop_name: string | null;
+  month: string;
+  total_bookings: number;
+  confirmed_bookings: number;
+  completed_bookings: number;
+  no_show_bookings: number;
+  cancelled_bookings: number;
+  billable_leads: number;
+  waived_test_leads: number;
+  disputed_leads: number;
+  not_billable_leads: number;
+  estimated_amount_pln: number;
+  test_value_pln: number;
+};
+
+export type WorkshopOwnerLeadSettlementListRow = {
+  id: string;
+  booking_id: string;
+  settlement_status: string;
+  lead_fee_amount: number;
+  currency: string;
+  test_mode: boolean;
+  booking_date: string | null;
+  start_time: string | null;
+  service_name: string;
+  booking_status: string;
+  client_display: string;
+};
+
+function mapMonthlyMetricsRow(r: Record<string, unknown>): WorkshopOwnerMonthlyLeadMetricsRow {
+  return {
+    workshop_id: String(r.workshop_id ?? ""),
+    workshop_name: (r.workshop_name as string | null) ?? null,
+    month: typeof r.month === "string" ? r.month : String(r.month ?? ""),
+    total_bookings: Number(r.total_bookings ?? 0),
+    confirmed_bookings: Number(r.confirmed_bookings ?? 0),
+    completed_bookings: Number(r.completed_bookings ?? 0),
+    no_show_bookings: Number(r.no_show_bookings ?? 0),
+    cancelled_bookings: Number(r.cancelled_bookings ?? 0),
+    billable_leads: Number(r.billable_leads ?? 0),
+    waived_test_leads: Number(r.waived_test_leads ?? 0),
+    disputed_leads: Number(r.disputed_leads ?? 0),
+    not_billable_leads: Number(r.not_billable_leads ?? 0),
+    estimated_amount_pln: Number(r.estimated_amount_pln ?? 0),
+    test_value_pln: Number(r.test_value_pln ?? 0),
+  };
+}
+
+export async function listWorkshopMonthlyLeadMetricsForOwner(workshopId: string): Promise<WorkshopOwnerMonthlyLeadMetricsRow[]> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const wid = workshopId.trim();
+  if (!wid) throw new Error("Brak identyfikatora warsztatu.");
+  const { data, error } = await supabase
+    .from("workshop_monthly_lead_metrics")
+    .select("*")
+    .eq("workshop_id", wid);
+  if (error) throw new Error(formatSupabaseError(error));
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(mapMonthlyMetricsRow);
+  rows.sort((a, b) => {
+    const byMonth = b.month.localeCompare(a.month);
+    if (byMonth !== 0) return byMonth;
+    return (a.workshop_name ?? "").localeCompare(b.workshop_name ?? "", "pl");
+  });
+  return rows;
+}
+
+export async function listRecentLeadSettlementsForOwner(
+  workshopId: string,
+  limit = 50,
+): Promise<WorkshopOwnerLeadSettlementListRow[]> {
+  if (!supabase) throw new Error("Supabase client not available.");
+  const wid = workshopId.trim();
+  if (!wid) throw new Error("Brak identyfikatora warsztatu.");
+  const { data, error } = await supabase
+    .from("booking_lead_settlements")
+    .select(
+      "id, booking_id, settlement_status, lead_fee_amount, currency, test_mode, updated_at, bookings ( booking_date, start_time, service_name, status, client_name )",
+    )
+    .eq("workshop_id", wid)
+    .order("updated_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 100));
+  if (error) throw new Error(formatSupabaseError(error));
+
+  type Raw = {
+    id: string;
+    booking_id: string;
+    settlement_status: string;
+    lead_fee_amount: number;
+    currency: string;
+    test_mode: boolean;
+    bookings?: {
+      booking_date: string | null;
+      start_time: string | null;
+      service_name: string;
+      status: string;
+      client_name: string | null;
+    } | null;
+  };
+
+  return ((data ?? []) as unknown as Raw[]).map((row) => {
+    const b = row.bookings;
+    const emb = b && !Array.isArray(b) ? b : Array.isArray(b) ? b[0] : null;
+    const dateStr = emb?.booking_date ? String(emb.booking_date).slice(0, 10) : null;
+    const clientDisplay = (emb?.client_name ?? "").trim() || "Klient";
+    return {
+      id: row.id,
+      booking_id: row.booking_id,
+      settlement_status: row.settlement_status,
+      lead_fee_amount: Number(row.lead_fee_amount),
+      currency: (row.currency ?? "PLN").trim() || "PLN",
+      test_mode: Boolean(row.test_mode),
+      booking_date: dateStr,
+      start_time: emb?.start_time ? String(emb.start_time).slice(0, 5) : null,
+      service_name: (emb?.service_name ?? "").trim() || "—",
+      booking_status: (emb?.status ?? "").trim() || "—",
+      client_display: clientDisplay,
+    };
+  });
 }

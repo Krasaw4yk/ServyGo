@@ -142,3 +142,45 @@ export function useSupportReportsAdminRealtime(enabled: boolean, onRefresh: () =
     };
   }, [enabled, bumpRef]);
 }
+
+export type UseWorkshopLeadSettlementRealtimeArgs = {
+  enabled: boolean;
+  workshopId?: string | null;
+  onRefresh: () => void;
+  debounceMs?: number;
+};
+
+/** Odświeżenie sekcji leadów: rozliczenia + rezerwacje warsztatu (Supabase Realtime). */
+export function useWorkshopLeadSettlementRealtime({
+  enabled,
+  workshopId,
+  onRefresh,
+  debounceMs = DEFAULT_DEBOUNCE_MS,
+}: UseWorkshopLeadSettlementRealtimeArgs) {
+  const bumpRef = useDebouncedCallbackRef(onRefresh, debounceMs);
+
+  useEffect(() => {
+    if (!enabled || !supabase) return;
+    const wid = workshopId?.trim() || null;
+    if (!wid) return;
+    const sb = supabase;
+
+    const channel = sb
+      .channel(`servygo_workshop_lead_settlement_${wid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "booking_lead_settlements", filter: `workshop_id=eq.${wid}` },
+        () => bumpRef.current(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bookings", filter: `workshop_id=eq.${wid}` },
+        () => bumpRef.current(),
+      )
+      .subscribe();
+
+    return () => {
+      void sb.removeChannel(channel);
+    };
+  }, [enabled, workshopId, bumpRef]);
+}

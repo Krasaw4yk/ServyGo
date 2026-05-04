@@ -1112,12 +1112,6 @@ function HomePageContent() {
   }, [searchParams, favoriteWorkshopChoices]);
 
   useEffect(() => {
-    const info = searchParams.get("info")?.trim().toLowerCase() ?? "";
-    if (info === "faq") setLandingInfoPanel("faq");
-    if (info === "contact") setLandingInfoPanel("contact");
-  }, [searchParams]);
-
-  useEffect(() => {
     if (!mounted || !currentUser) return;
     const frameId = window.requestAnimationFrame(() => {
       void loadAccountData();

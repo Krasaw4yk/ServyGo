@@ -32,11 +32,13 @@ import {
 } from "@/lib/workshopServygoReviewsApi";
 import WorkshopPhotosManager from "@/components/workshop/WorkshopPhotosManager";
 import {
+  type AdminBookingListRow,
   type AdminSidebarNotificationCounts,
   type AdminWorkshopDetail,
   type AdminWorkshopEntityStatus,
   type AdminWorkshopListRow,
   type AdminWorkshopUpdatePayload,
+  type WorkshopMonthlyLeadMetricsRow,
   AdminWorkshopStatus,
   WorkshopLeadRow,
   approveWorkshopLeadWithOwnerEmail,
@@ -45,7 +47,9 @@ import {
   getAdminSidebarNotificationCounts,
   getAdminRecord,
   getWorkshopDetailForAdmin,
+  listBookingsWithLeadSettlementForAdmin,
   listWorkshopLeadsForAdmin,
+  listWorkshopMonthlyLeadMetricsForAdmin,
   listWorkshopsForAdmin,
   normalizeWorkshopStatus,
   replaceWorkshopServicesAsAdmin,
@@ -66,6 +70,7 @@ const SIDEBAR_ITEMS = [
   "Warsztaty",
   "Mapa ServyGo",
   "Rezerwacje",
+  "Rozliczenie leadów MVP",
   "Użytkownicy",
   "Usługi i ceny",
   "Opinie / Google Maps",
@@ -83,6 +88,7 @@ const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
   Warsztaty: 0,
   "Mapa ServyGo": 0,
   Rezerwacje: 0,
+  "Rozliczenie leadów MVP": 0,
   Użytkownicy: 0,
   "Usługi i ceny": 0,
   "Opinie / Google Maps": 0,
@@ -93,6 +99,31 @@ const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
 function formatBadgeNumber(count: number) {
   if (count > 99) return "99+";
   return String(count);
+}
+
+function formatAdminLeadSettlementLine(row: {
+  settlement_status: string | null;
+  lead_fee_amount: number | null;
+  test_mode: boolean | null;
+}): string {
+  const st = (row.settlement_status ?? "").trim().toLowerCase();
+  const fee = row.lead_fee_amount != null && Number.isFinite(Number(row.lead_fee_amount)) ? Number(row.lead_fee_amount).toFixed(2) : "5.00";
+  const test = row.test_mode !== false;
+  const labels: Record<string, string> = {
+    pending: "Oczekuje na rozliczenie",
+    billable: `Rozliczalny (${fee} PLN)`,
+    not_billable: "Nie rozliczalny",
+    disputed: "Spór",
+    invoiced: "W rozliczeniu / faktura (plan)",
+    waived_test: test ? `Test (${fee} PLN wartość, bez opłaty)` : `Zwolniony test (${fee} PLN)`,
+  };
+  return labels[st] ?? (st ? `${st} · ${fee} PLN` : "—");
+}
+
+function formatMetricMonth(isoDate: string): string {
+  const d = new Date(isoDate);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  return d.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
 }
 
 type WorkshopLeadListFilter = "all" | "pending" | "approved" | "rejected" | "archived";
@@ -204,6 +235,12 @@ export default function AdminPage() {
   const [servygoModerationRows, setServygoModerationRows] = useState<WorkshopServygoReviewRow[]>([]);
   const [servygoModerationLoading, setServygoModerationLoading] = useState(false);
   const [servygoModerationFilter, setServygoModerationFilter] = useState<"all" | ServygoReviewStatus>("all");
+  const [adminBookingsRows, setAdminBookingsRows] = useState<AdminBookingListRow[]>([]);
+  const [adminBookingsLoading, setAdminBookingsLoading] = useState(false);
+  const [adminBookingsError, setAdminBookingsError] = useState("");
+  const [leadMetricsRows, setLeadMetricsRows] = useState<WorkshopMonthlyLeadMetricsRow[]>([]);
+  const [leadMetricsLoading, setLeadMetricsLoading] = useState(false);
+  const [leadMetricsError, setLeadMetricsError] = useState("");
 
   const detailLead = useMemo(() => rows.find((r) => r.id === leadDetailId) ?? null, [rows, leadDetailId]);
 
@@ -316,6 +353,36 @@ export default function AdminPage() {
     }
   }, [currentUser]);
 
+  const refreshAdminBookings = useCallback(async () => {
+    if (!currentUser) return;
+    setAdminBookingsLoading(true);
+    setAdminBookingsError("");
+    try {
+      const rows = await listBookingsWithLeadSettlementForAdmin(currentUser.id, currentUser.email);
+      setAdminBookingsRows(rows);
+    } catch (err) {
+      setAdminBookingsError(err instanceof Error ? err.message : "Nie udało się pobrać rezerwacji.");
+      setAdminBookingsRows([]);
+    } finally {
+      setAdminBookingsLoading(false);
+    }
+  }, [currentUser]);
+
+  const refreshLeadMetrics = useCallback(async () => {
+    if (!currentUser) return;
+    setLeadMetricsLoading(true);
+    setLeadMetricsError("");
+    try {
+      const rows = await listWorkshopMonthlyLeadMetricsForAdmin(currentUser.id, currentUser.email);
+      setLeadMetricsRows(rows);
+    } catch (err) {
+      setLeadMetricsError(err instanceof Error ? err.message : "Nie udało się pobrać raportu leadów.");
+      setLeadMetricsRows([]);
+    } finally {
+      setLeadMetricsLoading(false);
+    }
+  }, [currentUser]);
+
   const refreshSidebarBadges = useCallback(async () => {
     if (!currentUser) return;
     try {
@@ -379,6 +446,16 @@ export default function AdminPage() {
     if (!currentUser || activeTab !== "Opinie / Google Maps") return;
     void refreshServygoModeration();
   }, [activeTab, currentUser, refreshServygoModeration]);
+
+  useEffect(() => {
+    if (!currentUser || activeTab !== "Rezerwacje") return;
+    void refreshAdminBookings();
+  }, [activeTab, currentUser, refreshAdminBookings]);
+
+  useEffect(() => {
+    if (!currentUser || activeTab !== "Rozliczenie leadów MVP") return;
+    void refreshLeadMetrics();
+  }, [activeTab, currentUser, refreshLeadMetrics]);
 
   const activeWorkshopPanelId = workshopViewId ?? workshopEditId;
 
@@ -2064,7 +2141,144 @@ export default function AdminPage() {
               </>
             ) : null}
 
-            {(activeTab === "Rezerwacje" || activeTab === "Usługi i ceny" || activeTab === "Statystyki strony" || activeTab === "Ustawienia") ? (
+            {activeTab === "Rezerwacje" ? (
+              <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Rezerwacje</h2>
+                  <button
+                    type="button"
+                    onClick={() => void refreshAdminBookings()}
+                    disabled={adminBookingsLoading}
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                  >
+                    {adminBookingsLoading ? "Ładowanie…" : "Odśwież"}
+                  </button>
+                </div>
+                {adminBookingsError ? (
+                  <p className={`mt-3 text-sm ${isDark ? "text-orange-200" : "text-orange-800"}`}>{adminBookingsError}</p>
+                ) : null}
+                <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                  Podstawowa lista z polem rozliczenia leada (MVP). Szczegóły warsztatu — w podglądzie warsztatu.
+                </p>
+                <div className="mt-4 min-w-0 overflow-x-auto">
+                  <table className="w-full min-w-[920px] table-auto text-sm">
+                    <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
+                      <tr>
+                        <th className="px-3 py-2 text-left">Utworzono</th>
+                        <th className="px-3 py-2 text-left">Warsztat</th>
+                        <th className="px-3 py-2 text-left">Usługa</th>
+                        <th className="px-3 py-2 text-left">Termin</th>
+                        <th className="px-3 py-2 text-left">Status</th>
+                        <th className="px-3 py-2 text-left">Rozliczenie leada</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminBookingsRows.length === 0 && !adminBookingsLoading ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
+                            Brak rezerwacji lub brak dostępu do widoku.
+                          </td>
+                        </tr>
+                      ) : (
+                        adminBookingsRows.map((b) => (
+                          <tr key={b.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                            <td className="whitespace-nowrap px-3 py-2">{b.created_at?.slice(0, 19)?.replace("T", " ") ?? "—"}</td>
+                            <td className="max-w-[160px] truncate px-3 py-2" title={b.workshop_name}>
+                              {b.workshop_name}
+                            </td>
+                            <td className="max-w-[200px] truncate px-3 py-2">{b.service_name}</td>
+                            <td className="whitespace-nowrap px-3 py-2">
+                              {(b.booking_date ?? "").trim() || "—"}
+                              {b.time ? ` · ${b.time}` : ""}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs">{b.status}</td>
+                            <td className="max-w-[280px] px-3 py-2 text-xs leading-snug">
+                              <span className="font-semibold">{b.settlement_status ?? "—"}</span>
+                              <span className={`${isDark ? "text-zinc-400" : "text-zinc-600"} block`}>
+                                {formatAdminLeadSettlementLine(b)}
+                                {b.test_mode === false ? " · produkcja (test_mode off)" : ""}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === "Rozliczenie leadów MVP" ? (
+              <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Rozliczenie leadów MVP</h2>
+                  <button
+                    type="button"
+                    onClick={() => void refreshLeadMetrics()}
+                    disabled={leadMetricsLoading}
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                  >
+                    {leadMetricsLoading ? "Ładowanie…" : "Odśwież"}
+                  </button>
+                </div>
+                <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                  Zliczenia wg miesiąca kalendarzowego (rezerwacje po dacie wizyt / utworzenia; leady po dacie zdarzenia rozliczenia). Kwoty szacunkowe — bez faktur.
+                </p>
+                {leadMetricsError ? (
+                  <p className={`mt-3 text-sm ${isDark ? "text-orange-200" : "text-orange-800"}`}>{leadMetricsError}</p>
+                ) : null}
+                <div className="mt-4 min-w-0 overflow-x-auto">
+                  <table className="w-full min-w-[1100px] table-auto text-xs sm:text-sm">
+                    <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
+                      <tr>
+                        <th className="px-2 py-2 text-left">Warsztat</th>
+                        <th className="px-2 py-2 text-left">Miesiąc</th>
+                        <th className="px-2 py-2 text-right">Rezerw.</th>
+                        <th className="px-2 py-2 text-right">Potw.</th>
+                        <th className="px-2 py-2 text-right">Zakończ.</th>
+                        <th className="px-2 py-2 text-right">No-show</th>
+                        <th className="px-2 py-2 text-right">Anul.</th>
+                        <th className="px-2 py-2 text-right">Ledy test.</th>
+                        <th className="px-2 py-2 text-right">Ledy płat.</th>
+                        <th className="px-2 py-2 text-right">Spory</th>
+                        <th className="px-2 py-2 text-right">Wart. test PLN</th>
+                        <th className="px-2 py-2 text-right">Do zapłaty PLN</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leadMetricsRows.length === 0 && !leadMetricsLoading ? (
+                        <tr>
+                          <td colSpan={12} className="px-3 py-8 text-center text-zinc-500">
+                            Brak danych (uruchom migrację SQL lub odśwież po czasie).
+                          </td>
+                        </tr>
+                      ) : (
+                        leadMetricsRows.map((r) => (
+                          <tr key={`${r.workshop_id}-${r.month}`} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
+                            <td className="max-w-[180px] truncate px-2 py-2 font-medium" title={r.workshop_id}>
+                              {r.workshop_name?.trim() || r.workshop_id.slice(0, 8) + "…"}
+                            </td>
+                            <td className="whitespace-nowrap px-2 py-2">{formatMetricMonth(r.month)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.total_bookings}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.confirmed_bookings}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.completed_bookings}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.no_show_bookings}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.cancelled_bookings}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.waived_test_leads}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.billable_leads}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.disputed_leads}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{r.test_value_pln.toFixed(2)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums font-semibold">{r.estimated_amount_pln.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+
+            {(activeTab === "Usługi i ceny" || activeTab === "Statystyki strony" || activeTab === "Ustawienia") ? (
               <section className={`rounded-2xl border p-5 lg:p-6 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                 <h2 className="text-lg font-semibold">{activeTab}</h2>
                 <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
@@ -2446,6 +2660,7 @@ export default function AdminPage() {
                               <th className="px-2 py-1.5 text-left">Godz.</th>
                               <th className="px-2 py-1.5 text-left">Usługa</th>
                               <th className="px-2 py-1.5 text-left">Status</th>
+                              <th className="px-2 py-1.5 text-left">Lead</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2454,7 +2669,17 @@ export default function AdminPage() {
                                 <td className="px-2 py-1.5">{b.date}</td>
                                 <td className="px-2 py-1.5">{b.time}</td>
                                 <td className="px-2 py-1.5">{b.service_name}</td>
-                                <td className="px-2 py-1.5">{b.status}</td>
+                                <td className="px-2 py-1.5 font-mono">{b.status}</td>
+                                <td className="max-w-[200px] px-2 py-1.5 align-top leading-snug">
+                                  <span className="font-semibold">{b.settlement_status ?? "—"}</span>
+                                  <span className={`block ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                                    {formatAdminLeadSettlementLine({
+                                      settlement_status: b.settlement_status ?? null,
+                                      lead_fee_amount: b.lead_fee_amount ?? null,
+                                      test_mode: b.test_mode ?? null,
+                                    })}
+                                  </span>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
