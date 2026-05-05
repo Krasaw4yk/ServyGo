@@ -26,6 +26,7 @@ import {
   type WorkshopServygoReviewRow,
 } from "@/lib/workshopServygoReviewsApi";
 import { listActiveWorkshopPhotos, type WorkshopPhotoRow } from "@/lib/workshopPhotosApi";
+import { LEGAL_VERSIONS } from "@/lib/legalVersions";
 
 function padTime(value: number) {
   return String(value).padStart(2, "0");
@@ -99,6 +100,8 @@ function WorkshopDetailsPageContent() {
   const [bookingSuccess, setBookingSuccess] = useState("");
   const [bookingError, setBookingError] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [hasAcceptedPricingAndLiabilityNotice, setHasAcceptedPricingAndLiabilityNotice] = useState(false);
+  const [pricingLiabilityNoticeAccepted, setPricingLiabilityNoticeAccepted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [employeeOptions, setEmployeeOptions] = useState<Array<{ id: string; label: string; role: string }>>([]);
@@ -284,6 +287,55 @@ function WorkshopDetailsPageContent() {
       authListener.subscription.unsubscribe();
     };
   }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted || !isSupabaseConfigured || !supabase || !currentUserId) {
+      setHasAcceptedPricingAndLiabilityNotice(false);
+      setPricingLiabilityNoticeAccepted(false);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select(
+          "pricing_notice_accepted_at,liability_notice_accepted_at,accepted_pricing_notice_version,accepted_liability_notice_version",
+        )
+        .eq("id", currentUserId)
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (error) {
+        setHasAcceptedPricingAndLiabilityNotice(false);
+        setPricingLiabilityNoticeAccepted(false);
+        return;
+      }
+
+      const row = (data ??
+        null) as
+        | {
+            pricing_notice_accepted_at?: string | null;
+            liability_notice_accepted_at?: string | null;
+            accepted_pricing_notice_version?: string | null;
+            accepted_liability_notice_version?: string | null;
+          }
+        | null;
+
+      const accepted =
+        Boolean(row?.pricing_notice_accepted_at) &&
+        Boolean(row?.liability_notice_accepted_at) &&
+        row?.accepted_pricing_notice_version === LEGAL_VERSIONS.pricingNotice &&
+        row?.accepted_liability_notice_version === LEGAL_VERSIONS.liabilityNotice;
+
+      setHasAcceptedPricingAndLiabilityNotice(accepted);
+      setPricingLiabilityNoticeAccepted(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, currentUserId]);
 
   const t = useMemo(() => createTranslator(language), [language]);
   const isDark = mounted ? theme === "dark" : false;
@@ -489,10 +541,38 @@ function WorkshopDetailsPageContent() {
     if (!workshop) return;
     if (!isLoggedIn || !currentUserId || !supabase || !isSupabaseConfigured) return;
     if (!effectiveDateKey || !effectiveSelectedTime || !selectedService) return;
+    if (!hasAcceptedPricingAndLiabilityNotice && !pricingLiabilityNoticeAccepted) {
+      setBookingError(
+        "Aby kontynuować, potwierdź zasady dotyczące ceny orientacyjnej i odpowiedzialności warsztatu.",
+      );
+      return;
+    }
     setBookingSuccess("");
     setBookingError("");
     setBookingLoading(true);
     try {
+      if (!hasAcceptedPricingAndLiabilityNotice) {
+        const acceptedAt = new Date().toISOString();
+        const { error: consentError } = await supabase
+          .from("profiles")
+          .update({
+            pricing_notice_accepted_at: acceptedAt,
+            liability_notice_accepted_at: acceptedAt,
+            accepted_pricing_notice_version: LEGAL_VERSIONS.pricingNotice,
+            accepted_liability_notice_version: LEGAL_VERSIONS.liabilityNotice,
+            updated_at: acceptedAt,
+          })
+          .eq("id", currentUserId);
+
+        if (consentError) {
+          throw new Error(
+            "Nie udało się zapisać wymaganej zgody. Spróbuj ponownie za chwilę.",
+          );
+        }
+        setHasAcceptedPricingAndLiabilityNotice(true);
+        setPricingLiabilityNoticeAccepted(false);
+      }
+
       const slots = await getAvailableSlots({
         workshopId: workshop.supabaseId,
         date: effectiveDateKey,
@@ -1244,6 +1324,27 @@ function WorkshopDetailsPageContent() {
                       ? `${effectiveDateKey} ${effectiveSelectedTime}`
                       : t("workshopDetails.noHoursAvailable")}
                   </p>
+                  {!hasAcceptedPricingAndLiabilityNotice ? (
+                    <label
+                      className={`mt-3 flex items-start gap-3 rounded-xl border px-3 py-2 text-sm leading-snug ${
+                        isDark
+                          ? "border-zinc-700 bg-zinc-900/60 text-zinc-300"
+                          : "border-zinc-300 bg-white text-zinc-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={pricingLiabilityNoticeAccepted}
+                        onChange={(event) => setPricingLiabilityNoticeAccepted(event.target.checked)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                      />
+                      <span>
+                        Rozumiem, że ceny widoczne w ServyGo mogą mieć charakter orientacyjny, a ostateczna cena usługi
+                        zostanie potwierdzona przez warsztat przed wykonaniem usługi. Przyjmuję do wiadomości, że ServyGo
+                        nie wykonuje usług motoryzacyjnych i nie odpowiada za samą naprawę pojazdu.
+                      </span>
+                    </label>
+                  ) : null}
                   <button
                     type="button"
                     onClick={handleBookingConfirm}
