@@ -3,10 +3,7 @@
 import {
   memo,
   useDeferredValue,
-  useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   useTransition,
 } from "react";
@@ -76,21 +73,6 @@ function WorkshopServicesPricingSectionImpl({
   const [serviceRowDisplayLimit, setServiceRowDisplayLimit] = useState(SERVICE_TABLE_PAGE_SIZE);
   const [isFilterTransitionPending, startFilterTransition] = useTransition();
 
-  const perfRenderSeq = useRef(0);
-  if (DEV) {
-    perfRenderSeq.current += 1;
-    console.time(`[perf] WorkshopServicesPricingSection render #${perfRenderSeq.current}`);
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- dev: timeEnd po każdym commicie (bez tablicy zależności)
-  useLayoutEffect(() => {
-    if (DEV) {
-      console.timeEnd(`[perf] WorkshopServicesPricingSection render #${perfRenderSeq.current}`);
-    }
-  });
-
-  useEffect(() => {
-    setCatalogServicePickerValue("");
-  }, [workshopCatalogVehicleType]);
 
   const deferredCategory = useDeferredValue(servicesCategoryFilter);
   const deferredActivity = useDeferredValue(servicesActivityFilter);
@@ -190,7 +172,10 @@ function WorkshopServicesPricingSectionImpl({
               key={opt.key}
               type="button"
               disabled={readOnly}
-              onClick={() => setWorkshopCatalogVehicleType(opt.key)}
+              onClick={() => {
+                setWorkshopCatalogVehicleType(opt.key);
+                setCatalogServicePickerValue("");
+              }}
               className={`rounded-full border px-3 py-1 text-xs font-semibold transition disabled:opacity-50 ${
                 workshopCatalogVehicleType === opt.key
                   ? isDark

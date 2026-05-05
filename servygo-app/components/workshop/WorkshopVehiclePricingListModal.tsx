@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 const VEHICLE_PRICE_MODAL_PAGE = 50;
 
@@ -52,10 +52,6 @@ function WorkshopVehiclePricingListModalInner({
   onDelete,
 }: WorkshopVehiclePricingListModalProps) {
   const [rowLimit, setRowLimit] = useState(VEHICLE_PRICE_MODAL_PAGE);
-
-  useEffect(() => {
-    setRowLimit(VEHICLE_PRICE_MODAL_PAGE);
-  }, [selectedServiceName]);
 
   const typeLabelByKey = useMemo(
     () => new Map(vehicleTypeOptions.map((x) => [x.key, x.label])),

@@ -1,22 +1,32 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 const DEFAULT_DEBOUNCE_MS = 450;
 
 function useDebouncedCallbackRef(onEvent: () => void, debounceMs: number) {
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const bumpRef = useRef(() => {
+  const debounceMsRef = useRef(debounceMs);
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+
+  useEffect(() => {
+    debounceMsRef.current = debounceMs;
+  }, [debounceMs]);
+
+  const bump = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       onEventRef.current();
-    }, debounceMs);
-  });
-  return bumpRef;
+    }, debounceMsRef.current);
+  }, []);
+
+  return bump;
 }
 
 /**
@@ -24,7 +34,7 @@ function useDebouncedCallbackRef(onEvent: () => void, debounceMs: number) {
  * Wymaga dodania tabel do publikacji `supabase_realtime` (patrz supabase/sql/supabase-47-realtime-publications.sql).
  */
 export function useInboxRealtimeSync(enabled: boolean, userId: string | null | undefined, onRefresh: () => void) {
-  const bumpRef = useDebouncedCallbackRef(onRefresh, DEFAULT_DEBOUNCE_MS);
+  const bump = useDebouncedCallbackRef(onRefresh, DEFAULT_DEBOUNCE_MS);
 
   useEffect(() => {
     if (!enabled || !supabase || !userId) return;
@@ -32,18 +42,18 @@ export function useInboxRealtimeSync(enabled: boolean, userId: string | null | u
 
     const channel = sb
       .channel(`servygo_inbox_${userId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "internal_messages" }, () => bumpRef.current())
+      .on("postgres_changes", { event: "*", schema: "public", table: "internal_messages" }, () => bump())
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "user_notifications", filter: `user_id=eq.${userId}` },
-        () => bumpRef.current(),
+        () => bump(),
       )
       .subscribe();
 
     return () => {
       void sb.removeChannel(channel);
     };
-  }, [enabled, userId, bumpRef]);
+  }, [enabled, userId, bump]);
 }
 
 export type UseBookingsRealtimeSyncArgs = {
@@ -63,7 +73,7 @@ export function useBookingsRealtimeSync({
   onRefresh,
   debounceMs = DEFAULT_DEBOUNCE_MS,
 }: UseBookingsRealtimeSyncArgs) {
-  const bumpRef = useDebouncedCallbackRef(onRefresh, debounceMs);
+  const bump = useDebouncedCallbackRef(onRefresh, debounceMs);
 
   useEffect(() => {
     if (!enabled || !supabase) return;
@@ -78,24 +88,24 @@ export function useBookingsRealtimeSync({
       channel.on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bookings", filter: `user_id=eq.${uid}` },
-        () => bumpRef.current(),
+        () => bump(),
       );
       channel.on(
         "postgres_changes",
         { event: "*", schema: "public", table: "booking_quotes", filter: `user_id=eq.${uid}` },
-        () => bumpRef.current(),
+        () => bump(),
       );
     }
     if (wid) {
       channel.on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bookings", filter: `workshop_id=eq.${wid}` },
-        () => bumpRef.current(),
+        () => bump(),
       );
       channel.on(
         "postgres_changes",
         { event: "*", schema: "public", table: "booking_quotes", filter: `workshop_id=eq.${wid}` },
-        () => bumpRef.current(),
+        () => bump(),
       );
     }
     channel.subscribe();
@@ -103,12 +113,12 @@ export function useBookingsRealtimeSync({
     return () => {
       void sb.removeChannel(channel);
     };
-  }, [enabled, clientUserId, workshopId, bumpRef]);
+  }, [enabled, clientUserId, workshopId, bump]);
 }
 
 /** Nowe / zmienione zgłoszenia warsztatów (lista w panelu admina). */
 export function useWorkshopLeadsAdminRealtime(enabled: boolean, onRefresh: () => void) {
-  const bumpRef = useDebouncedCallbackRef(onRefresh, DEFAULT_DEBOUNCE_MS);
+  const bump = useDebouncedCallbackRef(onRefresh, DEFAULT_DEBOUNCE_MS);
 
   useEffect(() => {
     if (!enabled || !supabase) return;
@@ -116,17 +126,17 @@ export function useWorkshopLeadsAdminRealtime(enabled: boolean, onRefresh: () =>
 
     const channel = sb
       .channel("servygo_admin_workshop_leads")
-      .on("postgres_changes", { event: "*", schema: "public", table: "workshop_leads" }, () => bumpRef.current())
+      .on("postgres_changes", { event: "*", schema: "public", table: "workshop_leads" }, () => bump())
       .subscribe();
 
     return () => {
       void sb.removeChannel(channel);
     };
-  }, [enabled, bumpRef]);
+  }, [enabled, bump]);
 }
 
 export function useSupportReportsAdminRealtime(enabled: boolean, onRefresh: () => void) {
-  const bumpRef = useDebouncedCallbackRef(onRefresh, DEFAULT_DEBOUNCE_MS);
+  const bump = useDebouncedCallbackRef(onRefresh, DEFAULT_DEBOUNCE_MS);
 
   useEffect(() => {
     if (!enabled || !supabase) return;
@@ -134,13 +144,13 @@ export function useSupportReportsAdminRealtime(enabled: boolean, onRefresh: () =
 
     const channel = sb
       .channel("servygo_admin_support_reports")
-      .on("postgres_changes", { event: "*", schema: "public", table: "support_reports" }, () => bumpRef.current())
+      .on("postgres_changes", { event: "*", schema: "public", table: "support_reports" }, () => bump())
       .subscribe();
 
     return () => {
       void sb.removeChannel(channel);
     };
-  }, [enabled, bumpRef]);
+  }, [enabled, bump]);
 }
 
 export type UseWorkshopLeadSettlementRealtimeArgs = {
@@ -157,7 +167,7 @@ export function useWorkshopLeadSettlementRealtime({
   onRefresh,
   debounceMs = DEFAULT_DEBOUNCE_MS,
 }: UseWorkshopLeadSettlementRealtimeArgs) {
-  const bumpRef = useDebouncedCallbackRef(onRefresh, debounceMs);
+  const bump = useDebouncedCallbackRef(onRefresh, debounceMs);
 
   useEffect(() => {
     if (!enabled || !supabase) return;
@@ -170,17 +180,17 @@ export function useWorkshopLeadSettlementRealtime({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "booking_lead_settlements", filter: `workshop_id=eq.${wid}` },
-        () => bumpRef.current(),
+        () => bump(),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bookings", filter: `workshop_id=eq.${wid}` },
-        () => bumpRef.current(),
+        () => bump(),
       )
       .subscribe();
 
     return () => {
       void sb.removeChannel(channel);
     };
-  }, [enabled, workshopId, bumpRef]);
+  }, [enabled, workshopId, bump]);
 }
