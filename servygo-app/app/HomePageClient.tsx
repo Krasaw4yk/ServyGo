@@ -39,6 +39,7 @@ import {
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
 import { trackEvent } from "@/lib/analytics";
+import { LEGAL_VERSIONS } from "@/lib/legalVersions";
 import {
   fetchUserFavoriteWorkshops,
   isWorkshopStatusPublicVisible,
@@ -232,6 +233,8 @@ function HomePageContent() {
   const [registerPhone, setRegisterPhone] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
   const [registerPasswordRepeat, setRegisterPasswordRepeat] = useState("");
+  const [registerLegalAccepted, setRegisterLegalAccepted] = useState(false);
+  const [registerMarketingConsent, setRegisterMarketingConsent] = useState(false);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const carPickerRef = useRef<HTMLDivElement | null>(null);
 
@@ -1610,6 +1613,10 @@ function HomePageContent() {
       setAuthError(t("auth.errors.passwordMismatch"));
       return;
     }
+    if (!registerLegalAccepted) {
+      setAuthError("Aby założyć konto, zaakceptuj Regulamin i zapoznaj się z Polityką prywatności.");
+      return;
+    }
 
     setAuthLoading(true);
     const { data, error } = await supabase.auth.signUp({
@@ -1635,6 +1642,7 @@ function HomePageContent() {
     }
 
     if (data.user && data.session) {
+      const acceptedAt = new Date().toISOString();
       const { error: profileError } = await supabase.from("profiles").upsert(
         {
           id: data.user.id,
@@ -1642,6 +1650,12 @@ function HomePageContent() {
           last_name: lastName,
           email,
           phone,
+          terms_accepted_at: acceptedAt,
+          privacy_accepted_at: acceptedAt,
+          accepted_terms_version: LEGAL_VERSIONS.terms,
+          accepted_privacy_version: LEGAL_VERSIONS.privacy,
+          marketing_consent: registerMarketingConsent,
+          marketing_consent_at: registerMarketingConsent ? acceptedAt : null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -1650,7 +1664,11 @@ function HomePageContent() {
 
       if (profileError) {
         console.warn("Profile upsert after signup failed:", profileError.message);
-        setAuthInfo(t("auth.info.accountCreatedProfileLater"));
+        setAuthLoading(false);
+        setAuthError(
+          "Konto zostało utworzone, ale nie udało się zapisać wymaganych zgód. Spróbuj zalogować się ponownie lub skontaktuj się z pomocą ServyGo.",
+        );
+        return;
       }
     }
 
@@ -1669,6 +1687,8 @@ function HomePageContent() {
     setRegisterPhone("");
     setRegisterPassword("");
     setRegisterPasswordRepeat("");
+    setRegisterLegalAccepted(false);
+    setRegisterMarketingConsent(false);
   }
 
   return (
@@ -3584,6 +3604,37 @@ function HomePageContent() {
                         className={currentFieldClassName}
                         placeholder={t("auth.placeholders.repeatPassword")}
                       />
+                    </label>
+                    <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                      <input
+                        type="checkbox"
+                        checked={registerLegalAccepted}
+                        onChange={(event) => setRegisterLegalAccepted(event.target.checked)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                      />
+                      <span>
+                        Akceptuję{" "}
+                        <Link href="/regulamin" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
+                          Regulamin
+                        </Link>{" "}
+                        serwisu ServyGo oraz potwierdzam zapoznanie się z{" "}
+                        <Link href="/polityka-prywatnosci" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
+                          Polityką prywatności
+                        </Link>
+                        .
+                      </span>
+                    </label>
+                    <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                      <input
+                        type="checkbox"
+                        checked={registerMarketingConsent}
+                        onChange={(event) => setRegisterMarketingConsent(event.target.checked)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                      />
+                      <span>
+                        Chcę otrzymywać od ServyGo informacje o nowościach, promocjach i ofertach specjalnych drogą e-mailową
+                        lub SMS. Zgodę mogę wycofać w każdej chwili.
+                      </span>
                     </label>
 
                     {authError ? (
