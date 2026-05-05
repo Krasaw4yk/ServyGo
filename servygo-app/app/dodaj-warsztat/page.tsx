@@ -11,6 +11,7 @@ import { createTranslator, LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { createWorkshopLead, isValidWorkshopGoogleMapsUrl } from "@/lib/workshopApi";
 import { trackEvent } from "@/lib/analytics";
+import { LEGAL_VERSIONS } from "@/lib/legalVersions";
 
 const fieldClassName =
   "rounded-xl border border-zinc-600/70 bg-zinc-900/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-400 transition-all duration-200 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/40";
@@ -75,6 +76,10 @@ export default function AddWorkshopPage() {
   const [servicesText, setServicesText] = useState("");
   const [googleMapsUrl, setGoogleMapsUrl] = useState("");
   const [message, setMessage] = useState("");
+  const [workshopLegalAccepted, setWorkshopLegalAccepted] = useState(false);
+  const [workshopDataTruthContactPublicationAccepted, setWorkshopDataTruthContactPublicationAccepted] = useState(false);
+  const [workshopPilotAccepted, setWorkshopPilotAccepted] = useState(false);
+  const [workshopMarketingConsent, setWorkshopMarketingConsent] = useState(false);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -215,8 +220,14 @@ export default function AddWorkshopPage() {
       setError("Popraw oznaczone pola formularza.");
       return;
     }
+    if (!workshopLegalAccepted || !workshopDataTruthContactPublicationAccepted || !workshopPilotAccepted) {
+      setError("Aby wysłać zgłoszenie warsztatu, zaznacz wymagane zgody.");
+      return;
+    }
 
     const mapsTrimmed = googleMapsUrl.trim();
+    const acceptedAt = new Date().toISOString();
+    const userAgent = typeof window !== "undefined" ? window.navigator.userAgent : null;
     setLoading(true);
     try {
       await createWorkshopLead({
@@ -232,6 +243,18 @@ export default function AddWorkshopPage() {
         message: message.trim() || null,
         services: servicesText.trim() || null,
         google_maps_url: mapsTrimmed,
+        terms_accepted_at: acceptedAt,
+        privacy_accepted_at: acceptedAt,
+        workshop_data_truth_confirmed_at: acceptedAt,
+        workshop_contact_consent_at: acceptedAt,
+        workshop_publication_consent_at: acceptedAt,
+        pilot_terms_accepted_at: acceptedAt,
+        marketing_consent: workshopMarketingConsent,
+        marketing_consent_at: workshopMarketingConsent ? acceptedAt : null,
+        accepted_terms_version: LEGAL_VERSIONS.terms,
+        accepted_privacy_version: LEGAL_VERSIONS.privacy,
+        accepted_workshop_pilot_version: LEGAL_VERSIONS.workshopPilot,
+        consent_user_agent: userAgent,
       });
       setInfo(t("workshop.messages.leadSaved"));
       setWorkshopName("");
@@ -246,6 +269,10 @@ export default function AddWorkshopPage() {
       setServicesText("");
       setGoogleMapsUrl("");
       setMessage("");
+      setWorkshopLegalAccepted(false);
+      setWorkshopDataTruthContactPublicationAccepted(false);
+      setWorkshopPilotAccepted(false);
+      setWorkshopMarketingConsent(false);
       setFieldErrors({});
       setSubmitAttempted(false);
     } catch (submitError) {
@@ -453,6 +480,61 @@ export default function AddWorkshopPage() {
                   placeholder="Dodatkowe informacje (opcjonalnie)"
                 />
                 {fieldErrors.message ? <p className="text-xs text-rose-500">{fieldErrors.message}</p> : null}
+              </label>
+              <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                <input
+                  type="checkbox"
+                  checked={workshopLegalAccepted}
+                  onChange={(event) => setWorkshopLegalAccepted(event.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                />
+                <span>
+                  Akceptuję{" "}
+                  <Link href="/regulamin" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
+                    Regulamin
+                  </Link>{" "}
+                  serwisu ServyGo oraz potwierdzam zapoznanie się z{" "}
+                  <Link href="/polityka-prywatnosci" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
+                    Polityką prywatności
+                  </Link>
+                  .
+                </span>
+              </label>
+              <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                <input
+                  type="checkbox"
+                  checked={workshopDataTruthContactPublicationAccepted}
+                  onChange={(event) => setWorkshopDataTruthContactPublicationAccepted(event.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                />
+                <span>
+                  Potwierdzam, że podane dane warsztatu są prawdziwe oraz wyrażam zgodę na kontakt ze strony ServyGo w
+                  sprawie zgłoszenia, weryfikacji, utworzenia profilu warsztatu i ewentualnej współpracy. Wyrażam również
+                  zgodę na publikację profilu warsztatu w serwisie ServyGo po pozytywnej weryfikacji.
+                </span>
+              </label>
+              <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                <input
+                  type="checkbox"
+                  checked={workshopPilotAccepted}
+                  onChange={(event) => setWorkshopPilotAccepted(event.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                />
+                <span>
+                  Rozumiem, że udział w pilotażu ServyGo jest bezpłatny i testowy, ServyGo nie gwarantuje liczby klientów,
+                  zapytań ani rezerwacji, a każda ze stron może zakończyć udział w pilotażu w dowolnym momencie.
+                </span>
+              </label>
+              <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                <input
+                  type="checkbox"
+                  checked={workshopMarketingConsent}
+                  onChange={(event) => setWorkshopMarketingConsent(event.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                />
+                <span>
+                  Chcę otrzymywać informacje o rozwoju ServyGo, nowych funkcjach oraz przyszłych warunkach współpracy.
+                </span>
               </label>
 
               {error ? (

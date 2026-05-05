@@ -40,6 +40,19 @@ export type WorkshopLead = {
   message: string | null;
   services?: string | null;
   google_maps_url?: string | null;
+  terms_accepted_at?: string | null;
+  privacy_accepted_at?: string | null;
+  workshop_data_truth_confirmed_at?: string | null;
+  workshop_contact_consent_at?: string | null;
+  workshop_publication_consent_at?: string | null;
+  pilot_terms_accepted_at?: string | null;
+  marketing_consent?: boolean | null;
+  marketing_consent_at?: string | null;
+  accepted_terms_version?: string | null;
+  accepted_privacy_version?: string | null;
+  accepted_workshop_pilot_version?: string | null;
+  consent_ip?: string | null;
+  consent_user_agent?: string | null;
   status: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -155,6 +168,19 @@ export async function createWorkshopLead(
     message: payload.message,
     services: payload.services ?? null,
     google_maps_url: mapsUrl || null,
+    terms_accepted_at: payload.terms_accepted_at ?? null,
+    privacy_accepted_at: payload.privacy_accepted_at ?? null,
+    workshop_data_truth_confirmed_at: payload.workshop_data_truth_confirmed_at ?? null,
+    workshop_contact_consent_at: payload.workshop_contact_consent_at ?? null,
+    workshop_publication_consent_at: payload.workshop_publication_consent_at ?? null,
+    pilot_terms_accepted_at: payload.pilot_terms_accepted_at ?? null,
+    marketing_consent: payload.marketing_consent ?? false,
+    marketing_consent_at: payload.marketing_consent_at ?? null,
+    accepted_terms_version: payload.accepted_terms_version ?? null,
+    accepted_privacy_version: payload.accepted_privacy_version ?? null,
+    accepted_workshop_pilot_version: payload.accepted_workshop_pilot_version ?? null,
+    consent_ip: payload.consent_ip ?? null,
+    consent_user_agent: payload.consent_user_agent ?? null,
     status: "pending",
   });
   if (error) throw new Error(formatSupabaseError(error));
