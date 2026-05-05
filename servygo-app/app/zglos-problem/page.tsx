@@ -198,6 +198,21 @@ export default function ZglosProblemPage() {
                 <span>
                   Rozumiem, że ServyGo nie rozpatruje reklamacji dotyczących jakości naprawy. Taką reklamację należy kierować
                   bezpośrednio do warsztatu. Zgłoszenie w ServyGo służy do analizy problemu i bezpieczeństwa platformy.
+                  Akceptuję{" "}
+                  <Link
+                    href="/regulamin"
+                    className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}
+                  >
+                    Regulamin
+                  </Link>{" "}
+                  oraz{" "}
+                  <Link
+                    href="/polityka-prywatnosci"
+                    className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}
+                  >
+                    Politykę prywatności
+                  </Link>
+                  .
                 </span>
               </label>
               {error ? <p className="text-sm font-medium text-orange-600 dark:text-orange-300">{error}</p> : null}
