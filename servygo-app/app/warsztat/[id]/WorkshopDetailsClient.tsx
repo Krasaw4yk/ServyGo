@@ -27,6 +27,7 @@ import {
 } from "@/lib/workshopServygoReviewsApi";
 import { listActiveWorkshopPhotos, type WorkshopPhotoRow } from "@/lib/workshopPhotosApi";
 import { LEGAL_VERSIONS } from "@/lib/legalVersions";
+import { recordUserConsentEvent } from "@/lib/userConsentsApi";
 
 function padTime(value: number) {
   return String(value).padStart(2, "0");
@@ -552,6 +553,30 @@ function WorkshopDetailsPageContent() {
 
         if (consentError) {
           throw new Error(t("legal.booking.saveError"));
+        }
+        const consentHistoryResults = await Promise.allSettled([
+          recordUserConsentEvent({
+            userId: currentUserId,
+            consentType: "pricing_notice",
+            consentVersion: LEGAL_VERSIONS.pricingNotice,
+            action: "accepted",
+            source: "booking",
+            userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+          }),
+          recordUserConsentEvent({
+            userId: currentUserId,
+            consentType: "liability_notice",
+            consentVersion: LEGAL_VERSIONS.liabilityNotice,
+            action: "accepted",
+            source: "booking",
+            userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+          }),
+        ]);
+        for (const result of consentHistoryResults) {
+          if (result.status === "rejected") {
+            const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+            console.warn("User consent history write failed after booking legal acceptance:", reason);
+          }
         }
         setHasAcceptedPricingAndLiabilityNotice(true);
         setPricingLiabilityNoticeAccepted(false);

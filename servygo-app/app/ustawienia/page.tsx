@@ -10,6 +10,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { isAdmin } from "@/lib/adminApi";
 import { getUserActiveWorkshop } from "@/lib/workshopApi";
 import { createTranslator, type LanguageCode } from "@/lib/translations";
+import { recordUserConsentEvent } from "@/lib/userConsentsApi";
 import LegalReacceptanceModal from "@/components/legal/LegalReacceptanceModal";
 
 type ToggleKey = "email" | "sms" | "reminders" | "promotions";
@@ -247,6 +248,19 @@ export default function UstawieniaPage() {
         })
         .eq("id", user.id);
       if (error) throw error;
+      try {
+        await recordUserConsentEvent({
+          userId: user.id,
+          consentType: "marketing",
+          consentVersion: null,
+          action: nextValue ? "accepted" : "revoked",
+          source: "account_settings",
+          userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+        });
+      } catch (historyError) {
+        const reason = historyError instanceof Error ? historyError.message : String(historyError);
+        console.warn("User consent history write failed after marketing change:", reason);
+      }
       setMarketingMessage(t("legal.accountSettings.marketingUpdated"));
     } catch (e) {
       setProfile((prev) =>

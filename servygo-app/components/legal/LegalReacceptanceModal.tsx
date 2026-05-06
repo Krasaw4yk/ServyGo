@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { LEGAL_VERSIONS } from "@/lib/legalVersions";
 import { createTranslator, type LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { recordUserConsentEvent } from "@/lib/userConsentsApi";
 
 type LegalProfileRow = {
   terms_accepted_at: string | null;
@@ -92,6 +93,31 @@ export default function LegalReacceptanceModal({
       setError(t("legal.reacceptance.saveError"));
       setSaving(false);
       return;
+    }
+
+    const consentHistoryResults = await Promise.allSettled([
+      recordUserConsentEvent({
+        userId,
+        consentType: "terms",
+        consentVersion: LEGAL_VERSIONS.terms,
+        action: "accepted",
+        source: "legal_reacceptance",
+        userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+      }),
+      recordUserConsentEvent({
+        userId,
+        consentType: "privacy",
+        consentVersion: LEGAL_VERSIONS.privacy,
+        action: "accepted",
+        source: "legal_reacceptance",
+        userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+      }),
+    ]);
+    for (const result of consentHistoryResults) {
+      if (result.status === "rejected") {
+        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        console.warn("User consent history write failed after legal reacceptance:", reason);
+      }
     }
 
     setSaving(false);

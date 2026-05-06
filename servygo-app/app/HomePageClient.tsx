@@ -41,6 +41,7 @@ import {
 } from "@/lib/vehicleData";
 import { trackEvent } from "@/lib/analytics";
 import { LEGAL_VERSIONS } from "@/lib/legalVersions";
+import { recordUserConsentEvent } from "@/lib/userConsentsApi";
 import {
   fetchUserFavoriteWorkshops,
   isWorkshopStatusPublicVisible,
@@ -1644,6 +1645,44 @@ function HomePageContent() {
           "Konto zostało utworzone, ale nie udało się zapisać wymaganych zgód. Spróbuj zalogować się ponownie lub skontaktuj się z pomocą ServyGo.",
         );
         return;
+      }
+
+      const consentEvents = [
+        recordUserConsentEvent({
+          userId: data.user.id,
+          consentType: "terms",
+          consentVersion: LEGAL_VERSIONS.terms,
+          action: "accepted",
+          source: "registration",
+          userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+        }),
+        recordUserConsentEvent({
+          userId: data.user.id,
+          consentType: "privacy",
+          consentVersion: LEGAL_VERSIONS.privacy,
+          action: "accepted",
+          source: "registration",
+          userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+        }),
+      ];
+      if (registerMarketingConsent) {
+        consentEvents.push(
+          recordUserConsentEvent({
+            userId: data.user.id,
+            consentType: "marketing",
+            consentVersion: null,
+            action: "accepted",
+            source: "registration",
+            userAgent: typeof window !== "undefined" ? window.navigator.userAgent : null,
+          }),
+        );
+      }
+      const historyResults = await Promise.allSettled(consentEvents);
+      for (const result of historyResults) {
+        if (result.status === "rejected") {
+          const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+          console.warn("User consent history write failed after signup:", reason);
+        }
       }
     }
 
