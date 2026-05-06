@@ -221,7 +221,7 @@ export default function AddWorkshopPage() {
       return;
     }
     if (!workshopLegalAccepted || !workshopDataTruthContactPublicationAccepted || !workshopPilotAccepted) {
-      setError("Aby wysłać zgłoszenie warsztatu, zaznacz wymagane zgody.");
+      setError(t("legal.workshopLead.requiredError"));
       return;
     }
 
@@ -489,13 +489,13 @@ export default function AddWorkshopPage() {
                   className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
                 />
                 <span>
-                  Akceptuję{" "}
+                  {t("legal.workshopLead.acceptPrefix")}{" "}
                   <Link href="/regulamin" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
-                    Regulamin
+                    {t("legal.workshopLead.termsLabel")}
                   </Link>{" "}
-                  serwisu ServyGo oraz potwierdzam zapoznanie się z{" "}
+                  {t("legal.workshopLead.acceptMiddle")}{" "}
                   <Link href="/polityka-prywatnosci" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
-                    Polityką prywatności
+                    {t("legal.workshopLead.privacyLabel")}
                   </Link>
                   .
                 </span>
@@ -508,9 +508,7 @@ export default function AddWorkshopPage() {
                   className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
                 />
                 <span>
-                  Potwierdzam, że podane dane warsztatu są prawdziwe oraz wyrażam zgodę na kontakt ze strony ServyGo w
-                  sprawie zgłoszenia, weryfikacji, utworzenia profilu warsztatu i ewentualnej współpracy. Wyrażam również
-                  zgodę na publikację profilu warsztatu w serwisie ServyGo po pozytywnej weryfikacji.
+                  {t("legal.workshopLead.dataTruthContactPublicationLabel")}
                 </span>
               </label>
               <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
@@ -521,8 +519,7 @@ export default function AddWorkshopPage() {
                   className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
                 />
                 <span>
-                  Rozumiem, że udział w pilotażu ServyGo jest bezpłatny i testowy, ServyGo nie gwarantuje liczby klientów,
-                  zapytań ani rezerwacji, a każda ze stron może zakończyć udział w pilotażu w dowolnym momencie.
+                  {t("legal.workshopLead.pilotLabel")}
                 </span>
               </label>
               <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
@@ -533,7 +530,7 @@ export default function AddWorkshopPage() {
                   className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
                 />
                 <span>
-                  Chcę otrzymywać informacje o rozwoju ServyGo, nowych funkcjach oraz przyszłych warunkach współpracy.
+                  {t("legal.workshopLead.marketingLabel")}
                 </span>
               </label>
 

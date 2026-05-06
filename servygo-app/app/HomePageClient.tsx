@@ -1589,7 +1589,7 @@ function HomePageContent() {
       return;
     }
     if (!registerLegalAccepted) {
-      setAuthError("Aby założyć konto, zaakceptuj Regulamin i zapoznaj się z Polityką prywatności.");
+      setAuthError(t("legal.registration.requiredError"));
       return;
     }
 
@@ -3587,13 +3587,13 @@ function HomePageContent() {
                         className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
                       />
                       <span>
-                        Akceptuję{" "}
+                        {t("legal.registration.acceptPrefix")}{" "}
                         <Link href="/regulamin" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
-                          Regulamin
+                          {t("legal.registration.termsLabel")}
                         </Link>{" "}
-                        serwisu ServyGo oraz potwierdzam zapoznanie się z{" "}
+                        {t("legal.registration.acceptMiddle")}{" "}
                         <Link href="/polityka-prywatnosci" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
-                          Polityką prywatności
+                          {t("legal.registration.privacyLabel")}
                         </Link>
                         .
                       </span>
@@ -3606,8 +3606,7 @@ function HomePageContent() {
                         className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
                       />
                       <span>
-                        Chcę otrzymywać od ServyGo informacje o nowościach, promocjach i ofertach specjalnych drogą e-mailową
-                        lub SMS. Zgodę mogę wycofać w każdej chwili.
+                        {t("legal.registration.marketingLabel")}
                       </span>
                     </label>
 

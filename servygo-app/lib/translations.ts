@@ -492,6 +492,62 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       bookingConfirmed:
         "Rezerwacja została wstępnie potwierdzona. W kolejnym etapie dodamy zapis do Supabase.",
     },
+    legal: {
+      registration: {
+        acceptPrefix: "Akceptuję",
+        termsLabel: "Regulamin",
+        acceptMiddle: "serwisu ServyGo oraz potwierdzam zapoznanie się z",
+        privacyLabel: "Polityką prywatności",
+        marketingLabel:
+          "Chcę otrzymywać od ServyGo informacje o nowościach, promocjach i ofertach specjalnych drogą e-mailową lub SMS. Zgodę mogę wycofać w każdej chwili.",
+        requiredError:
+          "Aby założyć konto, zaakceptuj Regulamin i zapoznaj się z Polityką prywatności.",
+      },
+      booking: {
+        noticeLabel:
+          "Rozumiem, że ceny widoczne w ServyGo mogą mieć charakter orientacyjny, a ostateczna cena usługi zostanie potwierdzona przez warsztat przed wykonaniem usługi. Przyjmuję do wiadomości, że ServyGo nie wykonuje usług motoryzacyjnych i nie odpowiada za samą naprawę pojazdu.",
+        requiredError:
+          "Aby kontynuować, potwierdź zasady dotyczące ceny orientacyjnej i odpowiedzialności warsztatu.",
+        saveError:
+          "Nie udało się zapisać wymaganej zgody. Spróbuj ponownie za chwilę.",
+      },
+      workshopLead: {
+        acceptPrefix: "Akceptuję",
+        termsLabel: "Regulamin",
+        acceptMiddle: "serwisu ServyGo oraz potwierdzam zapoznanie się z",
+        privacyLabel: "Polityką prywatności",
+        dataTruthContactPublicationLabel:
+          "Potwierdzam, że podane dane warsztatu są prawdziwe oraz wyrażam zgodę na kontakt ze strony ServyGo w sprawie zgłoszenia, weryfikacji, utworzenia profilu warsztatu i ewentualnej współpracy. Wyrażam również zgodę na publikację profilu warsztatu w serwisie ServyGo po pozytywnej weryfikacji.",
+        pilotLabel:
+          "Rozumiem, że udział w pilotażu ServyGo jest bezpłatny i testowy, ServyGo nie gwarantuje liczby klientów, zapytań ani rezerwacji, a każda ze stron może zakończyć udział w pilotażu w dowolnym momencie.",
+        marketingLabel:
+          "Chcę otrzymywać informacje o rozwoju ServyGo, nowych funkcjach oraz przyszłych warunkach współpracy.",
+        requiredError:
+          "Aby wysłać zgłoszenie warsztatu, zaznacz wymagane zgody.",
+      },
+      accountSettings: {
+        sectionTitle: "Zgody i dokumenty",
+        termsTitle: "Regulamin",
+        privacyTitle: "Polityka prywatności",
+        pricingTitle: "Zasady ceny orientacyjnej",
+        liabilityTitle: "Informacja o odpowiedzialności ServyGo",
+        marketingTitle: "Marketing",
+        acceptedAt: "Zaakceptowano dnia",
+        version: "Wersja",
+        missing: "brak",
+        enabled: "włączony",
+        disabled: "wyłączony",
+        marketingLastConsentAt: "Data ostatniej zgody",
+        marketingToggleLabel:
+          "Chcę otrzymywać informacje marketingowe od ServyGo.",
+        marketingUpdated: "Zgoda marketingowa została zaktualizowana.",
+        marketingUpdateError:
+          "Nie udało się zaktualizować zgody marketingowej.",
+        viewTerms: "Zobacz Regulamin",
+        viewPrivacy: "Zobacz Politykę prywatności",
+        status: "Status",
+      },
+    },
     auth: {
       account: "Moje konto",
       logout: "Wyloguj",
@@ -1043,6 +1099,62 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       bookingConfirmed:
         "Your booking has been pre-confirmed. In the next stage we will add saving to Supabase.",
     },
+    legal: {
+      registration: {
+        acceptPrefix: "I accept",
+        termsLabel: "Terms of Service",
+        acceptMiddle: "for ServyGo and confirm I have read the",
+        privacyLabel: "Privacy Policy",
+        marketingLabel:
+          "I want to receive updates about new features, promotions and special offers from ServyGo via e-mail or SMS. I can withdraw my consent at any time.",
+        requiredError:
+          "To create an account, accept the Terms and read the Privacy Policy.",
+      },
+      booking: {
+        noticeLabel:
+          "I understand that prices shown in ServyGo may be indicative, and the final service price will be confirmed by the workshop before the service is performed. I acknowledge that ServyGo does not perform automotive services and is not responsible for the repair itself.",
+        requiredError:
+          "To continue, confirm the rules for indicative pricing and workshop liability.",
+        saveError:
+          "Failed to save the required consent. Please try again in a moment.",
+      },
+      workshopLead: {
+        acceptPrefix: "I accept",
+        termsLabel: "Terms of Service",
+        acceptMiddle: "for ServyGo and confirm I have read the",
+        privacyLabel: "Privacy Policy",
+        dataTruthContactPublicationLabel:
+          "I confirm that the provided workshop data is accurate and I consent to being contacted by ServyGo regarding the submission, verification, workshop profile creation and possible cooperation. I also consent to publishing the workshop profile in ServyGo after successful verification.",
+        pilotLabel:
+          "I understand that participation in the ServyGo pilot is free and test-based, ServyGo does not guarantee any number of customers, inquiries or bookings, and either party may end pilot participation at any time.",
+        marketingLabel:
+          "I want to receive updates about ServyGo development, new features and future cooperation terms.",
+        requiredError:
+          "To send a workshop application, select the required consents.",
+      },
+      accountSettings: {
+        sectionTitle: "Consents and documents",
+        termsTitle: "Terms of Service",
+        privacyTitle: "Privacy Policy",
+        pricingTitle: "Indicative pricing rules",
+        liabilityTitle: "ServyGo liability information",
+        marketingTitle: "Marketing",
+        acceptedAt: "Accepted on",
+        version: "Version",
+        missing: "missing",
+        enabled: "enabled",
+        disabled: "disabled",
+        marketingLastConsentAt: "Last consent date",
+        marketingToggleLabel:
+          "I want to receive marketing information from ServyGo.",
+        marketingUpdated: "Marketing consent has been updated.",
+        marketingUpdateError:
+          "Failed to update marketing consent.",
+        viewTerms: "View Terms",
+        viewPrivacy: "View Privacy Policy",
+        status: "Status",
+      },
+    },
     auth: {
       account: "My account",
       logout: "Log out",
@@ -1593,6 +1705,62 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       pickupTime: "Орієнтовна видача",
       bookingConfirmed:
         "Бронювання попередньо підтверджено. На наступному етапі додамо запис у Supabase.",
+    },
+    legal: {
+      registration: {
+        acceptPrefix: "Я приймаю",
+        termsLabel: "Регламент",
+        acceptMiddle: "сервісу ServyGo та підтверджую ознайомлення з",
+        privacyLabel: "Політикою конфіденційності",
+        marketingLabel:
+          "Хочу отримувати від ServyGo інформацію про новинки, акції та спеціальні пропозиції електронною поштою або SMS. Згоду можна відкликати в будь-який момент.",
+        requiredError:
+          "Щоб створити акаунт, прийміть Регламент і ознайомтесь із Політикою конфіденційності.",
+      },
+      booking: {
+        noticeLabel:
+          "Я розумію, що ціни в ServyGo можуть бути орієнтовними, а остаточна вартість послуги підтверджується майстернею до виконання послуги. Я приймаю до відома, що ServyGo не виконує автомобільні послуги і не відповідає за сам ремонт.",
+        requiredError:
+          "Щоб продовжити, підтвердіть правила щодо орієнтовної ціни та відповідальності майстерні.",
+        saveError:
+          "Не вдалося зберегти обов'язкову згоду. Спробуйте ще раз за мить.",
+      },
+      workshopLead: {
+        acceptPrefix: "Я приймаю",
+        termsLabel: "Регламент",
+        acceptMiddle: "сервісу ServyGo та підтверджую ознайомлення з",
+        privacyLabel: "Політикою конфіденційності",
+        dataTruthContactPublicationLabel:
+          "Підтверджую, що надані дані майстерні є правдивими, та даю згоду на контакт із боку ServyGo щодо заявки, верифікації, створення профілю майстерні та можливої співпраці. Також даю згоду на публікацію профілю майстерні в ServyGo після успішної верифікації.",
+        pilotLabel:
+          "Я розумію, що участь у пілоті ServyGo є безкоштовною та тестовою, ServyGo не гарантує кількість клієнтів, запитів чи бронювань, а кожна зі сторін може припинити участь у пілоті в будь-який момент.",
+        marketingLabel:
+          "Хочу отримувати інформацію про розвиток ServyGo, нові функції та майбутні умови співпраці.",
+        requiredError:
+          "Щоб надіслати заявку майстерні, позначте обов'язкові згоди.",
+      },
+      accountSettings: {
+        sectionTitle: "Згоди та документи",
+        termsTitle: "Регламент",
+        privacyTitle: "Політика конфіденційності",
+        pricingTitle: "Правила орієнтовної ціни",
+        liabilityTitle: "Інформація про відповідальність ServyGo",
+        marketingTitle: "Маркетинг",
+        acceptedAt: "Прийнято",
+        version: "Версія",
+        missing: "немає",
+        enabled: "увімкнено",
+        disabled: "вимкнено",
+        marketingLastConsentAt: "Дата останньої згоди",
+        marketingToggleLabel:
+          "Хочу отримувати маркетингову інформацію від ServyGo.",
+        marketingUpdated: "Маркетингову згоду оновлено.",
+        marketingUpdateError:
+          "Не вдалося оновити маркетингову згоду.",
+        viewTerms: "Переглянути Регламент",
+        viewPrivacy: "Переглянути Політику конфіденційності",
+        status: "Статус",
+      },
     },
     auth: {
       account: "Мій кабінет",

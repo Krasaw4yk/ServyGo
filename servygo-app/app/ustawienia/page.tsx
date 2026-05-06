@@ -9,6 +9,7 @@ import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { isAdmin } from "@/lib/adminApi";
 import { getUserActiveWorkshop } from "@/lib/workshopApi";
+import { createTranslator, type LanguageCode } from "@/lib/translations";
 
 type ToggleKey = "email" | "sms" | "reminders" | "promotions";
 
@@ -50,8 +51,8 @@ type ProfileRow = {
   accepted_liability_notice_version: string | null;
 };
 
-function formatConsentDate(value: string | null | undefined) {
-  if (!value) return "brak";
+function formatConsentDate(value: string | null | undefined, emptyLabel: string) {
+  if (!value) return emptyLabel;
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString("pl-PL");
@@ -97,6 +98,7 @@ export default function UstawieniaPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [language, setLanguage] = useState<LanguageCode>("pl");
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [roleBadge, setRoleBadge] = useState("Użytkownik");
@@ -122,6 +124,10 @@ export default function UstawieniaPage() {
     setMounted(true);
     const savedTheme = window.localStorage.getItem("servygo-theme");
     if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
+    const savedLanguage = window.localStorage.getItem("servygo_language");
+    if (savedLanguage === "pl" || savedLanguage === "en" || savedLanguage === "ua") {
+      setLanguage(savedLanguage);
+    }
   }, []);
 
   useEffect(() => {
@@ -203,6 +209,7 @@ export default function UstawieniaPage() {
     const full = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
     return full || user?.email || "Użytkownik ServyGo";
   }, [profile?.first_name, profile?.last_name, user?.email]);
+  const t = useMemo(() => createTranslator(language), [language]);
 
   async function handleLogout() {
     if (!supabase) return;
@@ -239,11 +246,7 @@ export default function UstawieniaPage() {
         })
         .eq("id", user.id);
       if (error) throw error;
-      setMarketingMessage(
-        nextValue
-          ? "Zgoda marketingowa została włączona."
-          : "Zgoda marketingowa została wyłączona.",
-      );
+      setMarketingMessage(t("legal.accountSettings.marketingUpdated"));
     } catch (e) {
       setProfile((prev) =>
         prev
@@ -255,7 +258,7 @@ export default function UstawieniaPage() {
           : prev,
       );
       setMarketingError(
-        e instanceof Error ? e.message : "Nie udało się zapisać ustawienia zgody marketingowej.",
+        e instanceof Error ? e.message : t("legal.accountSettings.marketingUpdateError"),
       );
     } finally {
       setMarketingBusy(false);
@@ -430,49 +433,57 @@ export default function UstawieniaPage() {
               </article>
 
               <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
-                <h2 className="text-lg font-semibold text-zinc-900">Zgody i dokumenty</h2>
+                <h2 className="text-lg font-semibold text-zinc-900">{t("legal.accountSettings.sectionTitle")}</h2>
                 <dl className="mt-3 space-y-3 text-sm">
                   <div className="rounded-xl border border-zinc-200 px-3 py-2">
-                    <dt className="font-semibold text-zinc-900">Regulamin</dt>
-                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.terms_accepted_at)}</dd>
-                    <dd className="text-zinc-600">Wersja: {profile?.accepted_terms_version?.trim() || "—"}</dd>
+                    <dt className="font-semibold text-zinc-900">{t("legal.accountSettings.termsTitle")}</dt>
+                    <dd className="mt-1 text-zinc-700">
+                      {t("legal.accountSettings.acceptedAt")}: {formatConsentDate(profile?.terms_accepted_at, t("legal.accountSettings.missing"))}
+                    </dd>
+                    <dd className="text-zinc-600">{t("legal.accountSettings.version")}: {profile?.accepted_terms_version?.trim() || "—"}</dd>
                     <dd className="mt-1">
                       <Link href="/regulamin" className="font-medium text-blue-700 hover:text-orange-600 hover:underline">
-                        Zobacz Regulamin
+                        {t("legal.accountSettings.viewTerms")}
                       </Link>
                     </dd>
                   </div>
 
                   <div className="rounded-xl border border-zinc-200 px-3 py-2">
-                    <dt className="font-semibold text-zinc-900">Polityka prywatności</dt>
-                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.privacy_accepted_at)}</dd>
-                    <dd className="text-zinc-600">Wersja: {profile?.accepted_privacy_version?.trim() || "—"}</dd>
+                    <dt className="font-semibold text-zinc-900">{t("legal.accountSettings.privacyTitle")}</dt>
+                    <dd className="mt-1 text-zinc-700">
+                      {t("legal.accountSettings.acceptedAt")}: {formatConsentDate(profile?.privacy_accepted_at, t("legal.accountSettings.missing"))}
+                    </dd>
+                    <dd className="text-zinc-600">{t("legal.accountSettings.version")}: {profile?.accepted_privacy_version?.trim() || "—"}</dd>
                     <dd className="mt-1">
                       <Link href="/polityka-prywatnosci" className="font-medium text-blue-700 hover:text-orange-600 hover:underline">
-                        Zobacz Politykę prywatności
+                        {t("legal.accountSettings.viewPrivacy")}
                       </Link>
                     </dd>
                   </div>
 
                   <div className="rounded-xl border border-zinc-200 px-3 py-2">
-                    <dt className="font-semibold text-zinc-900">Zasady ceny orientacyjnej</dt>
-                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.pricing_notice_accepted_at)}</dd>
-                    <dd className="text-zinc-600">Wersja: {profile?.accepted_pricing_notice_version?.trim() || "—"}</dd>
-                  </div>
-
-                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
-                    <dt className="font-semibold text-zinc-900">Informacja o odpowiedzialności ServyGo</dt>
-                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.liability_notice_accepted_at)}</dd>
-                    <dd className="text-zinc-600">Wersja: {profile?.accepted_liability_notice_version?.trim() || "—"}</dd>
-                  </div>
-
-                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
-                    <dt className="font-semibold text-zinc-900">Marketing</dt>
+                    <dt className="font-semibold text-zinc-900">{t("legal.accountSettings.pricingTitle")}</dt>
                     <dd className="mt-1 text-zinc-700">
-                      Status: {profile?.marketing_consent ? "włączony" : "wyłączony"}
+                      {t("legal.accountSettings.acceptedAt")}: {formatConsentDate(profile?.pricing_notice_accepted_at, t("legal.accountSettings.missing"))}
+                    </dd>
+                    <dd className="text-zinc-600">{t("legal.accountSettings.version")}: {profile?.accepted_pricing_notice_version?.trim() || "—"}</dd>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <dt className="font-semibold text-zinc-900">{t("legal.accountSettings.liabilityTitle")}</dt>
+                    <dd className="mt-1 text-zinc-700">
+                      {t("legal.accountSettings.acceptedAt")}: {formatConsentDate(profile?.liability_notice_accepted_at, t("legal.accountSettings.missing"))}
+                    </dd>
+                    <dd className="text-zinc-600">{t("legal.accountSettings.version")}: {profile?.accepted_liability_notice_version?.trim() || "—"}</dd>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <dt className="font-semibold text-zinc-900">{t("legal.accountSettings.marketingTitle")}</dt>
+                    <dd className="mt-1 text-zinc-700">
+                      {t("legal.accountSettings.status")}: {profile?.marketing_consent ? t("legal.accountSettings.enabled") : t("legal.accountSettings.disabled")}
                     </dd>
                     <dd className="text-zinc-600">
-                      Data ostatniej zgody: {profile?.marketing_consent_at ? formatConsentDate(profile.marketing_consent_at) : "—"}
+                      {t("legal.accountSettings.marketingLastConsentAt")}: {formatConsentDate(profile?.marketing_consent_at, t("legal.accountSettings.missing"))}
                     </dd>
                     <label className="mt-3 flex items-start gap-2 text-zinc-800">
                       <input
@@ -482,7 +493,7 @@ export default function UstawieniaPage() {
                         onChange={(event) => void handleMarketingConsentChange(event.target.checked)}
                         className="mt-0.5 h-4 w-4 rounded border-zinc-400"
                       />
-                      <span>Chcę otrzymywać informacje marketingowe od ServyGo.</span>
+                      <span>{t("legal.accountSettings.marketingToggleLabel")}</span>
                     </label>
                     {marketingMessage ? <p className="mt-2 text-xs text-emerald-700">{marketingMessage}</p> : null}
                     {marketingError ? <p className="mt-2 text-xs text-rose-700">{marketingError}</p> : null}

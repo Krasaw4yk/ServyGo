@@ -530,9 +530,7 @@ function WorkshopDetailsPageContent() {
     if (!isLoggedIn || !currentUserId || !supabase || !isSupabaseConfigured) return;
     if (!effectiveDateKey || !effectiveSelectedTime || !selectedService) return;
     if (!hasAcceptedPricingAndLiabilityNotice && !pricingLiabilityNoticeAccepted) {
-      setBookingError(
-        "Aby kontynuować, potwierdź zasady dotyczące ceny orientacyjnej i odpowiedzialności warsztatu.",
-      );
+      setBookingError(t("legal.booking.requiredError"));
       return;
     }
     setBookingSuccess("");
@@ -553,9 +551,7 @@ function WorkshopDetailsPageContent() {
           .eq("id", currentUserId);
 
         if (consentError) {
-          throw new Error(
-            "Nie udało się zapisać wymaganej zgody. Spróbuj ponownie za chwilę.",
-          );
+          throw new Error(t("legal.booking.saveError"));
         }
         setHasAcceptedPricingAndLiabilityNotice(true);
         setPricingLiabilityNoticeAccepted(false);
@@ -1327,9 +1323,7 @@ function WorkshopDetailsPageContent() {
                         className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
                       />
                       <span>
-                        Rozumiem, że ceny widoczne w ServyGo mogą mieć charakter orientacyjny, a ostateczna cena usługi
-                        zostanie potwierdzona przez warsztat przed wykonaniem usługi. Przyjmuję do wiadomości, że ServyGo
-                        nie wykonuje usług motoryzacyjnych i nie odpowiada za samą naprawę pojazdu.
+                        {t("legal.booking.noticeLabel")}
                       </span>
                     </label>
                   ) : null}
