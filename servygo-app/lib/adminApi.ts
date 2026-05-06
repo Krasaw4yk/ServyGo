@@ -337,7 +337,8 @@ export async function getWorkshopDetailForAdmin(
   const bookings = ((bookingsRaw ?? []) as unknown as BRow[]).map((b) => {
     const emb = b.booking_lead_settlements;
     const s = emb && !Array.isArray(emb) ? emb : Array.isArray(emb) ? emb[0] : null;
-    const { booking_lead_settlements: _x, ...rest } = b;
+    const rest = { ...b };
+    delete rest.booking_lead_settlements;
     return {
       ...rest,
       settlement_status: s?.settlement_status ?? null,

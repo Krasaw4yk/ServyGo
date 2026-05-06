@@ -54,7 +54,6 @@ import {
   type WorkshopOpeningDayKey,
   type WorkshopOpeningSchedule,
   type WorkshopOwnerBookingRow,
-  type WorkshopEmployeeRow,
   type WorkshopOwnerProfilePatch,
   type WorkshopOwnerLeadSettlementListRow,
   type WorkshopOwnerMonthlyLeadMetricsRow,
@@ -484,7 +483,6 @@ function WorkshopPanelPageContent() {
   const [serviceVehiclePriceDraftRows, setServiceVehiclePriceDraftRows] = useState<ServiceVehiclePriceDraftRow[]>([]);
   const [servicesPricingReady, setServicesPricingReady] = useState(false);
   const [savingServices, setSavingServices] = useState(false);
-  const [savingVehiclePrices, setSavingVehiclePrices] = useState(false);
   const [selectedServiceForVehiclePricing, setSelectedServiceForVehiclePricing] = useState<string>("");
   const [isVehiclePricingModalOpen, setIsVehiclePricingModalOpen] = useState(false);
   const [vehiclePriceEditorDraft, setVehiclePriceEditorDraft] = useState<ServiceVehiclePriceDraftRow | null>(null);
@@ -1235,7 +1233,7 @@ function WorkshopPanelPageContent() {
     const rowKeyStable = stableServiceDraftKey(target);
     const legacyKey =
       target.service_key?.trim() ? target.service_key.trim() : `custom:${target.service_name.trim().toLowerCase()}`;
-    setServiceDraftRows((_prev) => {
+    setServiceDraftRows(() => {
       const merged = mergedServiceRows.map((row) => {
         const matches =
           stableServiceDraftKey(row) === rowKeyStable ||

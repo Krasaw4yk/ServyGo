@@ -349,7 +349,8 @@ export async function listBookingsForWorkshopOwner(
   return list.map((r) => {
     const emb = r.booking_lead_settlements;
     const stRow = emb && !Array.isArray(emb) ? emb : Array.isArray(emb) ? emb[0] : null;
-    const { booking_lead_settlements: _drop, ...rest } = r;
+    const rest = { ...r };
+    delete rest.booking_lead_settlements;
     return {
       ...rest,
       date: r.booking_date ?? r.date,
@@ -601,7 +602,10 @@ export async function upsertWorkshopServiceConfigsForOwner(
   const rowsWithId = normalized.filter((r) => Boolean(r.id)).map((r) => ({ ...r, id: r.id as string }));
   const rowsWithoutId = normalized
     .filter((r) => !r.id)
-    .map(({ id: _id, ...rest }) => rest);
+    .map((row) => {
+      const { id, ...rest } = row;
+      return id ? rest : rest;
+    });
 
   if (rowsWithId.length > 0) {
     const { error } = await supabase

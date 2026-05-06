@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -794,13 +793,10 @@ function MojeRezerwacjePageContent() {
         <BookingConversationModal
           key={`${conversation.row.id}-${conversation.draftBody ?? ""}-${conversation.draftSubject ?? ""}`}
           bookingId={conversation.row.id}
-          workshopId={conversation.row.workshop_id}
           workshopName={conversation.row.workshop_name || "Warsztat"}
           serviceName={conversation.row.service_name || "Usługa"}
           userId={user.id}
           isDark={isDark}
-          draftSubject={conversation.draftSubject}
-          draftBody={conversation.draftBody}
           onClose={closeConversation}
         />
       ) : null}

@@ -32,18 +32,6 @@ function padTime(value: number) {
   return String(value).padStart(2, "0");
 }
 
-function parseTimeToMinutes(value: string) {
-  const [hours, minutes] = value.split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function formatMinutesToTime(value: number) {
-  const normalized = ((value % 1440) + 1440) % 1440;
-  const hours = Math.floor(normalized / 60);
-  const minutes = normalized % 60;
-  return `${padTime(hours)}:${padTime(minutes)}`;
-}
-
 function toDateKey(date: Date) {
   return `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())}`;
 }

@@ -278,21 +278,13 @@ export default function OffersPageClient() {
   useEffect(() => {
     if (!filteringDebug) return;
     // Debug tylko w development.
-    // eslint-disable-next-line no-console
     console.groupCollapsed("[Offers Debug] /oferty filters");
-    // eslint-disable-next-line no-console
     console.log("query params", filteringDebug.params);
-    // eslint-disable-next-line no-console
     console.log("workshops before filter", filteringDebug.totalBefore);
-    // eslint-disable-next-line no-console
     console.log("after service filter", filteringDebug.afterService);
-    // eslint-disable-next-line no-console
     console.log("after city fallback", filteringDebug.afterCityFallback);
-    // eslint-disable-next-line no-console
     console.log("final shown", filteringDebug.finalShown);
-    // eslint-disable-next-line no-console
     console.table(filteringDebug.reasons);
-    // eslint-disable-next-line no-console
     console.groupEnd();
   }, [filteringDebug]);
 

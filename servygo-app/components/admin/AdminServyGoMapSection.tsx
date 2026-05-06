@@ -280,7 +280,6 @@ export default function AdminServyGoMapSection({
             <tbody>
               {filteredList.map((w) => {
                 const coords = workshopHasCoords(w);
-                const onMap = isPublicMapPin(w);
                 const isSelected = selectedId === w.id;
                 return (
                   <tr

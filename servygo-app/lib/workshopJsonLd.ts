@@ -26,7 +26,6 @@ function openingHoursFromWorkshop(w: MockWorkshop): string | undefined {
 
 export function buildWorkshopLocalBusinessJsonLd(w: MockWorkshop) {
   const pageUrl = `${SITE}/warsztat/${encodeURIComponent(w.supabaseId)}`;
-  const address = [w.address, w.city].filter((x) => x && x !== "—").join(", ");
 
   const node: Record<string, unknown> = {
     "@context": "https://schema.org",

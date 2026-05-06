@@ -114,13 +114,6 @@ const searchFieldErrorHintClass = "text-xs font-medium text-[#dc2626]";
 
 type SearchFieldKey = "vehicleType" | "brand" | "model" | "year" | "fuel" | "service" | "city";
 
-function toLocalDateKey(value: Date) {
-  const y = value.getFullYear();
-  const m = String(value.getMonth() + 1).padStart(2, "0");
-  const d = String(value.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 const LOCAL_CLEANUP_VERSION_KEY = "servygo_local_cleanup_v1";
 
 /** Gdy false — ukrywa przycisk „Nie znalazłeś auta?” i kartę zgłoszenia brakującego auta (kod zostaje w projekcie). */
@@ -634,10 +627,6 @@ function HomePageContent() {
     (getTranslationNode("hero.chips", language) as string[] | undefined) ??
     (getTranslationNode("hero.chips", "pl") as string[] | undefined) ??
     [];
-  const translatedComingSoonTypes =
-    (getTranslationNode("form.comingSoonTypes", language) as string[] | undefined) ??
-    (getTranslationNode("form.comingSoonTypes", "pl") as string[] | undefined) ??
-    [];
   const steps =
     (getTranslationNode("sections.steps", language) as
       | { title: string; desc: string }[]
@@ -645,16 +634,6 @@ function HomePageContent() {
     (getTranslationNode("sections.steps", "pl") as
       | { title: string; desc: string }[]
       | undefined) ??
-    [];
-  const driverBenefits =
-    (getTranslationNode("sections.driverBenefits", language) as string[] | undefined) ??
-    (getTranslationNode("sections.driverBenefits", "pl") as string[] | undefined) ??
-    [];
-  const workshopBenefits =
-    (getTranslationNode("sections.workshopBenefits", language) as
-      | string[]
-      | undefined) ??
-    (getTranslationNode("sections.workshopBenefits", "pl") as string[] | undefined) ??
     [];
 
   const landingHeaderNavItems = useMemo(
@@ -762,10 +741,6 @@ function HomePageContent() {
   const pageIllustrationMaskClass = isDark
     ? "pointer-events-none absolute inset-0 bg-[radial-gradient(280px_170px_at_49%_52%,rgba(2,6,23,0.95),transparent_72%)]"
     : "pointer-events-none absolute inset-0 bg-[radial-gradient(280px_170px_at_49%_52%,rgba(248,251,255,0.95),transparent_72%)]";
-  const sectionCardClass = isDark
-    ? "relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/90 p-7 shadow-[0_10px_30px_rgba(2,6,23,0.55)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(59,130,246,0.2),0_8px_22px_rgba(249,115,22,0.12)]"
-    : "relative overflow-hidden rounded-2xl border border-blue-200/80 bg-gradient-to-br from-white/82 via-sky-50/75 to-orange-50/72 p-7 shadow-[0_18px_40px_rgba(37,99,235,0.12),0_10px_28px_rgba(249,115,22,0.12)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_48px_rgba(37,99,235,0.18),0_12px_30px_rgba(249,115,22,0.17)]";
-
   function clearSearchFieldError(field: SearchFieldKey) {
     setSearchFieldErrors((prev) => {
       if (prev[field] == null) return prev;

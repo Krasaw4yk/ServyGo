@@ -25,7 +25,6 @@ export async function runExpirePendingBookingsWorkshopTimeout(): Promise<number>
   });
   if (error) throw new Error(formatSupabaseError(error));
   const rows = (data ?? []) as ExpiredBookingTimeoutRow[];
-  let notified = 0;
   for (const row of rows) {
     if (!row.client_user_id || !row.booking_id) continue;
     try {
@@ -37,7 +36,6 @@ export async function runExpirePendingBookingsWorkshopTimeout(): Promise<number>
         relatedBookingId: row.booking_id,
         relatedWorkshopId: row.workshop_id,
       });
-      notified += 1;
     } catch {
       // wiadomość pomocnicza — nie blokuj wygaśnięcia
     }

@@ -5,15 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getBookingThreadMessages, markBookingThreadMessagesRead, type InternalMessage } from "@/lib/messagesApi";
 type Props = {
   bookingId: string;
-  workshopId: string;
   workshopName: string;
   serviceName: string;
   userId: string;
   isDark: boolean;
-  /** Prefiks treści / tematu np. przy „dopytaj o wycenę” */
-  draftSubject?: string;
-  /** @deprecated Ignorowane — modal pokazuje tylko komunikaty systemowe. */
-  draftBody?: string;
   onClose: () => void;
 };
 
@@ -42,13 +37,10 @@ function bubbleClasses(msg: InternalMessage, currentUserId: string, isDark: bool
 
 export default function BookingConversationModal({
   bookingId,
-  workshopId,
   workshopName,
   serviceName,
   userId,
   isDark,
-  draftSubject,
-  draftBody: _draftBody,
   onClose,
 }: Props) {
   const [messages, setMessages] = useState<InternalMessage[]>([]);
@@ -72,8 +64,6 @@ export default function BookingConversationModal({
   useEffect(() => {
     void load();
   }, [load]);
-
-  const title = useMemo(() => draftSubject ?? `Zdarzenia rezerwacji: ${serviceName}`, [draftSubject, serviceName]);
 
   const systemMessages = useMemo(() => messages.filter((m) => m.sender_role === "system"), [messages]);
 
