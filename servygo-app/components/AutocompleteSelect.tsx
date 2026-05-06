@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 
 type AutocompleteOption = {
@@ -101,6 +101,7 @@ export default function AutocompleteSelect({
   rootClassName = "",
   toggleButtonClassName = "",
 }: AutocompleteSelectProps) {
+  const listboxId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [isMobile, setIsMobile] = useState(false);
@@ -228,6 +229,7 @@ export default function AutocompleteSelect({
           value={displayValue}
           aria-required={required}
           aria-expanded={isOpen}
+          aria-controls={listboxId}
           aria-autocomplete="list"
           role="combobox"
           readOnly={isMobile}
@@ -412,6 +414,7 @@ export default function AutocompleteSelect({
       ) : null}
       {isOpen && !isMobile ? (
         <div
+          id={listboxId}
           role="listbox"
           className={`absolute left-0 top-full z-20 mt-1 max-h-[min(260px,60vh)] w-full max-w-[min(100%,92vw)] overflow-y-auto overscroll-contain rounded-xl border p-1 shadow-xl backdrop-blur [-webkit-overflow-scrolling:touch] [touch-action:pan-y] sm:right-0 sm:max-w-none ${
             isDark
