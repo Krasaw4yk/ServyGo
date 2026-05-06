@@ -547,6 +547,20 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         viewPrivacy: "Zobacz Politykę prywatności",
         status: "Status",
       },
+      reacceptance: {
+        title: "Zmieniliśmy dokumenty ServyGo",
+        description:
+          "Aby dalej korzystać z serwisu, zapoznaj się z aktualnym Regulaminem i Polityką prywatności oraz zaakceptuj zmiany.",
+        checkboxPrefix: "Akceptuję aktualny",
+        termsLabel: "Regulamin",
+        checkboxMiddle: "serwisu ServyGo oraz potwierdzam zapoznanie się z aktualną",
+        privacyLabel: "Polityką prywatności",
+        submit: "Akceptuję i kontynuuję",
+        requiredError:
+          "Aby kontynuować, zaakceptuj aktualny Regulamin i Politykę prywatności.",
+        saveError:
+          "Nie udało się zapisać akceptacji dokumentów. Spróbuj ponownie za chwilę.",
+      },
     },
     auth: {
       account: "Moje konto",
@@ -1154,6 +1168,20 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         viewPrivacy: "View Privacy Policy",
         status: "Status",
       },
+      reacceptance: {
+        title: "We updated ServyGo documents",
+        description:
+          "To continue using the service, read the current Terms and Privacy Policy and accept the changes.",
+        checkboxPrefix: "I accept the current",
+        termsLabel: "Terms of Service",
+        checkboxMiddle: "for ServyGo and confirm I have read the current",
+        privacyLabel: "Privacy Policy",
+        submit: "Accept and continue",
+        requiredError:
+          "To continue, accept the current Terms and Privacy Policy.",
+        saveError:
+          "Failed to save document acceptance. Please try again in a moment.",
+      },
     },
     auth: {
       account: "My account",
@@ -1760,6 +1788,20 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         viewTerms: "Переглянути Регламент",
         viewPrivacy: "Переглянути Політику конфіденційності",
         status: "Статус",
+      },
+      reacceptance: {
+        title: "Ми оновили документи ServyGo",
+        description:
+          "Щоб продовжити користування сервісом, ознайомтесь з актуальним Регламентом і Політикою конфіденційності та прийміть зміни.",
+        checkboxPrefix: "Я приймаю актуальний",
+        termsLabel: "Регламент",
+        checkboxMiddle: "сервісу ServyGo та підтверджую ознайомлення з актуальною",
+        privacyLabel: "Політикою конфіденційності",
+        submit: "Приймаю і продовжую",
+        requiredError:
+          "Щоб продовжити, прийміть актуальний Регламент і Політику конфіденційності.",
+        saveError:
+          "Не вдалося зберегти прийняття документів. Спробуйте ще раз за мить.",
       },
     },
     auth: {

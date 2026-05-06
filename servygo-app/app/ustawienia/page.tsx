@@ -10,6 +10,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { isAdmin } from "@/lib/adminApi";
 import { getUserActiveWorkshop } from "@/lib/workshopApi";
 import { createTranslator, type LanguageCode } from "@/lib/translations";
+import LegalReacceptanceModal from "@/components/legal/LegalReacceptanceModal";
 
 type ToggleKey = "email" | "sms" | "reminders" | "promotions";
 
@@ -619,6 +620,11 @@ export default function UstawieniaPage() {
                 </div>
               </div>
             ) : null}
+            <LegalReacceptanceModal
+              userId={user?.id ?? null}
+              language={language}
+              isDark={isDark}
+            />
           </section>
         </div>
       </main>

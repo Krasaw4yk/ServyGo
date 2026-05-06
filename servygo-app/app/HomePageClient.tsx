@@ -19,6 +19,7 @@ import { pickDashboardUpcomingBooking, resolveClientBookingBadge } from "@/lib/b
 import RecommendedWorkshopsSection from "@/components/home/RecommendedWorkshopsSection";
 import LandingCtaFooter from "@/components/home/LandingCtaFooter";
 import LandingInfoDialogs from "@/components/home/LandingInfoDialogs";
+import LegalReacceptanceModal from "@/components/legal/LegalReacceptanceModal";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
 import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
 import {
@@ -3666,6 +3667,12 @@ function HomePageContent() {
             </div>
           </div>
         ) : null}
+
+        <LegalReacceptanceModal
+          userId={currentUser?.id ?? null}
+          language={language}
+          isDark={isDark}
+        />
 
         <LandingInfoDialogs
           panel={landingInfoPanel}
