@@ -33,16 +33,20 @@ export default function LegalReacceptanceModal({
   isDark,
 }: LegalReacceptanceModalProps) {
   const t = useMemo(() => createTranslator(language), [language]);
-  const [visible, setVisible] = useState(false);
+  const [checkedProfile, setCheckedProfile] = useState(false);
+  const [reacceptanceRequired, setReacceptanceRequired] = useState(false);
   const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setVisible(false);
+    setCheckedProfile(false);
+    setReacceptanceRequired(false);
     setChecked(false);
     setError("");
-    if (!userId || !isSupabaseConfigured || !supabase) return;
+    if (!userId || !isSupabaseConfigured || !supabase) {
+      return;
+    }
 
     let cancelled = false;
     void (async () => {
@@ -57,11 +61,18 @@ export default function LegalReacceptanceModal({
       if (cancelled) return;
       if (profileError) {
         console.warn("Legal reacceptance check failed:", profileError.message);
+        setCheckedProfile(true);
         return;
       }
 
       const row = (data ?? null) as LegalProfileRow | null;
-      setVisible(needsReacceptance(row));
+      if (!row) {
+        console.warn("Legal reacceptance check: profile row missing for user", userId);
+        setCheckedProfile(true);
+        return;
+      }
+      setReacceptanceRequired(needsReacceptance(row));
+      setCheckedProfile(true);
     })();
 
     return () => {
@@ -121,11 +132,12 @@ export default function LegalReacceptanceModal({
     }
 
     setSaving(false);
-    setVisible(false);
+    setReacceptanceRequired(false);
     setChecked(false);
+    setError("");
   }
 
-  if (!visible || !userId) return null;
+  if (!userId || !checkedProfile || !reacceptanceRequired) return null;
 
   return (
     <div className="fixed inset-0 z-[10080] grid place-items-center bg-black/60 p-3 sm:p-4">
@@ -137,6 +149,9 @@ export default function LegalReacceptanceModal({
         <h3 className="text-xl font-semibold">{t("legal.reacceptance.title")}</h3>
         <p className={`mt-2 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
           {t("legal.reacceptance.description")}
+        </p>
+        <p className={`mt-2 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+          {t("legal.reacceptance.reasonInfo")}
         </p>
 
         <label className={`mt-4 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>

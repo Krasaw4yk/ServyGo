@@ -551,6 +551,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         title: "Zmieniliśmy dokumenty ServyGo",
         description:
           "Aby dalej korzystać z serwisu, zapoznaj się z aktualnym Regulaminem i Polityką prywatności oraz zaakceptuj zmiany.",
+        reasonInfo:
+          "Ten ekran jest wymagany, gdy dokumenty zostały zaktualizowane lub na koncie brakuje wymaganej akceptacji.",
         checkboxPrefix: "Akceptuję aktualny",
         termsLabel: "Regulamin",
         checkboxMiddle: "serwisu ServyGo oraz potwierdzam zapoznanie się z aktualną",
@@ -1172,6 +1174,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         title: "We updated ServyGo documents",
         description:
           "To continue using the service, read the current Terms and Privacy Policy and accept the changes.",
+        reasonInfo:
+          "This step is required when documents were updated or required acceptance is missing on your account.",
         checkboxPrefix: "I accept the current",
         termsLabel: "Terms of Service",
         checkboxMiddle: "for ServyGo and confirm I have read the current",
@@ -1793,6 +1797,8 @@ export const translations: Record<LanguageCode, TranslationTree> = {
         title: "Ми оновили документи ServyGo",
         description:
           "Щоб продовжити користування сервісом, ознайомтесь з актуальним Регламентом і Політикою конфіденційності та прийміть зміни.",
+        reasonInfo:
+          "Цей екран обовʼязковий, коли документи оновлено або у вашому акаунті бракує потрібного підтвердження.",
         checkboxPrefix: "Я приймаю актуальний",
         termsLabel: "Регламент",
         checkboxMiddle: "сервісу ServyGo та підтверджую ознайомлення з актуальною",
