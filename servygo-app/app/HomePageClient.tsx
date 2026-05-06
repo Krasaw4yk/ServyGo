@@ -2295,10 +2295,13 @@ function HomePageContent() {
                 <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-50 via-white to-orange-50 opacity-80 blur-2xl" />
                 <div className="absolute right-20 top-10 h-40 w-40 rounded-full bg-blue-400/20 blur-3xl" />
                 <div className="absolute bottom-10 left-10 h-32 w-32 rounded-full bg-orange-400/20 blur-3xl" />
-                <img
+                <Image
                   src="/hero-servygo-illustration.png"
                   alt="ServyGo ilustracja"
-                  className="relative z-10 h-full w-full select-none object-contain opacity-95 mix-blend-multiply pointer-events-none"
+                  fill
+                  priority
+                  sizes="(max-width: 1024px) 100vw, 42vw"
+                  className="z-10 object-contain opacity-95 mix-blend-multiply pointer-events-none select-none"
                   style={{
                     maskImage: "radial-gradient(circle at center, black 60%, transparent 100%)",
                     WebkitMaskImage: "radial-gradient(circle at center, black 60%, transparent 100%)",
