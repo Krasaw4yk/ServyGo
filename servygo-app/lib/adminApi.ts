@@ -30,6 +30,19 @@ export type WorkshopLeadRow = {
   message: string | null;
   services?: string | null;
   google_maps_url?: string | null;
+  terms_accepted_at?: string | null;
+  privacy_accepted_at?: string | null;
+  workshop_data_truth_confirmed_at?: string | null;
+  workshop_contact_consent_at?: string | null;
+  workshop_publication_consent_at?: string | null;
+  pilot_terms_accepted_at?: string | null;
+  marketing_consent?: boolean | null;
+  marketing_consent_at?: string | null;
+  accepted_terms_version?: string | null;
+  accepted_privacy_version?: string | null;
+  accepted_workshop_pilot_version?: string | null;
+  consent_ip?: string | null;
+  consent_user_agent?: string | null;
   status: string | null;
 };
 
@@ -244,7 +257,7 @@ export async function listWorkshopLeadsForAdmin(
   const { data, error } = await supabase
     .from("workshop_leads")
     .select(
-      "id, created_at, updated_at, workshop_name, nip, city, postal_code, address, phone, email, contact_person, description, message, services, google_maps_url, status",
+      "id, created_at, updated_at, workshop_name, nip, city, postal_code, address, phone, email, contact_person, description, message, services, google_maps_url, terms_accepted_at, privacy_accepted_at, workshop_data_truth_confirmed_at, workshop_contact_consent_at, workshop_publication_consent_at, pilot_terms_accepted_at, marketing_consent, marketing_consent_at, accepted_terms_version, accepted_privacy_version, accepted_workshop_pilot_version, consent_ip, consent_user_agent, status",
     )
     .order("created_at", { ascending: false });
   if (error) throw new Error(formatSupabaseError(error));

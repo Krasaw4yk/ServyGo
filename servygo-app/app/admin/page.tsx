@@ -224,6 +224,25 @@ function formatAddressBlock(row: WorkshopLeadRow) {
   return line || "—";
 }
 
+function hasCompleteWorkshopLeadConsents(row: WorkshopLeadRow) {
+  return Boolean(
+    row.terms_accepted_at &&
+      row.privacy_accepted_at &&
+      row.workshop_data_truth_confirmed_at &&
+      row.workshop_contact_consent_at &&
+      row.workshop_publication_consent_at &&
+      row.pilot_terms_accepted_at &&
+      row.accepted_terms_version &&
+      row.accepted_privacy_version &&
+      row.accepted_workshop_pilot_version,
+  );
+}
+
+function formatConsentStatusLabel(acceptedAt?: string | null, acceptedText = "zaakceptowano") {
+  if (!acceptedAt) return "brak";
+  return `${acceptedText}: ${formatDate(acceptedAt)}`;
+}
+
 function coerceWorkshopEntityStatus(status: string | null | undefined): AdminWorkshopEntityStatus {
   const s = (status ?? "").toLowerCase().trim();
   if (s === "suspended" || s === "wylaczony") return "suspended";
@@ -1844,13 +1863,14 @@ export default function AdminPage() {
                           <th className="px-3 py-2.5 text-left lg:px-4 lg:py-3">Email</th>
                           <th className="px-3 py-2.5 text-left lg:px-4 lg:py-3">Kontakt</th>
                           <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Status</th>
+                          <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Zgody</th>
                           <th className="whitespace-nowrap px-3 py-2.5 text-left lg:px-4 lg:py-3">Akcje</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className={`px-4 py-10 text-center text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                            <td colSpan={9} className={`px-4 py-10 text-center text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                               Brak zgłoszeń warsztatów. Dodaj testowe zgłoszenie przyciskiem powyżej albo wyślij formularz{" "}
                               <Link href="/dodaj-warsztat" className="font-semibold text-blue-500 underline hover:text-orange-400">
                                 Dołącz jako warsztat
@@ -1860,7 +1880,7 @@ export default function AdminPage() {
                           </tr>
                         ) : filteredLeads.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className={`px-4 py-10 text-center text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                            <td colSpan={9} className={`px-4 py-10 text-center text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                               Brak zgłoszeń dla wybranego filtru statusu.
                             </td>
                           </tr>
@@ -1868,6 +1888,7 @@ export default function AdminPage() {
                           filteredLeads.map((row) => {
                             const resolved = isLeadModerationClosed(row.status);
                             const isArchived = normalizeWorkshopStatus(row.status) === "archived";
+                            const consentComplete = hasCompleteWorkshopLeadConsents(row);
                             return (
                               <tr key={row.id} className={isDark ? "border-t border-zinc-800" : "border-t border-blue-100"}>
                                 <td className="whitespace-nowrap px-3 py-2.5 lg:px-4 lg:py-3">{formatDate(row.created_at)}</td>
@@ -1879,6 +1900,21 @@ export default function AdminPage() {
                                   <span className="line-clamp-2">{row.contact_person?.trim() || "—"}</span>
                                 </td>
                                 <td className="px-3 py-2.5 lg:px-4 lg:py-3">{formatWorkshopLeadStatusLabel(row.status)}</td>
+                                <td className="px-3 py-2.5 lg:px-4 lg:py-3">
+                                  <span
+                                    className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                                      consentComplete
+                                        ? isDark
+                                          ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-200"
+                                          : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                        : isDark
+                                          ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
+                                          : "border-amber-300 bg-amber-50 text-amber-700"
+                                    }`}
+                                  >
+                                    Zgody: {consentComplete ? "komplet" : "braki"}
+                                  </span>
+                                </td>
                                 <td className="px-3 py-2.5 lg:px-4 lg:py-3">
                                   <div className="flex flex-wrap gap-1.5">
                                     <button
@@ -2597,6 +2633,71 @@ export default function AdminPage() {
                   </dd>
                 </div>
               </dl>
+
+              <section className={`mt-6 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/40" : "border-blue-100 bg-slate-50/90"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide">Zgody i dokumenty</h3>
+                  <span
+                    className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                      hasCompleteWorkshopLeadConsents(detailLead)
+                        ? isDark
+                          ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-200"
+                          : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : isDark
+                          ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
+                          : "border-amber-300 bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    Zgody: {hasCompleteWorkshopLeadConsents(detailLead) ? "komplet" : "braki"}
+                  </span>
+                </div>
+                <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Regulamin</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{formatConsentStatusLabel(detailLead.terms_accepted_at, "zaakceptowany")}</dd>
+                    <dd className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Wersja: {detailLead.accepted_terms_version?.trim() || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Polityka prywatności</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{formatConsentStatusLabel(detailLead.privacy_accepted_at, "zaakceptowana")}</dd>
+                    <dd className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Wersja: {detailLead.accepted_privacy_version?.trim() || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Prawdziwość danych</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{formatConsentStatusLabel(detailLead.workshop_data_truth_confirmed_at, "potwierdzono")}</dd>
+                  </div>
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Zgoda na kontakt</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{formatConsentStatusLabel(detailLead.workshop_contact_consent_at, "tak")}</dd>
+                  </div>
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Zgoda na publikację profilu</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{formatConsentStatusLabel(detailLead.workshop_publication_consent_at, "tak")}</dd>
+                  </div>
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Warunki pilotażu</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{formatConsentStatusLabel(detailLead.pilot_terms_accepted_at, "zaakceptowane")}</dd>
+                    <dd className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Wersja: {detailLead.accepted_workshop_pilot_version?.trim() || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Marketing</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{detailLead.marketing_consent ? "tak" : "nie"}</dd>
+                    <dd className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Data: {detailLead.marketing_consent_at ? formatDate(detailLead.marketing_consent_at) : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>IP zgody</dt>
+                    <dd className={`mt-1 text-sm ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{detailLead.consent_ip?.trim() || "—"}</dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>User-Agent zgody</dt>
+                    <dd className={`mt-1 break-words text-sm leading-relaxed ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                      {detailLead.consent_user_agent?.trim() || "—"}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
 
               <div
                 className={`mt-6 rounded-xl border px-4 py-3 text-sm leading-relaxed ${
