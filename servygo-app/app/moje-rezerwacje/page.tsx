@@ -24,6 +24,7 @@ import {
 } from "@/lib/messagesApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { useBookingsRealtimeSync } from "@/lib/useServyGoRealtime";
+import { useIsClient } from "@/lib/useIsClient";
 import { inferEndTime } from "@/lib/bookingAvailability";
 
 type ConversationOpen = {
@@ -89,8 +90,12 @@ function MojeRezerwacjePageContent() {
   const highlightId = (searchParams.get("highlight") ?? "").trim();
   const chatBookingId = (searchParams.get("chat") ?? "").trim();
   const highlightRef = useRef<HTMLDivElement | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const mounted = useIsClient();
+  const theme = useMemo<"light" | "dark">(() => {
+    if (!mounted) return "light";
+    const savedTheme = window.localStorage.getItem("servygo-theme");
+    return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "light";
+  }, [mounted]);
   const [user, setUser] = useState<User | null>(null);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,12 +141,6 @@ function MojeRezerwacjePageContent() {
   }, [user]);
 
   useEffect(() => {
-    setMounted(true);
-    const savedTheme = window.localStorage.getItem("servygo-theme");
-    if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
-  }, []);
-
-  useEffect(() => {
     if (!mounted) return;
     if (!isSupabaseConfigured || !supabase) {
       router.replace("/?auth=login");
@@ -174,20 +173,26 @@ function MojeRezerwacjePageContent() {
   useEffect(() => {
     if (!mounted || !user || !supabase) return;
     let cancelled = false;
-    setLoading(true);
-    setError("");
-    void (async () => {
-      await refreshBookings();
+    const frameId = window.requestAnimationFrame(() => {
       if (cancelled) return;
-      setLoading(false);
-    })();
+      setLoading(true);
+      setError("");
+      void (async () => {
+        await refreshBookings();
+        if (cancelled) return;
+        setLoading(false);
+      })();
+    });
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(frameId);
     };
   }, [mounted, user, refreshBookings]);
 
   const refreshBookingsRef = useRef(refreshBookings);
-  refreshBookingsRef.current = refreshBookings;
+  useEffect(() => {
+    refreshBookingsRef.current = refreshBookings;
+  }, [refreshBookings]);
   useBookingsRealtimeSync({
     enabled: Boolean(mounted && user && supabase),
     clientUserId: user?.id ?? null,
@@ -220,7 +225,9 @@ function MojeRezerwacjePageContent() {
     if (!chatBookingId || loading || bookingsWithPickup.length === 0) return;
     const row = bookingsWithPickup.find((x) => x.id === chatBookingId);
     if (!row) return;
-    setConversation((prev) => (prev?.row.id === row.id ? prev : { row }));
+    queueMicrotask(() => {
+      setConversation((prev) => (prev?.row.id === row.id ? prev : { row }));
+    });
   }, [chatBookingId, loading, bookingsWithPickup]);
 
   function closeConversation() {

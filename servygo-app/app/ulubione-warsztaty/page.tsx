@@ -7,9 +7,10 @@ import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { fetchUserFavoriteWorkshops, isWorkshopStatusPublicVisible } from "@/lib/favoriteWorkshopsDb";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { useIsClient } from "@/lib/useIsClient";
 
 export default function UlubioneWarsztatyPage() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,13 +22,12 @@ export default function UlubioneWarsztatyPage() {
   const isDark = mounted ? theme === "dark" : false;
 
   useEffect(() => {
-    const id = window.requestAnimationFrame(() => {
-      setMounted(true);
+    if (!mounted) return;
+    queueMicrotask(() => {
       const th = window.localStorage.getItem("servygo-theme");
       if (th === "light" || th === "dark") setTheme(th);
     });
-    return () => window.cancelAnimationFrame(id);
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -52,7 +52,7 @@ export default function UlubioneWarsztatyPage() {
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
     let c = false;

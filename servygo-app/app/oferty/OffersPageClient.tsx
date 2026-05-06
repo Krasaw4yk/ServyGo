@@ -290,36 +290,42 @@ export default function OffersPageClient() {
 
   useEffect(() => {
     if (baseMatches.length === 0) {
-      setSlotAvailability({});
-      setSlotsLoading(false);
+      queueMicrotask(() => {
+        setSlotAvailability({});
+        setSlotsLoading(false);
+      });
       return;
     }
     let cancelled = false;
-    setSlotsLoading(true);
-    const todayKey = toLocalDateKey(new Date());
-    const tomorrowD = new Date();
-    tomorrowD.setDate(tomorrowD.getDate() + 1);
-    const tomorrowKey = toLocalDateKey(tomorrowD);
-    void (async () => {
-      const entries = await Promise.all(
-        baseMatches.map(async (w) => {
-          const dur = w.services[0]?.duration_minutes ?? 60;
-          try {
-            const todaySlots = await resolveAvailableSlotsForWorkshopDay(w, todayKey, dur);
-            const tomorrowSlots = await resolveAvailableSlotsForWorkshopDay(w, tomorrowKey, dur);
-            return [w.id, { today: todaySlots.length > 0, tomorrow: tomorrowSlots.length > 0 }] as const;
-          } catch {
-            return [w.id, { today: false, tomorrow: false }] as const;
-          }
-        }),
-      );
-      if (!cancelled) {
-        setSlotAvailability(Object.fromEntries(entries));
-        setSlotsLoading(false);
-      }
-    })();
+    const frameId = window.requestAnimationFrame(() => {
+      if (cancelled) return;
+      setSlotsLoading(true);
+      const todayKey = toLocalDateKey(new Date());
+      const tomorrowD = new Date();
+      tomorrowD.setDate(tomorrowD.getDate() + 1);
+      const tomorrowKey = toLocalDateKey(tomorrowD);
+      void (async () => {
+        const entries = await Promise.all(
+          baseMatches.map(async (w) => {
+            const dur = w.services[0]?.duration_minutes ?? 60;
+            try {
+              const todaySlots = await resolveAvailableSlotsForWorkshopDay(w, todayKey, dur);
+              const tomorrowSlots = await resolveAvailableSlotsForWorkshopDay(w, tomorrowKey, dur);
+              return [w.id, { today: todaySlots.length > 0, tomorrow: tomorrowSlots.length > 0 }] as const;
+            } catch {
+              return [w.id, { today: false, tomorrow: false }] as const;
+            }
+          }),
+        );
+        if (!cancelled) {
+          setSlotAvailability(Object.fromEntries(entries));
+          setSlotsLoading(false);
+        }
+      })();
+    });
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(frameId);
     };
   }, [baseMatches]);
 

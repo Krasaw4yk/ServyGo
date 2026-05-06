@@ -42,6 +42,8 @@ type BrowseRow =
   | { kind: "service"; serviceName: string }
   | { kind: "search"; result: SearchResult };
 
+type BrowseHighlightState = { sig: string; idx: number };
+
 function normalizeSearchText(value: string) {
   return normalizeServiceTextForMatch(value);
 }
@@ -81,7 +83,7 @@ export default function ServiceCategoryPicker({
   const [isMobile, setIsMobile] = useState(false);
   const [mobileCustomOpen, setMobileCustomOpen] = useState(false);
   const [customServiceDraft, setCustomServiceDraft] = useState("");
-  const [browseHighlightIdx, setBrowseHighlightIdx] = useState(-1);
+  const [browseHighlight, setBrowseHighlight] = useState<BrowseHighlightState>({ sig: "", idx: -1 });
   const prevSheetOpenRef = useRef(false);
   /** Zapobiega „ghost click” po zamknięciu MobileBottomSheet (klik wpada w pole pod spodem). */
   const suppressOpenUntilRef = useRef(0);
@@ -233,6 +235,10 @@ export default function ServiceCategoryPicker({
   }, [query, sortedCategories]);
 
   const normalizedBrowseQuery = useMemo(() => normalizeSearchText(query), [query]);
+  const browseNavSig = useMemo(
+    () => `${normalizedBrowseQuery}\u0000${activeCategory ?? ""}\u0000${activeSubcategory ?? ""}`,
+    [normalizedBrowseQuery, activeCategory, activeSubcategory],
+  );
 
   function applySearchResult(result: SearchResult) {
     if (result.type === "category") {
@@ -322,17 +328,19 @@ export default function ServiceCategoryPicker({
     }
   }
 
-  useEffect(() => {
-    setBrowseHighlightIdx(-1);
-  }, [normalizedBrowseQuery, activeCategory, activeSubcategory]);
+  const effectiveBrowseHighlightIdx = useMemo(() => {
+    if (browseHighlight.sig !== browseNavSig) return -1;
+    if (browseHighlight.idx < 0 || browseRows.length === 0) return -1;
+    return Math.min(browseHighlight.idx, browseRows.length - 1);
+  }, [browseHighlight.sig, browseHighlight.idx, browseNavSig, browseRows.length]);
 
   useEffect(() => {
-    if (isMobile || !isOpen || browseHighlightIdx < 0) return;
+    if (isMobile || !isOpen || effectiveBrowseHighlightIdx < 0) return;
     const rowEl = rootRef.current?.querySelector<HTMLElement>(
-      `[data-browse-row-index="${browseHighlightIdx}"]`,
+      `[data-browse-row-index="${effectiveBrowseHighlightIdx}"]`,
     );
     rowEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [browseHighlightIdx, isOpen, isMobile, normalizedBrowseQuery, activeCategory, activeSubcategory]);
+  }, [effectiveBrowseHighlightIdx, isOpen, isMobile, normalizedBrowseQuery, activeCategory, activeSubcategory]);
 
   return (
     <div ref={rootRef} className={`relative w-full ${rootClassName}`}>
@@ -373,8 +381,8 @@ export default function ServiceCategoryPicker({
             event.preventDefault();
             if (isMobile) return;
             if (!isOpen) return;
-            if (browseHighlightIdx < 0 || browseHighlightIdx >= browseRows.length) return;
-            activateBrowseRow(browseRows[browseHighlightIdx]);
+            if (effectiveBrowseHighlightIdx < 0 || effectiveBrowseHighlightIdx >= browseRows.length) return;
+            activateBrowseRow(browseRows[effectiveBrowseHighlightIdx]);
             return;
           }
           if (isMobile) return;
@@ -386,22 +394,24 @@ export default function ServiceCategoryPicker({
                 setQuery(value);
               }
             }
-            setBrowseHighlightIdx((prev) => {
+            setBrowseHighlight((prev) => {
               const max = browseRows.length - 1;
-              if (max < 0) return -1;
-              if (prev < 0) return 0;
-              return prev >= max ? 0 : prev + 1;
+              if (max < 0) return { sig: browseNavSig, idx: -1 };
+              const aligned = prev.sig === browseNavSig ? prev.idx : -1;
+              if (aligned < 0) return { sig: browseNavSig, idx: 0 };
+              return { sig: browseNavSig, idx: aligned >= max ? 0 : aligned + 1 };
             });
             return;
           }
           if (event.key === "ArrowUp") {
             event.preventDefault();
             if (!isOpen) return;
-            setBrowseHighlightIdx((prev) => {
+            setBrowseHighlight((prev) => {
               const max = browseRows.length - 1;
-              if (max < 0) return -1;
-              if (prev < 0) return max;
-              return prev <= 0 ? max : prev - 1;
+              if (max < 0) return { sig: browseNavSig, idx: -1 };
+              const aligned = prev.sig === browseNavSig ? prev.idx : -1;
+              if (aligned < 0) return { sig: browseNavSig, idx: max };
+              return { sig: browseNavSig, idx: aligned <= 0 ? max : aligned - 1 };
             });
           }
         }}
@@ -690,7 +700,7 @@ export default function ServiceCategoryPicker({
             <p className={`px-3 py-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{noResultsText}</p>
           ) : (
             browseRows.map((row, idx) => {
-              const hi = browseHighlightIdx === idx;
+              const hi = effectiveBrowseHighlightIdx === idx;
               const hiCls = hi
                 ? isDark
                   ? "bg-zinc-800/90 ring-2 ring-inset ring-blue-400/55"

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { useIsClient } from "@/lib/useIsClient";
 import {
   deleteUserCalendarEvent,
   insertUserCalendarEvent,
@@ -110,8 +111,12 @@ function bookingStatusReadable(status: string | null | undefined) {
 }
 
 export default function MojKalendarzPage() {
-  const [mounted, setMounted] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const mounted = useIsClient();
+  const theme = useMemo<"light" | "dark">(() => {
+    if (!mounted) return "light";
+    const st = window.localStorage.getItem("servygo-theme");
+    return st === "light" || st === "dark" ? st : "light";
+  }, [mounted]);
   const [user, setUser] = useState<User | null>(null);
   const [cursor, setCursor] = useState(() => new Date());
   const [personal, setPersonal] = useState<UserCalendarEventRow[]>([]);
@@ -131,12 +136,6 @@ export default function MojKalendarzPage() {
   const [formReminder, setFormReminder] = useState("");
   const [formStatus, setFormStatus] = useState<string>("upcoming");
   const [formBusy, setFormBusy] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const st = window.localStorage.getItem("servygo-theme");
-    if (st === "light" || st === "dark") setTheme(st);
-  }, []);
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) return;
@@ -178,7 +177,8 @@ export default function MojKalendarzPage() {
   }, [user]);
 
   useEffect(() => {
-    void loadAll();
+    const frame = window.requestAnimationFrame(() => void loadAll());
+    return () => window.cancelAnimationFrame(frame);
   }, [loadAll]);
 
   const isDark = theme === "dark";

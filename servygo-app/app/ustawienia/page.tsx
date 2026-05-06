@@ -12,6 +12,7 @@ import { getUserActiveWorkshop } from "@/lib/workshopApi";
 import { createTranslator, type LanguageCode } from "@/lib/translations";
 import { recordUserConsentEvent } from "@/lib/userConsentsApi";
 import LegalReacceptanceModal from "@/components/legal/LegalReacceptanceModal";
+import { useIsClient } from "@/lib/useIsClient";
 
 type ToggleKey = "email" | "sms" | "reminders" | "promotions";
 
@@ -98,9 +99,18 @@ function SettingToggle({
 
 export default function UstawieniaPage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [language, setLanguage] = useState<LanguageCode>("pl");
+  const mounted = useIsClient();
+  const theme = useMemo<"light" | "dark">(() => {
+    if (!mounted) return "light";
+    const savedTheme = window.localStorage.getItem("servygo-theme");
+    return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "light";
+  }, [mounted]);
+  const language = useMemo<LanguageCode>(() => {
+    if (!mounted) return "pl";
+    const savedLanguage = window.localStorage.getItem("servygo_language");
+    if (savedLanguage === "pl" || savedLanguage === "en" || savedLanguage === "ua") return savedLanguage;
+    return "pl";
+  }, [mounted]);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [roleBadge, setRoleBadge] = useState("Użytkownik");
@@ -121,16 +131,6 @@ export default function UstawieniaPage() {
   const [marketingBusy, setMarketingBusy] = useState(false);
   const [marketingMessage, setMarketingMessage] = useState("");
   const [marketingError, setMarketingError] = useState("");
-
-  useEffect(() => {
-    setMounted(true);
-    const savedTheme = window.localStorage.getItem("servygo-theme");
-    if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
-    const savedLanguage = window.localStorage.getItem("servygo_language");
-    if (savedLanguage === "pl" || savedLanguage === "en" || savedLanguage === "ua") {
-      setLanguage(savedLanguage);
-    }
-  }, []);
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) return;

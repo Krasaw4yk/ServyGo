@@ -30,6 +30,7 @@ import {
 } from "@/lib/vehicleData";
 import { VinOptionalHint } from "@/components/VinOptionalHint";
 import { createTranslator, type LanguageCode } from "@/lib/translations";
+import { useIsClient } from "@/lib/useIsClient";
 
 const fieldLight =
   "rounded-xl border border-blue-200/80 bg-slate-100/85 px-4 py-3 text-zinc-900 placeholder:text-zinc-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300/60";
@@ -42,7 +43,7 @@ function parseStoredLanguage(raw: string | null): LanguageCode {
 }
 
 export default function MojeAutaPage() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [language, setLanguage] = useState<LanguageCode>("pl");
   const [user, setUser] = useState<User | null>(null);
@@ -51,7 +52,7 @@ export default function MojeAutaPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [vehicles, setVehicles] = useState<StoredVehicle[]>([]);
-  const [years, setYears] = useState<string[]>([]);
+  const years = useMemo(() => sortYearsDesc(getVehicleYears()).map(String), []);
   const [vehicleTypeDraft, setVehicleTypeDraft] = useState("");
   const [vehicleBrandDraft, setVehicleBrandDraft] = useState("");
   const [vehicleModelDraft, setVehicleModelDraft] = useState("");
@@ -68,23 +69,18 @@ export default function MojeAutaPage() {
   const t = useMemo(() => createTranslator(language), [language]);
 
   useEffect(() => {
-    const id = window.requestAnimationFrame(() => {
-      setMounted(true);
+    if (!mounted) return;
+    queueMicrotask(() => {
       const th = window.localStorage.getItem("servygo-theme");
       if (th === "dark" || th === "light") setTheme(th);
       setLanguage(parseStoredLanguage(window.localStorage.getItem("servygo_language")));
     });
-    return () => window.cancelAnimationFrame(id);
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
     window.localStorage.setItem("servygo-theme", theme);
   }, [mounted, theme]);
-
-  useEffect(() => {
-    setYears(sortYearsDesc(getVehicleYears()).map(String));
-  }, []);
 
   const loadVehicles = useCallback(async (uid: string) => {
     if (!supabase) return;
@@ -94,7 +90,7 @@ export default function MojeAutaPage() {
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
     let cancelled = false;
@@ -123,7 +119,6 @@ export default function MojeAutaPage() {
     };
   }, [mounted, loadVehicles]);
 
-  const sortedYears = useMemo(() => years, [years]);
   const vehicleTypeOpts = useMemo(
     () => vehicleTypeOptions.map((t) => ({ value: t.key, label: getVehicleTypeLabel(t.key) })),
     [],
@@ -370,7 +365,7 @@ export default function MojeAutaPage() {
                       disabled={saving}
                     >
                       <option value="">Wybierz</option>
-                      {sortedYears.map((yy) => (
+                      {years.map((yy) => (
                         <option key={yy} value={yy}>
                           {yy}
                         </option>

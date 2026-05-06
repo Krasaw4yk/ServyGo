@@ -36,7 +36,8 @@ export default function WorkshopPhotosManager({ workshopId, uploadedByRole, isDa
   }, [workshopId]);
 
   useEffect(() => {
-    void reload();
+    const frame = window.requestAnimationFrame(() => void reload());
+    return () => window.cancelAnimationFrame(frame);
   }, [reload]);
 
   async function onFile(file: File | null) {
