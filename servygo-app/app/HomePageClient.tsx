@@ -1641,7 +1641,7 @@ function HomePageContent() {
       return;
     }
 
-    if (data.user && data.session) {
+    if (data.user) {
       const acceptedAt = new Date().toISOString();
       const { error: profileError } = await supabase.from("profiles").upsert(
         {
@@ -1656,7 +1656,6 @@ function HomePageContent() {
           accepted_privacy_version: LEGAL_VERSIONS.privacy,
           marketing_consent: registerMarketingConsent,
           marketing_consent_at: registerMarketingConsent ? acceptedAt : null,
-          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" },
