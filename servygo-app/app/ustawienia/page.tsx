@@ -38,7 +38,24 @@ type ProfileRow = {
   last_name: string | null;
   email: string | null;
   phone: string | null;
+  terms_accepted_at: string | null;
+  privacy_accepted_at: string | null;
+  marketing_consent: boolean | null;
+  marketing_consent_at: string | null;
+  pricing_notice_accepted_at: string | null;
+  liability_notice_accepted_at: string | null;
+  accepted_terms_version: string | null;
+  accepted_privacy_version: string | null;
+  accepted_pricing_notice_version: string | null;
+  accepted_liability_notice_version: string | null;
 };
+
+function formatConsentDate(value: string | null | undefined) {
+  if (!value) return "brak";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("pl-PL");
+}
 
 function SettingToggle({
   checked,
@@ -97,6 +114,9 @@ export default function UstawieniaPage() {
   const [deleteAck, setDeleteAck] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [marketingBusy, setMarketingBusy] = useState(false);
+  const [marketingMessage, setMarketingMessage] = useState("");
+  const [marketingError, setMarketingError] = useState("");
 
   useEffect(() => {
     setMounted(true);
@@ -136,7 +156,13 @@ export default function UstawieniaPage() {
     void (async () => {
       const [{ data: profileRow }, { count: carsCount }, { count: bookings }, adminAccess, activeWorkshop] =
         await Promise.all([
-          supabase.from("profiles").select("first_name, last_name, email, phone").eq("id", user.id).maybeSingle(),
+          supabase
+            .from("profiles")
+            .select(
+              "first_name, last_name, email, phone, terms_accepted_at, privacy_accepted_at, marketing_consent, marketing_consent_at, pricing_notice_accepted_at, liability_notice_accepted_at, accepted_terms_version, accepted_privacy_version, accepted_pricing_notice_version, accepted_liability_notice_version",
+            )
+            .eq("id", user.id)
+            .maybeSingle(),
           supabase.from("cars").select("id", { head: true, count: "exact" }).eq("user_id", user.id),
           supabase.from("bookings").select("id", { head: true, count: "exact" }).eq("user_id", user.id),
           isAdmin(user.id, user.email ?? null),
@@ -182,6 +208,58 @@ export default function UstawieniaPage() {
     if (!supabase) return;
     await supabase.auth.signOut();
     router.push("/");
+  }
+
+  async function handleMarketingConsentChange(nextValue: boolean) {
+    if (!supabase || !user || !profile) return;
+    const previous = {
+      marketing_consent: profile.marketing_consent,
+      marketing_consent_at: profile.marketing_consent_at,
+    };
+    const nextAcceptedAt = nextValue ? new Date().toISOString() : null;
+    setMarketingBusy(true);
+    setMarketingError("");
+    setMarketingMessage("");
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            marketing_consent: nextValue,
+            marketing_consent_at: nextAcceptedAt,
+          }
+        : prev,
+    );
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          marketing_consent: nextValue,
+          marketing_consent_at: nextAcceptedAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+      if (error) throw error;
+      setMarketingMessage(
+        nextValue
+          ? "Zgoda marketingowa została włączona."
+          : "Zgoda marketingowa została wyłączona.",
+      );
+    } catch (e) {
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              marketing_consent: previous.marketing_consent,
+              marketing_consent_at: previous.marketing_consent_at,
+            }
+          : prev,
+      );
+      setMarketingError(
+        e instanceof Error ? e.message : "Nie udało się zapisać ustawienia zgody marketingowej.",
+      );
+    } finally {
+      setMarketingBusy(false);
+    }
   }
 
   async function handleConfirmDeleteAccount() {
@@ -349,6 +427,67 @@ export default function UstawieniaPage() {
                   <li className="rounded-xl border border-zinc-200 px-3 py-2">Zarządzanie danymi</li>
                   <li className="rounded-xl border border-zinc-200 px-3 py-2">Ustawienia prywatności</li>
                 </ul>
+              </article>
+
+              <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
+                <h2 className="text-lg font-semibold text-zinc-900">Zgody i dokumenty</h2>
+                <dl className="mt-3 space-y-3 text-sm">
+                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <dt className="font-semibold text-zinc-900">Regulamin</dt>
+                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.terms_accepted_at)}</dd>
+                    <dd className="text-zinc-600">Wersja: {profile?.accepted_terms_version?.trim() || "—"}</dd>
+                    <dd className="mt-1">
+                      <Link href="/regulamin" className="font-medium text-blue-700 hover:text-orange-600 hover:underline">
+                        Zobacz Regulamin
+                      </Link>
+                    </dd>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <dt className="font-semibold text-zinc-900">Polityka prywatności</dt>
+                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.privacy_accepted_at)}</dd>
+                    <dd className="text-zinc-600">Wersja: {profile?.accepted_privacy_version?.trim() || "—"}</dd>
+                    <dd className="mt-1">
+                      <Link href="/polityka-prywatnosci" className="font-medium text-blue-700 hover:text-orange-600 hover:underline">
+                        Zobacz Politykę prywatności
+                      </Link>
+                    </dd>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <dt className="font-semibold text-zinc-900">Zasady ceny orientacyjnej</dt>
+                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.pricing_notice_accepted_at)}</dd>
+                    <dd className="text-zinc-600">Wersja: {profile?.accepted_pricing_notice_version?.trim() || "—"}</dd>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <dt className="font-semibold text-zinc-900">Informacja o odpowiedzialności ServyGo</dt>
+                    <dd className="mt-1 text-zinc-700">Zaakceptowano dnia: {formatConsentDate(profile?.liability_notice_accepted_at)}</dd>
+                    <dd className="text-zinc-600">Wersja: {profile?.accepted_liability_notice_version?.trim() || "—"}</dd>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-200 px-3 py-2">
+                    <dt className="font-semibold text-zinc-900">Marketing</dt>
+                    <dd className="mt-1 text-zinc-700">
+                      Status: {profile?.marketing_consent ? "włączony" : "wyłączony"}
+                    </dd>
+                    <dd className="text-zinc-600">
+                      Data ostatniej zgody: {profile?.marketing_consent_at ? formatConsentDate(profile.marketing_consent_at) : "—"}
+                    </dd>
+                    <label className="mt-3 flex items-start gap-2 text-zinc-800">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(profile?.marketing_consent)}
+                        disabled={marketingBusy}
+                        onChange={(event) => void handleMarketingConsentChange(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-zinc-400"
+                      />
+                      <span>Chcę otrzymywać informacje marketingowe od ServyGo.</span>
+                    </label>
+                    {marketingMessage ? <p className="mt-2 text-xs text-emerald-700">{marketingMessage}</p> : null}
+                    {marketingError ? <p className="mt-2 text-xs text-rose-700">{marketingError}</p> : null}
+                  </div>
+                </dl>
               </article>
 
               <article id="sec-auta" className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm scroll-mt-28">
