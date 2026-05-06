@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import {
@@ -9,6 +9,7 @@ import {
   getTranslationNode,
   type LanguageCode,
 } from "@/lib/translations";
+import { useIsClient } from "@/lib/useIsClient";
 
 export type LandingInfoPanelKey = "contact" | "about" | "workshops" | "drivers" | "howItWorks" | "faq";
 
@@ -40,8 +41,7 @@ export default function LandingInfoDialogs({
   language,
   isDark,
 }: Props) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsClient();
 
   const t = useMemo(() => createTranslator(language), [language]);
 

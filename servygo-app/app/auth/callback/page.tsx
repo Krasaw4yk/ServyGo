@@ -15,8 +15,10 @@ function AuthCallbackInner() {
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
-      setMessage("Brak konfiguracji Supabase.");
-      router.replace("/");
+      queueMicrotask(() => {
+        setMessage("Brak konfiguracji Supabase.");
+        router.replace("/");
+      });
       return;
     }
 

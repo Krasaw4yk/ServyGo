@@ -71,7 +71,8 @@ export default function ClientRescheduleModal({
   }, [workshopId, dateKey, durationMinutes, employeeId]);
 
   useEffect(() => {
-    void loadSlots();
+    const frame = window.requestAnimationFrame(() => void loadSlots());
+    return () => window.cancelAnimationFrame(frame);
   }, [loadSlots]);
 
   async function submit() {

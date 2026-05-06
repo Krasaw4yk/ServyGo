@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 
 type AutocompleteOption = {
@@ -120,15 +120,20 @@ export default function AutocompleteSelect({
     return isMobile && Date.now() < suppressOpenUntilRef.current;
   }
 
-  function closeDropdown(blurInput = false) {
-    markSuppressTapThroughFromSheet();
-    setIsOpen(false);
-    setQuery("");
-    setHighlightedIndex(-1);
-    if (blurInput) {
-      inputRef.current?.blur();
-    }
-  }
+  const closeDropdown = useCallback(
+    (blurInput = false) => {
+      if (isMobile) {
+        suppressOpenUntilRef.current = Date.now() + 480;
+      }
+      setIsOpen(false);
+      setQuery("");
+      setHighlightedIndex(-1);
+      if (blurInput) {
+        inputRef.current?.blur();
+      }
+    },
+    [isMobile],
+  );
 
   function handleSelectOption(option: AutocompleteOption) {
     onChange(option.value);
@@ -177,24 +182,22 @@ export default function AutocompleteSelect({
     });
   }, [normalizedOptions, query]);
 
-  useEffect(() => {
-    if (highlightedIndex < 0) return;
-    if (filteredOptions.length === 0) {
-      setHighlightedIndex(-1);
-      return;
-    }
-    if (highlightedIndex >= filteredOptions.length) {
-      setHighlightedIndex(filteredOptions.length - 1);
-    }
-  }, [filteredOptions, highlightedIndex]);
+  const effectiveHighlightedIndex = useMemo(() => {
+    if (highlightedIndex < 0 || filteredOptions.length === 0) return -1;
+    if (highlightedIndex >= filteredOptions.length) return filteredOptions.length - 1;
+    return highlightedIndex;
+  }, [highlightedIndex, filteredOptions]);
 
   useEffect(() => {
     function updateViewportMode() {
       setIsMobile(window.innerWidth < 640);
     }
-    updateViewportMode();
+    const rafId = window.requestAnimationFrame(() => updateViewportMode());
     window.addEventListener("resize", updateViewportMode);
-    return () => window.removeEventListener("resize", updateViewportMode);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", updateViewportMode);
+    };
   }, []);
 
   useEffect(() => {
@@ -207,7 +210,7 @@ export default function AutocompleteSelect({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isMobile]);
+  }, [isMobile, closeDropdown]);
 
   const displayValue = isOpen ? query : selectedOption?.label ?? value;
 
@@ -262,7 +265,7 @@ export default function AutocompleteSelect({
               if (event.nativeEvent.isComposing) return;
               event.preventDefault();
               if (!isOpen || filteredOptions.length === 0) return;
-              const pick = resolveEnterSelection(filteredOptions, query, highlightedIndex);
+              const pick = resolveEnterSelection(filteredOptions, query, effectiveHighlightedIndex);
               if (pick) handleSelectOption(pick);
               return;
             }
@@ -340,7 +343,7 @@ export default function AutocompleteSelect({
                   if (event.key === "Enter") {
                     if (event.nativeEvent.isComposing) return;
                     event.preventDefault();
-                    const pick = resolveEnterSelection(filteredOptions, query, highlightedIndex);
+                    const pick = resolveEnterSelection(filteredOptions, query, effectiveHighlightedIndex);
                     if (pick) handleSelectOption(pick);
                     return;
                   }
@@ -395,10 +398,10 @@ export default function AutocompleteSelect({
                     }}
                     className={`flex min-h-[48px] w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-base ${
                       isDark
-                        ? highlightedIndex === index
+                        ? effectiveHighlightedIndex === index
                           ? "bg-zinc-800 text-zinc-100"
                           : "text-zinc-200 hover:bg-zinc-800/90"
-                        : highlightedIndex === index
+                        : effectiveHighlightedIndex === index
                           ? "bg-blue-100 text-zinc-900"
                           : "text-zinc-700 hover:bg-blue-50"
                     }`}
@@ -437,10 +440,10 @@ export default function AutocompleteSelect({
                 }}
                 className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
                   isDark
-                    ? highlightedIndex === index
+                    ? effectiveHighlightedIndex === index
                       ? "bg-zinc-800 text-zinc-100"
                       : "text-zinc-200 hover:bg-zinc-800/90"
-                    : highlightedIndex === index
+                    : effectiveHighlightedIndex === index
                       ? "bg-blue-100 text-zinc-900"
                       : "text-zinc-700 hover:bg-blue-50"
                 }`}

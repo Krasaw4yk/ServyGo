@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
+import { useIsClient } from "@/lib/useIsClient";
 
 type MobileBottomSheetProps = {
   isOpen: boolean;
@@ -34,21 +35,31 @@ export default function MobileBottomSheet({
   const titleId = useId();
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isActive, setIsActive] = useState(false);
-  const [portalReady, setPortalReady] = useState(false);
+  const portalReady = useIsClient();
 
   useEffect(() => {
-    setPortalReady(true);
-  }, []);
+    const pending = { openInnerRaf: 0, closeTimeout: 0 };
+    let openOuterRaf = 0;
+    let closeRaf = 0;
 
-  useEffect(() => {
     if (isOpen) {
-      setShouldRender(true);
-      const frame = window.requestAnimationFrame(() => setIsActive(true));
-      return () => window.cancelAnimationFrame(frame);
+      openOuterRaf = window.requestAnimationFrame(() => {
+        setShouldRender(true);
+        pending.openInnerRaf = window.requestAnimationFrame(() => setIsActive(true));
+      });
+    } else {
+      closeRaf = window.requestAnimationFrame(() => {
+        setIsActive(false);
+        pending.closeTimeout = window.setTimeout(() => setShouldRender(false), 230);
+      });
     }
-    setIsActive(false);
-    const timeoutId = window.setTimeout(() => setShouldRender(false), 230);
-    return () => window.clearTimeout(timeoutId);
+
+    return () => {
+      window.cancelAnimationFrame(openOuterRaf);
+      window.cancelAnimationFrame(pending.openInnerRaf);
+      window.cancelAnimationFrame(closeRaf);
+      window.clearTimeout(pending.closeTimeout);
+    };
   }, [isOpen]);
 
   useEffect(() => {

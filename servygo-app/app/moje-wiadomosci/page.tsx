@@ -9,23 +9,25 @@ import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { resolveMessageViewerContext, type InternalMessageRole } from "@/lib/messagesApi";
 import { createTranslator, type LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { useIsClient } from "@/lib/useIsClient";
 
 export default function MojeWiadomosciPage() {
-  const [mounted, setMounted] = useState(false);
-  const [language, setLanguage] = useState<LanguageCode>("pl");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const mounted = useIsClient();
+  const language = useMemo<LanguageCode>(() => {
+    if (!mounted) return "pl";
+    const lang = window.localStorage.getItem("servygo_language");
+    if (lang === "pl" || lang === "en" || lang === "ua") return lang;
+    return "pl";
+  }, [mounted]);
+  const theme = useMemo<"light" | "dark">(() => {
+    if (!mounted) return "light";
+    const saved = window.localStorage.getItem("servygo-theme");
+    return saved === "light" || saved === "dark" ? saved : "light";
+  }, [mounted]);
   const [user, setUser] = useState<User | null>(null);
   const [viewerRole, setViewerRole] = useState<InternalMessageRole>("client");
   const [includeAllForAdmin, setIncludeAllForAdmin] = useState(false);
   const [unread, setUnread] = useState(0);
-
-  useEffect(() => {
-    setMounted(true);
-    const st = window.localStorage.getItem("servygo-theme");
-    if (st === "light" || st === "dark") setTheme(st);
-    const lang = window.localStorage.getItem("servygo_language");
-    if (lang === "pl" || lang === "en" || lang === "ua") setLanguage(lang);
-  }, []);
 
   const t = useMemo(() => createTranslator(language), [language]);
 

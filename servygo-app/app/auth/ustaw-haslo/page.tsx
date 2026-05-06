@@ -4,10 +4,11 @@ import { type FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { useIsClient } from "@/lib/useIsClient";
 
 export default function UstawHasloPage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [error, setError] = useState("");
@@ -16,12 +17,8 @@ export default function UstawHasloPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) {
-      setChecking(false);
+      queueMicrotask(() => setChecking(false));
       return;
     }
     void supabase.auth.getSession().then(({ data }) => {

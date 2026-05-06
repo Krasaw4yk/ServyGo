@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { submitSupportReport } from "@/lib/supportReportsApi";
+import { useIsClient } from "@/lib/useIsClient";
 
 const REPORT_TYPES = [
   { id: "technical_service", label: "Problem techniczny z Serwisem" },
@@ -16,8 +17,12 @@ const REPORT_TYPES = [
 ] as const;
 
 export default function ZglosProblemPage() {
-  const [mounted, setMounted] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const mounted = useIsClient();
+  const theme = useMemo<"light" | "dark">(() => {
+    if (!mounted) return "light";
+    const saved = window.localStorage.getItem("servygo-theme");
+    return saved === "light" || saved === "dark" ? saved : "light";
+  }, [mounted]);
   const [user, setUser] = useState<User | null>(null);
   const [reportType, setReportType] = useState<string>(REPORT_TYPES[0].id);
   const [subject, setSubject] = useState("");
@@ -29,12 +34,6 @@ export default function ZglosProblemPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const saved = window.localStorage.getItem("servygo-theme");
-    if (saved === "light" || saved === "dark") setTheme(saved);
-  }, []);
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) return;

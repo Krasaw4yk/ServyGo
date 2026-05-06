@@ -45,7 +45,8 @@ export default function WorkshopFavoriteToggle({
   }, [userId, workshopId]);
 
   useEffect(() => {
-    void refresh();
+    const frame = window.requestAnimationFrame(() => void refresh());
+    return () => window.cancelAnimationFrame(frame);
   }, [refresh]);
 
   async function toggle() {

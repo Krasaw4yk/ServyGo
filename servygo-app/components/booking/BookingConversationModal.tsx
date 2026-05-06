@@ -62,7 +62,8 @@ export default function BookingConversationModal({
   }, [bookingId, userId]);
 
   useEffect(() => {
-    void load();
+    const frame = window.requestAnimationFrame(() => void load());
+    return () => window.cancelAnimationFrame(frame);
   }, [load]);
 
   const systemMessages = useMemo(() => messages.filter((m) => m.sender_role === "system"), [messages]);

@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
+import { useIsClient } from "@/lib/useIsClient";
 
 type LegalDocumentPageShellProps = {
   title: string;
@@ -13,16 +14,14 @@ type LegalDocumentPageShellProps = {
 };
 
 export function LegalDocumentPageShell({ title, updatedLine, contentId, children }: LegalDocumentPageShellProps) {
-  const [mounted, setMounted] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-
-  useEffect(() => {
-    setMounted(true);
+  const mounted = useIsClient();
+  const theme = useMemo<"light" | "dark">(() => {
+    if (!mounted) return "light";
     const saved = window.localStorage.getItem("servygo-theme");
-    if (saved === "light" || saved === "dark") setTheme(saved);
-  }, []);
+    return saved === "light" || saved === "dark" ? saved : "light";
+  }, [mounted]);
 
-  const isDark = mounted && theme === "dark";
+  const isDark = theme === "dark";
 
   return (
     <ServyGoPageShell isDark={isDark}>

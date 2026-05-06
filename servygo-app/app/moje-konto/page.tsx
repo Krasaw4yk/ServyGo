@@ -1,23 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import { useIsClient } from "@/lib/useIsClient";
 export default function MojeKontoPage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
+  const mounted = useIsClient();
+  const theme = useMemo<"light" | "dark">(() => {
+    if (!mounted) return "light";
     const saved = window.localStorage.getItem("servygo-theme");
-    if (saved === "light" || saved === "dark") setTheme(saved);
-  }, []);
+    return saved === "light" || saved === "dark" ? saved : "light";
+  }, [mounted]);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     if (!mounted) {
