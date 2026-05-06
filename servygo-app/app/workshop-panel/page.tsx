@@ -87,6 +87,18 @@ const WORKSHOP_SECTIONS = [
   "Ustawienia",
 ] as const;
 
+/** Stabilna instancja dla useMemo (uniknięcie ostrzeżenia o zależnościach). */
+const WORKSHOP_PANEL_ACTIVE_CALENDAR_STATUSES = new Set([
+  "pending_quote",
+  "awaiting_quote",
+  "quote_sent",
+  "quote_rejected",
+  "awaiting_new_quote",
+  "quote_accepted",
+  "awaiting_reschedule",
+  "confirmed",
+]);
+
 type WorkshopSection = (typeof WORKSHOP_SECTIONS)[number];
 
 type ServiceDraftRow = {
@@ -1155,20 +1167,12 @@ function WorkshopPanelPageContent() {
     const monthClosedDays = monthCalendarDays.filter((d) => d.inCurrentMonth && d.closed).length;
     return { todayBusy, todayAvailableSlots, monthClosedDays };
   }, [monthCalendarDays]);
-  const activeCalendarStatuses = new Set([
-    "pending_quote",
-    "awaiting_quote",
-    "quote_sent",
-    "quote_rejected",
-    "awaiting_new_quote",
-    "quote_accepted",
-    "awaiting_reschedule",
-    "confirmed",
-  ]);
   const dailySummary = useMemo(() => {
     const today = asDateKey(new Date());
     const todayRows = bookings.filter((b) => b.date === today);
-    const active = todayRows.filter((b) => activeCalendarStatuses.has((b.status ?? "").toLowerCase())).length;
+    const active = todayRows.filter((b) =>
+      WORKSHOP_PANEL_ACTIVE_CALENDAR_STATUSES.has((b.status ?? "").toLowerCase()),
+    ).length;
     const cancelled = todayRows.filter((b) => {
       const s = (b.status ?? "").toLowerCase();
       return s === "cancelled" || s.startsWith("cancelled_by");
@@ -1178,7 +1182,9 @@ function WorkshopPanelPageContent() {
   const weeklySummary = useMemo(() => {
     const weekKeys = new Set(weekDates.map((d) => asDateKey(d)));
     const weekRows = bookings.filter((b) => weekKeys.has(b.date));
-    const active = weekRows.filter((b) => activeCalendarStatuses.has((b.status ?? "").toLowerCase())).length;
+    const active = weekRows.filter((b) =>
+      WORKSHOP_PANEL_ACTIVE_CALENDAR_STATUSES.has((b.status ?? "").toLowerCase()),
+    ).length;
     const cancelled = weekRows.filter((b) => {
       const s = (b.status ?? "").toLowerCase();
       return s === "cancelled" || s.startsWith("cancelled_by");

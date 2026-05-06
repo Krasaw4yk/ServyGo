@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LEGAL_VERSIONS } from "@/lib/legalVersions";
 import { createTranslator, type LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
@@ -38,12 +38,17 @@ export default function LegalReacceptanceModal({
   const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const profileCheckGen = useRef(0);
 
   useEffect(() => {
-    setCheckedProfile(false);
-    setReacceptanceRequired(false);
-    setChecked(false);
-    setError("");
+    const gen = ++profileCheckGen.current;
+    queueMicrotask(() => {
+      if (gen !== profileCheckGen.current) return;
+      setCheckedProfile(false);
+      setReacceptanceRequired(false);
+      setChecked(false);
+      setError("");
+    });
     if (!userId || !isSupabaseConfigured || !supabase) {
       return;
     }
@@ -58,7 +63,7 @@ export default function LegalReacceptanceModal({
         .eq("id", userId)
         .maybeSingle();
 
-      if (cancelled) return;
+      if (cancelled || gen !== profileCheckGen.current) return;
       if (profileError) {
         console.warn("Legal reacceptance check failed:", profileError.message);
         setCheckedProfile(true);
@@ -71,6 +76,7 @@ export default function LegalReacceptanceModal({
         setCheckedProfile(true);
         return;
       }
+      if (gen !== profileCheckGen.current) return;
       setReacceptanceRequired(needsReacceptance(row));
       setCheckedProfile(true);
     })();

@@ -112,6 +112,11 @@ export default function InternalInbox({
   }, [onUnreadCountChange]);
 
   const reloadGeneration = useRef(0);
+  const composeGuardGen = useRef(0);
+  const wideLayoutEffectGen = useRef(0);
+  const workshopOwnerLookupGen = useRef(0);
+  const clientQuoteLookupGen = useRef(0);
+  const bookingClientLookupGen = useRef(0);
 
   const unreadCount = useMemo(() => {
     const msg = inbox.filter((x) => !x.is_read && x.recipient_id === currentUserId).length;
@@ -132,7 +137,13 @@ export default function InternalInbox({
   }, [viewerRole, emptySidebarHint, enableMobileMessenger]);
 
   useEffect(() => {
-    if (!canUseAdminCompose && composeOpen) setComposeOpen(false);
+    const gen = ++composeGuardGen.current;
+    if (!canUseAdminCompose && composeOpen) {
+      queueMicrotask(() => {
+        if (gen !== composeGuardGen.current) return;
+        setComposeOpen(false);
+      });
+    }
   }, [canUseAdminCompose, composeOpen]);
 
   const allMessages = useMemo(() => {
@@ -193,15 +204,25 @@ export default function InternalInbox({
 
   const [wideDesktop, setWideDesktop] = useState(true);
   useEffect(() => {
+    const gen = ++wideLayoutEffectGen.current;
     if (!enableMobileMessenger) {
-      setWideDesktop(true);
+      queueMicrotask(() => {
+        if (gen !== wideLayoutEffectGen.current) return;
+        setWideDesktop(true);
+      });
       return;
     }
     const mq = window.matchMedia("(min-width:768px)");
     const sync = () => setWideDesktop(mq.matches);
-    sync();
+    const rafId = window.requestAnimationFrame(() => {
+      if (gen !== wideLayoutEffectGen.current) return;
+      sync();
+    });
     mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      mq.removeEventListener("change", sync);
+    };
   }, [enableMobileMessenger]);
 
   const resolvedSelectedKey = useMemo(() => {
@@ -234,9 +255,13 @@ export default function InternalInbox({
   }, [allMessages, selectedMessage]);
 
   useEffect(() => {
+    const gen = ++workshopOwnerLookupGen.current;
     const sb = supabase;
     if (viewerRole !== "client" || !selectedMessage?.related_booking_id || !sb) {
-      setWorkshopOwnerUserId(null);
+      queueMicrotask(() => {
+        if (gen !== workshopOwnerLookupGen.current) return;
+        setWorkshopOwnerUserId(null);
+      });
       return;
     }
     let cancelled = false;
@@ -246,11 +271,11 @@ export default function InternalInbox({
       .eq("id", selectedMessage.related_booking_id)
       .maybeSingle()
       .then(async ({ data: bRow, error }) => {
-        if (cancelled || error) return;
+        if (cancelled || error || gen !== workshopOwnerLookupGen.current) return;
         const wid = (bRow as { workshop_id?: string } | null)?.workshop_id;
         if (!wid) return;
         const { data: wRow } = await sb.from("workshops").select("owner_id").eq("id", wid).maybeSingle();
-        if (cancelled) return;
+        if (cancelled || gen !== workshopOwnerLookupGen.current) return;
         setWorkshopOwnerUserId((wRow as { owner_id?: string | null } | null)?.owner_id ?? null);
       });
     return () => {
@@ -259,33 +284,43 @@ export default function InternalInbox({
   }, [viewerRole, selectedMessage?.related_booking_id]);
 
   useEffect(() => {
+    const gen = ++clientQuoteLookupGen.current;
     const sb = supabase;
     if (viewerRole !== "client" || !selectedMessage?.related_booking_id || !sb) {
-      setClientQuoteUi({ loadState: "idle", canRespond: false, confirmedReadonly: false });
+      queueMicrotask(() => {
+        if (gen !== clientQuoteLookupGen.current) return;
+        setClientQuoteUi({ loadState: "idle", canRespond: false, confirmedReadonly: false });
+      });
       return;
     }
     let cancelled = false;
-    setClientQuoteUi((prev) => ({ ...prev, loadState: "loading" }));
+    queueMicrotask(() => {
+      if (cancelled || gen !== clientQuoteLookupGen.current) return;
+      setClientQuoteUi((prev) => ({ ...prev, loadState: "loading" }));
+    });
     void (async () => {
       const bid = selectedMessage.related_booking_id!;
       const { data: bRow, error: bErr } = await sb.from("bookings").select("status, current_quote_id").eq("id", bid).maybeSingle();
-      if (cancelled) return;
+      if (cancelled || gen !== clientQuoteLookupGen.current) return;
       if (bErr || !bRow) {
+        if (gen !== clientQuoteLookupGen.current) return;
         setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: false });
         return;
       }
       const st = ((bRow as { status?: string | null }).status ?? "").trim().toLowerCase();
       const cur = ((bRow as { current_quote_id?: string | null }).current_quote_id ?? "").trim();
       if (st === "confirmed" && cur) {
+        if (gen !== clientQuoteLookupGen.current) return;
         setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: true });
         return;
       }
       if (st !== "quote_sent" || !cur) {
+        if (gen !== clientQuoteLookupGen.current) return;
         setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: false });
         return;
       }
       const { data: qRow, error: qErr } = await sb.from("booking_quotes").select("status").eq("id", cur).maybeSingle();
-      if (cancelled) return;
+      if (cancelled || gen !== clientQuoteLookupGen.current) return;
       if (qErr) {
         setClientQuoteUi({ loadState: "ready", canRespond: false, confirmedReadonly: false });
         return;
@@ -296,6 +331,7 @@ export default function InternalInbox({
         currentQuoteId: cur,
         currentQuoteRowStatus: qStatus,
       });
+      if (gen !== clientQuoteLookupGen.current) return;
       setClientQuoteUi({ loadState: "ready", canRespond, confirmedReadonly: false });
     })();
     return () => {
@@ -330,11 +366,14 @@ export default function InternalInbox({
   }, [currentUserId, includeAllForAdmin]);
 
   useEffect(() => {
-    void reload();
+    const frame = window.requestAnimationFrame(() => void reload());
+    return () => window.cancelAnimationFrame(frame);
   }, [reload]);
 
   const reloadRef = useRef(reload);
-  reloadRef.current = reload;
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
   useInboxRealtimeSync(Boolean(supabase && currentUserId), currentUserId, () => {
     void reloadRef.current();
   });
@@ -366,8 +405,12 @@ export default function InternalInbox({
   }, [enableMobileMessenger, mobileView]);
 
   useEffect(() => {
+    const gen = ++bookingClientLookupGen.current;
     if (viewerRole !== "workshop" || !selectedMessage?.related_booking_id || !supabase) {
-      setBookingClientUserId(null);
+      queueMicrotask(() => {
+        if (gen !== bookingClientLookupGen.current) return;
+        setBookingClientUserId(null);
+      });
       return;
     }
     let cancelled = false;
@@ -377,7 +420,7 @@ export default function InternalInbox({
       .eq("id", selectedMessage.related_booking_id)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (cancelled || error) return;
+        if (cancelled || error || gen !== bookingClientLookupGen.current) return;
         const uid = (data as { user_id?: string } | null)?.user_id ?? null;
         setBookingClientUserId(uid);
       });
