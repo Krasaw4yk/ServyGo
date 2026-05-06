@@ -35,6 +35,7 @@ import {
   WORKSHOP_SERVICE_CATEGORY_OPTIONS,
 } from "@/lib/serviceCatalog";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
+import { useIsClient } from "@/lib/useIsClient";
 import {
   defaultOpeningSchedule,
   deleteWorkshopServiceConfigsForOwner,
@@ -466,7 +467,7 @@ function WorkshopPanelPageContent() {
   const isAdminPreview = searchParams.get("adminPreview") === "1";
   const previewWorkshopId = (searchParams.get("workshopId") ?? "").trim();
   const readOnly = isAdminPreview;
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -476,7 +477,9 @@ function WorkshopPanelPageContent() {
   const [success, setSuccess] = useState("");
   const [activeSection, setActiveSection] = useState<WorkshopSection>("Dashboard");
   const activeSectionRef = useRef<WorkshopSection>(activeSection);
-  activeSectionRef.current = activeSection;
+  useEffect(() => {
+    activeSectionRef.current = activeSection;
+  }, [activeSection]);
   const [selectedBooking, setSelectedBooking] = useState<WorkshopOwnerBookingRow | null>(null);
   const [opening, setOpening] = useState<WorkshopOpeningSchedule>(defaultOpeningSchedule);
   const [calendarMonthCursor, setCalendarMonthCursor] = useState(() => {
@@ -559,17 +562,19 @@ function WorkshopPanelPageContent() {
   );
 
   useEffect(() => {
-    setMounted(true);
-    const stored = window.localStorage.getItem("servygo-theme");
-    if (stored === "dark" || stored === "light") setTheme(stored);
-  }, []);
+    if (!mounted) return;
+    queueMicrotask(() => {
+      const stored = window.localStorage.getItem("servygo-theme");
+      if (stored === "dark" || stored === "light") setTheme(stored);
+    });
+  }, [mounted]);
 
   useEffect(() => {
     const raw = searchParams.get("section");
     if (!raw) return;
     const decoded = decodeURIComponent(raw.trim());
     const match = WORKSHOP_SECTIONS.find((s) => s === decoded);
-    if (match) setActiveSection(match);
+    if (match) queueMicrotask(() => setActiveSection(match));
   }, [searchParams]);
 
   useEffect(() => {
@@ -601,16 +606,18 @@ function WorkshopPanelPageContent() {
   }, [error]);
 
   useEffect(() => {
-    setSuccess("");
-    setError("");
+    queueMicrotask(() => {
+      setSuccess("");
+      setError("");
+    });
   }, [activeSection]);
 
   useEffect(() => {
     if (activeSection !== "Usługi i ceny") {
-      setServicesPricingReady(false);
+      queueMicrotask(() => setServicesPricingReady(false));
       return;
     }
-    setServicesPricingReady(false);
+    queueMicrotask(() => setServicesPricingReady(false));
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const rafId = requestAnimationFrame(() => {
@@ -661,7 +668,9 @@ function WorkshopPanelPageContent() {
   }, []);
 
   const loadLeadSettlementSectionRef = useRef(loadLeadSettlementSection);
-  loadLeadSettlementSectionRef.current = loadLeadSettlementSection;
+  useEffect(() => {
+    loadLeadSettlementSectionRef.current = loadLeadSettlementSection;
+  }, [loadLeadSettlementSection]);
 
   const loadAll = useCallback(async (ws: Workshop) => {
     setError("");
@@ -752,9 +761,15 @@ function WorkshopPanelPageContent() {
   }, [isAdminPreview]);
 
   const loadAllRef = useRef(loadAll);
-  loadAllRef.current = loadAll;
   const workshopRealtimeRef = useRef(workshop);
-  workshopRealtimeRef.current = workshop;
+
+  useEffect(() => {
+    loadAllRef.current = loadAll;
+  }, [loadAll]);
+
+  useEffect(() => {
+    workshopRealtimeRef.current = workshop;
+  }, [workshop]);
 
   useBookingsRealtimeSync({
     enabled: Boolean(!accessDenied && isSupabaseConfigured && workshop?.id),
@@ -779,7 +794,8 @@ function WorkshopPanelPageContent() {
 
   useEffect(() => {
     if (activeSection !== "Leady i rozliczenia" || !workshop?.id) return;
-    void loadLeadSettlementSection(workshop.id);
+    const id = requestAnimationFrame(() => void loadLeadSettlementSection(workshop.id));
+    return () => cancelAnimationFrame(id);
   }, [activeSection, workshop?.id, loadLeadSettlementSection]);
 
   const respondClientRescheduleProposal = useCallback(
@@ -803,7 +819,7 @@ function WorkshopPanelPageContent() {
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
 
@@ -1136,18 +1152,20 @@ function WorkshopPanelPageContent() {
   }, [weekDates]);
 
   useEffect(() => {
-    setDayDraft(selectedDateConfig);
+    queueMicrotask(() => setDayDraft(selectedDateConfig));
   }, [selectedDateConfig]);
 
   useEffect(() => {
-    const draft: Record<string, DayOverride> = {};
-    for (const dateObj of weekDates) {
-      const dateKey = asDateKey(dateObj);
-      const override = exceptionsMap[dateKey];
-      const weekly = opening[weekdayKeyFromDate(dateKey)];
-      draft[dateKey] = override ?? dayOverrideFromWeekly(weekly);
-    }
-    setWeekEditorDraft(draft);
+    queueMicrotask(() => {
+      const draft: Record<string, DayOverride> = {};
+      for (const dateObj of weekDates) {
+        const dateKey = asDateKey(dateObj);
+        const override = exceptionsMap[dateKey];
+        const weekly = opening[weekdayKeyFromDate(dateKey)];
+        draft[dateKey] = override ?? dayOverrideFromWeekly(weekly);
+      }
+      setWeekEditorDraft(draft);
+    });
   }, [weekDates, exceptionsMap, opening]);
 
   useEffect(() => {

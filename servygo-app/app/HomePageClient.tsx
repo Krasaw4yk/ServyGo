@@ -399,8 +399,10 @@ function HomePageContent() {
 
   useEffect(() => {
     if (!supabase || !currentUser) {
-      setDashboardBookingsCount(0);
-      setDashboardUpcomingBooking(null);
+      queueMicrotask(() => {
+        setDashboardBookingsCount(0);
+        setDashboardUpcomingBooking(null);
+      });
       return;
     }
     let cancelled = false;
@@ -466,9 +468,11 @@ function HomePageContent() {
 
   useEffect(() => {
     if (!currentUser) {
-      setAccountUnreadMessages(0);
-      setAccountViewerRole("client");
-      setAccountIncludeAllForAdmin(false);
+      queueMicrotask(() => {
+        setAccountUnreadMessages(0);
+        setAccountViewerRole("client");
+        setAccountIncludeAllForAdmin(false);
+      });
       return;
     }
     let cancelled = false;
@@ -491,8 +495,10 @@ function HomePageContent() {
 
   useEffect(() => {
     if (!supabase || !currentUser) {
-      setSelectedSavedCarId("");
-      setIsManualMode(true);
+      queueMicrotask(() => {
+        setSelectedSavedCarId("");
+        setIsManualMode(true);
+      });
       return;
     }
     let cancelled = false;
@@ -530,19 +536,21 @@ function HomePageContent() {
     if (!selectedSavedCarId) return;
     const selected = vehicles.find((v) => v.id === selectedSavedCarId);
     if (!selected) return;
-    setIsManualMode(false);
-    const nextType = selected.vehicleType as VehicleTypeKey | "";
-    if (nextType) {
-      setVehicleType(nextType);
-    }
-    setBrand(selected.brand);
-    setModel(selected.model);
-    setYear(selected.year);
-    setFuel(selected.fuel);
-    if (selected.city.trim()) {
-      setSearchCity(selected.city);
-    }
-    setSearchVin(selected.vin.trim().slice(0, 17).toUpperCase());
+    queueMicrotask(() => {
+      setIsManualMode(false);
+      const nextType = selected.vehicleType as VehicleTypeKey | "";
+      if (nextType) {
+        setVehicleType(nextType);
+      }
+      setBrand(selected.brand);
+      setModel(selected.model);
+      setYear(selected.year);
+      setFuel(selected.fuel);
+      if (selected.city.trim()) {
+        setSearchCity(selected.city);
+      }
+      setSearchVin(selected.vin.trim().slice(0, 17).toUpperCase());
+    });
   }, [selectedSavedCarId, vehicles]);
 
   const hasSavedCars = currentUser != null && vehicles.length > 0;
@@ -575,8 +583,10 @@ function HomePageContent() {
 
   useEffect(() => {
     if (!hasSavedCars) {
-      setIsManualMode(true);
-      setSelectedSavedCarId("");
+      queueMicrotask(() => {
+        setIsManualMode(true);
+        setSelectedSavedCarId("");
+      });
     }
   }, [hasSavedCars]);
 
@@ -1027,8 +1037,10 @@ function HomePageContent() {
 
   useEffect(() => {
     if (!mounted || !supabase || !currentUser || !isSupabaseConfigured) {
-      setFavoriteWorkshopChoices([]);
-      setFavoriteWorkshopsCount(0);
+      queueMicrotask(() => {
+        setFavoriteWorkshopChoices([]);
+        setFavoriteWorkshopsCount(0);
+      });
       return;
     }
     let cancelled = false;
@@ -1055,12 +1067,14 @@ function HomePageContent() {
 
   useEffect(() => {
     if (!selectedFavoriteWorkshopId) {
-      setFavoriteWorkshopOffers(null);
-      setFavoriteWorkshopBanner("");
+      queueMicrotask(() => {
+        setFavoriteWorkshopOffers(null);
+        setFavoriteWorkshopBanner("");
+      });
       return;
     }
     let cancelled = false;
-    setFavoriteWorkshopBanner("");
+    queueMicrotask(() => setFavoriteWorkshopBanner(""));
     void (async () => {
       try {
         const mock = await fetchPublicWorkshopByIdAsMock(selectedFavoriteWorkshopId);
@@ -1087,7 +1101,7 @@ function HomePageContent() {
     const fid = searchParams.get("favoriteWorkshopId")?.trim() ?? "";
     if (!fid || favoriteWorkshopChoices.length === 0) return;
     if (favoriteWorkshopChoices.some((x) => x.workshopId === fid)) {
-      setSelectedFavoriteWorkshopId(fid);
+      queueMicrotask(() => setSelectedFavoriteWorkshopId(fid));
     }
   }, [searchParams, favoriteWorkshopChoices]);
 

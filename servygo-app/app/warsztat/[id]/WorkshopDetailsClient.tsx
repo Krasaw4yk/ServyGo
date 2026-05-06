@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { useIsClient } from "@/lib/useIsClient";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
@@ -72,7 +73,7 @@ function WorkshopDetailsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [language, setLanguage] = useState<LanguageCode>("pl");
   const [loading, setLoading] = useState(true);
@@ -114,8 +115,8 @@ function WorkshopDetailsPageContent() {
   const workshopId = typeof params?.id === "string" ? params.id : "";
 
   useEffect(() => {
-    const frameId = window.requestAnimationFrame(() => {
-      setMounted(true);
+    if (!mounted) return;
+    queueMicrotask(() => {
       const savedTheme = window.localStorage.getItem("servygo-theme");
       const savedLanguage = window.localStorage.getItem("servygo_language");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
@@ -123,41 +124,48 @@ function WorkshopDetailsPageContent() {
         setLanguage(savedLanguage);
       }
     });
-    return () => window.cancelAnimationFrame(frameId);
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     if (!workshopId) {
-      setWorkshop(null);
-      setLoading(false);
+      queueMicrotask(() => {
+        setWorkshop(null);
+        setLoading(false);
+      });
       return;
     }
     let cancelled = false;
-    async function load() {
+    let rafId = 0;
+    rafId = requestAnimationFrame(() => {
+      if (cancelled) return;
       setLoading(true);
       setDetailError("");
-      try {
-        const row = await fetchPublicWorkshopByIdAsMock(workshopId);
-        if (!cancelled) setWorkshop(row);
-      } catch (err) {
-        if (!cancelled) {
-          setDetailError(err instanceof Error ? err.message : "Nie udało się wczytać warsztatu.");
-          setWorkshop(null);
+      void (async () => {
+        try {
+          const row = await fetchPublicWorkshopByIdAsMock(workshopId);
+          if (!cancelled) setWorkshop(row);
+        } catch (err) {
+          if (!cancelled) {
+            setDetailError(err instanceof Error ? err.message : "Nie udało się wczytać warsztatu.");
+            setWorkshop(null);
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    void load();
+      })();
+    });
     return () => {
       cancelled = true;
+      cancelAnimationFrame(rafId);
     };
   }, [workshopId]);
 
   useEffect(() => {
     if (!workshop?.supabaseId) {
-      setServygoReviews([]);
-      setWorkshopPhotos([]);
+      queueMicrotask(() => {
+        setServygoReviews([]);
+        setWorkshopPhotos([]);
+      });
       return;
     }
     let cancelled = false;
@@ -206,11 +214,11 @@ function WorkshopDetailsPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [servygoReviewOpen, currentUserId, workshop?.supabaseId, supabase]);
+  }, [servygoReviewOpen, currentUserId, workshop?.supabaseId]);
 
   useEffect(() => {
     if (!workshop?.supabaseId || !supabase) {
-      setEmployeeOptions([]);
+      queueMicrotask(() => setEmployeeOptions([]));
       return;
     }
     let cancelled = false;
@@ -279,8 +287,10 @@ function WorkshopDetailsPageContent() {
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase || !currentUserId) {
-      setHasAcceptedPricingAndLiabilityNotice(false);
-      setPricingLiabilityNoticeAccepted(false);
+      queueMicrotask(() => {
+        setHasAcceptedPricingAndLiabilityNotice(false);
+        setPricingLiabilityNoticeAccepted(false);
+      });
       return;
     }
 
@@ -445,7 +455,7 @@ function WorkshopDetailsPageContent() {
 
   useEffect(() => {
     if (!workshop || !selectedService) {
-      setCalendarDaySlots({});
+      queueMicrotask(() => setCalendarDaySlots({}));
       return;
     }
     const days = calendarGrid.filter((day) => {
@@ -504,14 +514,9 @@ function WorkshopDetailsPageContent() {
     return (calendarDaySlots[effectiveDateKey] ?? []).length === 0;
   }, [calendarDaySlots, effectiveDateKey, selectedDayDate, todayStart]);
 
-  const [dynamicAvailableTimes, setDynamicAvailableTimes] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!workshop || !selectedService || !effectiveDateKey || isSelectedDayClosed) {
-      setDynamicAvailableTimes([]);
-      return;
-    }
-    setDynamicAvailableTimes(calendarDaySlots[effectiveDateKey] ?? []);
+  const dynamicAvailableTimes = useMemo(() => {
+    if (!workshop || !selectedService || !effectiveDateKey || isSelectedDayClosed) return [];
+    return calendarDaySlots[effectiveDateKey] ?? [];
   }, [calendarDaySlots, effectiveDateKey, isSelectedDayClosed, selectedService, workshop]);
 
   const effectiveSelectedTime =

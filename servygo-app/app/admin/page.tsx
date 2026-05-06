@@ -63,6 +63,7 @@ import {
 } from "@/lib/adminApi";
 import { isValidWorkshopGoogleMapsUrl } from "@/lib/workshopApi";
 import { getAdminDashboardStats, type AdminDashboardStats } from "@/lib/adminStatsApi";
+import { useIsClient } from "@/lib/useIsClient";
 
 const SIDEBAR_ITEMS = [
   "Dashboard",
@@ -274,7 +275,7 @@ type WorkshopEditDraft = {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeTab, setActiveTab] = useState<SidebarItem>("Dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -335,15 +336,14 @@ export default function AdminPage() {
   }, [rows, leadStatusFilter]);
 
   useEffect(() => {
-    const frameId = window.requestAnimationFrame(() => {
-      setMounted(true);
+    if (!mounted) return;
+    queueMicrotask(() => {
       const savedTheme = window.localStorage.getItem("servygo-theme");
       if (savedTheme === "light" || savedTheme === "dark") {
         setTheme(savedTheme);
       }
     });
-    return () => window.cancelAnimationFrame(frameId);
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -357,7 +357,7 @@ export default function AdminPage() {
       const raw = window.localStorage.getItem(key);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<SidebarBadgeState>;
-      setSeenSidebarBadges((prev) => ({ ...prev, ...parsed }));
+      queueMicrotask(() => setSeenSidebarBadges((prev) => ({ ...prev, ...parsed })));
     } catch {
       // Ignore malformed local storage value.
     }
@@ -563,73 +563,88 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!currentUser) return;
-    void refreshSidebarBadges();
+    const id = requestAnimationFrame(() => void refreshSidebarBadges());
+    return () => cancelAnimationFrame(id);
   }, [currentUser, refreshSidebarBadges]);
 
   useEffect(() => {
     if (!currentUser) return;
-    markTabSeen(activeTab);
+    queueMicrotask(() => markTabSeen(activeTab));
   }, [activeTab, currentUser, markTabSeen]);
 
   useEffect(() => {
     const pendingCount = rows.filter((row) => normalizeWorkshopStatus(row.status) === "pending").length;
-    setLiveSidebarBadges((prev) => ({ ...prev, "Zgłoszenia warsztatów": pendingCount }));
+    queueMicrotask(() =>
+      setLiveSidebarBadges((prev) => ({ ...prev, "Zgłoszenia warsztatów": pendingCount })),
+    );
   }, [rows]);
 
   useEffect(() => {
     if (!currentUser) return;
     if (activeTab === "Rezerwacje" || activeTab === "Użytkownicy" || activeTab === "Opinie / Google Maps") {
-      void refreshSidebarBadges();
+      const id = requestAnimationFrame(() => void refreshSidebarBadges());
+      return () => cancelAnimationFrame(id);
     }
   }, [activeTab, currentUser, refreshSidebarBadges]);
 
   useEffect(() => {
     if (!currentUser || activeTab !== "Zgłoszenia problemów") return;
-    void refreshSupportReports();
+    const id = requestAnimationFrame(() => void refreshSupportReports());
+    return () => cancelAnimationFrame(id);
   }, [activeTab, currentUser, refreshSupportReports]);
 
   useEffect(() => {
     if (!currentUser || activeTab !== "Opinie / Google Maps") return;
-    void refreshServygoModeration();
+    const id = requestAnimationFrame(() => void refreshServygoModeration());
+    return () => cancelAnimationFrame(id);
   }, [activeTab, currentUser, refreshServygoModeration]);
 
   useEffect(() => {
     if (!currentUser || activeTab !== "Rezerwacje") return;
-    void refreshAdminBookings();
+    const id = requestAnimationFrame(() => void refreshAdminBookings());
+    return () => cancelAnimationFrame(id);
   }, [activeTab, currentUser, refreshAdminBookings]);
 
   useEffect(() => {
     if (!currentUser || activeTab !== "Rozliczenie leadów MVP") return;
-    void refreshLeadMetrics();
+    const id = requestAnimationFrame(() => void refreshLeadMetrics());
+    return () => cancelAnimationFrame(id);
   }, [activeTab, currentUser, refreshLeadMetrics]);
 
   const activeWorkshopPanelId = workshopViewId ?? workshopEditId;
 
   useEffect(() => {
     if (!currentUser || !activeWorkshopPanelId) {
-      setWorkshopPanelDetail(null);
-      setLoadingWorkshopPanel(false);
-      setWorkshopPanelError("");
+      queueMicrotask(() => {
+        setWorkshopPanelDetail(null);
+        setLoadingWorkshopPanel(false);
+        setWorkshopPanelError("");
+      });
       return;
     }
     let cancelled = false;
-    (async () => {
+    let frameId = 0;
+    frameId = requestAnimationFrame(() => {
+      if (cancelled) return;
       setLoadingWorkshopPanel(true);
       setWorkshopPanelError("");
-      try {
-        const detail = await getWorkshopDetailForAdmin(currentUser.id, currentUser.email, activeWorkshopPanelId);
-        if (!cancelled) setWorkshopPanelDetail(detail);
-      } catch (err) {
-        if (!cancelled) {
-          setWorkshopPanelError(err instanceof Error ? err.message : "Nie udało się wczytać warsztatu.");
-          setWorkshopPanelDetail(null);
+      void (async () => {
+        try {
+          const detail = await getWorkshopDetailForAdmin(currentUser.id, currentUser.email, activeWorkshopPanelId);
+          if (!cancelled) setWorkshopPanelDetail(detail);
+        } catch (err) {
+          if (!cancelled) {
+            setWorkshopPanelError(err instanceof Error ? err.message : "Nie udało się wczytać warsztatu.");
+            setWorkshopPanelDetail(null);
+          }
+        } finally {
+          if (!cancelled) setLoadingWorkshopPanel(false);
         }
-      } finally {
-        if (!cancelled) setLoadingWorkshopPanel(false);
-      }
-    })();
+      })();
+    });
     return () => {
       cancelled = true;
+      cancelAnimationFrame(frameId);
     };
   }, [activeWorkshopPanelId, currentUser]);
 
@@ -667,42 +682,44 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!workshopEditId || !workshopPanelDetail || workshopPanelDetail.id !== workshopEditId) {
-      if (!workshopEditId) setEditDraft(null);
+      if (!workshopEditId) queueMicrotask(() => setEditDraft(null));
       return;
     }
-    setEditDraft({
-      name: workshopPanelDetail.name,
-      slug: workshopPanelDetail.slug ?? "",
-      city: workshopPanelDetail.city ?? "",
-      address: workshopPanelDetail.address ?? "",
-      phone: workshopPanelDetail.phone ?? "",
-      email: workshopPanelDetail.email ?? "",
-      description: workshopPanelDetail.description ?? "",
-      google_maps_url: workshopPanelDetail.google_maps_url ?? "",
-      google_place_id: workshopPanelDetail.google_place_id ?? "",
-      latitude:
-        workshopPanelDetail.latitude != null && Number.isFinite(Number(workshopPanelDetail.latitude))
-          ? String(workshopPanelDetail.latitude)
-          : "",
-      longitude:
-        workshopPanelDetail.longitude != null && Number.isFinite(Number(workshopPanelDetail.longitude))
-          ? String(workshopPanelDetail.longitude)
-          : "",
-      show_on_map: workshopPanelDetail.show_on_map === true,
-      is_demo: workshopPanelDetail.is_demo === true,
-      visibility_status: workshopPanelDetail.visibility_status ?? "hidden",
-      rating:
-        workshopPanelDetail.rating != null && String(workshopPanelDetail.rating).trim() !== ""
-          ? String(workshopPanelDetail.rating)
-          : "",
-      reviews_count:
-        workshopPanelDetail.reviews_count != null && Number.isFinite(Number(workshopPanelDetail.reviews_count))
-          ? String(workshopPanelDetail.reviews_count)
-          : "",
-      opening_hours: workshopPanelDetail.opening_hours ?? "",
-      status: coerceWorkshopEntityStatus(workshopPanelDetail.status),
-      servicesText: workshopPanelDetail.services.map((s) => s.service_name).join("\n"),
-    });
+    queueMicrotask(() =>
+      setEditDraft({
+        name: workshopPanelDetail.name,
+        slug: workshopPanelDetail.slug ?? "",
+        city: workshopPanelDetail.city ?? "",
+        address: workshopPanelDetail.address ?? "",
+        phone: workshopPanelDetail.phone ?? "",
+        email: workshopPanelDetail.email ?? "",
+        description: workshopPanelDetail.description ?? "",
+        google_maps_url: workshopPanelDetail.google_maps_url ?? "",
+        google_place_id: workshopPanelDetail.google_place_id ?? "",
+        latitude:
+          workshopPanelDetail.latitude != null && Number.isFinite(Number(workshopPanelDetail.latitude))
+            ? String(workshopPanelDetail.latitude)
+            : "",
+        longitude:
+          workshopPanelDetail.longitude != null && Number.isFinite(Number(workshopPanelDetail.longitude))
+            ? String(workshopPanelDetail.longitude)
+            : "",
+        show_on_map: workshopPanelDetail.show_on_map === true,
+        is_demo: workshopPanelDetail.is_demo === true,
+        visibility_status: workshopPanelDetail.visibility_status ?? "hidden",
+        rating:
+          workshopPanelDetail.rating != null && String(workshopPanelDetail.rating).trim() !== ""
+            ? String(workshopPanelDetail.rating)
+            : "",
+        reviews_count:
+          workshopPanelDetail.reviews_count != null && Number.isFinite(Number(workshopPanelDetail.reviews_count))
+            ? String(workshopPanelDetail.reviews_count)
+            : "",
+        opening_hours: workshopPanelDetail.opening_hours ?? "",
+        status: coerceWorkshopEntityStatus(workshopPanelDetail.status),
+        servicesText: workshopPanelDetail.services.map((s) => s.service_name).join("\n"),
+      }),
+    );
   }, [workshopEditId, workshopPanelDetail]);
 
   useEffect(() => {
@@ -1054,7 +1071,8 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!currentUser || !isAdmin) return;
-    void refreshDashboardStats();
+    const id = requestAnimationFrame(() => void refreshDashboardStats());
+    return () => cancelAnimationFrame(id);
   }, [currentUser, isAdmin, refreshDashboardStats]);
 
   const isDark = mounted ? theme === "dark" : false;
