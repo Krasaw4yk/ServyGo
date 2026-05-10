@@ -11,7 +11,8 @@ import type { MockWorkshop } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopByIdAsMock, matchWorkshopServicesForVehicle } from "@/lib/publicWorkshopsFromDb";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { sendSystemMessage } from "@/lib/messagesApi";
-import { createTranslator, LanguageCode } from "@/lib/translations";
+import { createTranslator } from "@/lib/translations";
+import { useServyGoLanguage } from "@/lib/useServyGoLanguage";
 import { getAvailableSlots, inferEndTime } from "@/lib/bookingAvailability";
 import { trackEvent } from "@/lib/analytics";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
@@ -75,7 +76,7 @@ function WorkshopDetailsPageContent() {
 
   const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [language, setLanguage] = useState<LanguageCode>("pl");
+  const language = useServyGoLanguage();
   const [loading, setLoading] = useState(true);
   const [workshop, setWorkshop] = useState<MockWorkshop | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -118,11 +119,7 @@ function WorkshopDetailsPageContent() {
     if (!mounted) return;
     queueMicrotask(() => {
       const savedTheme = window.localStorage.getItem("servygo-theme");
-      const savedLanguage = window.localStorage.getItem("servygo_language");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
-      if (savedLanguage === "pl" || savedLanguage === "en" || savedLanguage === "ua") {
-        setLanguage(savedLanguage);
-      }
     });
   }, [mounted]);
 

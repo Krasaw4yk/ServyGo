@@ -6,6 +6,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
+import SystemChangelogModal from "@/components/SystemChangelogModal";
+import ClientInternalNotesModal from "@/components/ClientInternalNotesModal";
+import ClientInternalNotesTriggerButton from "@/components/ClientInternalNotesTriggerButton";
 import WorkshopPhotosManager from "@/components/workshop/WorkshopPhotosManager";
 import WorkshopVehiclePriceEditorModal from "@/components/workshop/WorkshopVehiclePriceEditorModal";
 import WorkshopVehiclePricingListModal from "@/components/workshop/WorkshopVehiclePricingListModal";
@@ -36,6 +39,7 @@ import {
 } from "@/lib/serviceCatalog";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 import { useIsClient } from "@/lib/useIsClient";
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
 import {
   defaultOpeningSchedule,
   deleteWorkshopServiceConfigsForOwner,
@@ -101,6 +105,21 @@ const WORKSHOP_PANEL_ACTIVE_CALENDAR_STATUSES = new Set([
 ]);
 
 type WorkshopSection = (typeof WORKSHOP_SECTIONS)[number];
+
+const WORKSHOP_SECTION_LABEL_PATH: Record<WorkshopSection, string> = {
+  Dashboard: "workshopPanel.sections.dashboard",
+  Rezerwacje: "workshopPanel.sections.bookings",
+  "Leady i rozliczenia": "workshopPanel.sections.leadsSettlements",
+  "Moje wiadomości": "workshopPanel.sections.messages",
+  "Kalendarz / dostępność": "workshopPanel.sections.calendarAvailability",
+  "Usługi i ceny": "workshopPanel.sections.servicesPricing",
+  Pracownicy: "workshopPanel.sections.employees",
+  "Dane warsztatu": "workshopPanel.sections.workshopDetails",
+  "Opinie Google": "workshopPanel.sections.googleReviews",
+  "Opinie Servygo": "workshopPanel.sections.servygoReviews",
+  "Zdjęcia warsztatu": "workshopPanel.sections.photos",
+  Ustawienia: "workshopPanel.sections.settingsSection",
+};
 
 type ServiceDraftRow = {
   id?: string;
@@ -462,6 +481,7 @@ function weekdayKeyFromDate(dateKey: string): WorkshopOpeningDayKey {
 
 
 function WorkshopPanelPageContent() {
+  const { t } = useServyGoTranslator();
   const router = useRouter();
   const searchParams = useSearchParams();
   const isAdminPreview = searchParams.get("adminPreview") === "1";
@@ -481,6 +501,10 @@ function WorkshopPanelPageContent() {
     activeSectionRef.current = activeSection;
   }, [activeSection]);
   const [selectedBooking, setSelectedBooking] = useState<WorkshopOwnerBookingRow | null>(null);
+  const [clientInternalNotesTarget, setClientInternalNotesTarget] = useState<{
+    clientUserId: string;
+    bookingId: string | null;
+  } | null>(null);
   const [opening, setOpening] = useState<WorkshopOpeningSchedule>(defaultOpeningSchedule);
   const [calendarMonthCursor, setCalendarMonthCursor] = useState(() => {
     const now = new Date();
@@ -2006,7 +2030,7 @@ function WorkshopPanelPageContent() {
       <ServyGoPageShell isDark={false}>
         <main className="mx-auto max-w-lg px-4 py-8 text-center text-sm">
           <ServyGoSubpageNavBar isDark={false} showMojeKonto={false} />
-          <p className="mt-4">Brak konfiguracji Supabase.</p>
+          <p className="mt-4">{t("auth.errors.supabaseMissing")}</p>
         </main>
       </ServyGoPageShell>
     );
@@ -2019,7 +2043,7 @@ function WorkshopPanelPageContent() {
         <div className="flex w-full gap-3 lg:gap-4">
           <aside className="hidden md:block md:w-60 md:min-w-[15rem] md:max-w-[15rem] md:flex-shrink-0 xl:w-64 xl:min-w-[16rem] xl:max-w-[16rem]">
             <div className={`sticky top-4 rounded-3xl border p-4 backdrop-blur-xl ${isDark ? "border-blue-500/25 bg-zinc-900/92" : "border-blue-200/85 bg-white/85"}`}>
-              <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-blue-400">ServyGo Workshop</p>
+              <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-blue-400">{t("workshopPanel.sidebarTitle")}</p>
               <nav className="space-y-1.5">
                 {WORKSHOP_SECTIONS.map((item) => (
                   <button
@@ -2043,7 +2067,7 @@ function WorkshopPanelPageContent() {
                           <path d="m4 7 8 6 8-6" />
                         </svg>
                       ) : null}
-                      <span>{item}</span>
+                      <span>{t(WORKSHOP_SECTION_LABEL_PATH[item])}</span>
                       {item === "Moje wiadomości" && unreadMessages > 0 ? (
                         <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
                           {unreadMessages > 99 ? "99+" : unreadMessages}
@@ -2056,61 +2080,70 @@ function WorkshopPanelPageContent() {
             </div>
           </aside>
 
-          {isSidebarOpen ? (
-            <div className="fixed inset-0 z-40 md:hidden" aria-label="Mobile sidebar overlay">
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(false)}
-                className="absolute inset-0 bg-black/50"
-                aria-label="Zamknij menu"
-              />
-              <aside className="absolute inset-y-0 left-0 w-[80%] max-w-[20rem] overflow-y-auto border-r border-blue-200/70 bg-white p-4 shadow-2xl">
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-sm font-semibold uppercase tracking-wider text-blue-500">ServyGo Workshop</p>
+          <div
+            className={`fixed inset-0 z-[70] md:hidden ${isSidebarOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+            aria-hidden={!isSidebarOpen}
+          >
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(false)}
+              className={`absolute inset-0 z-[70] bg-black/40 transition-opacity duration-300 ${
+                isSidebarOpen ? "opacity-100" : "opacity-0"
+              }`}
+              aria-label={t("workshopPanel.closeMenuAria")}
+            />
+            <aside
+              className={`absolute inset-y-0 left-0 z-[80] w-[82vw] max-w-[340px] overflow-y-auto border-r p-4 shadow-2xl backdrop-blur-xl transition-transform duration-300 ${
+                isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+              } ${isDark ? "border-blue-500/30 bg-zinc-900/95 text-zinc-100" : "border-blue-200/70 bg-white/95 text-zinc-900"}`}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-sm font-semibold uppercase tracking-wider text-blue-500">{t("workshopPanel.sidebarTitle")}</p>
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(false)}
+                  className={`rounded-lg border px-2 py-1 text-sm ${isDark ? "border-blue-400/40 text-zinc-200" : "border-blue-200 text-zinc-700"}`}
+                  aria-label={t("workshopPanel.closeMenuAria")}
+                >
+                  ✕
+                </button>
+              </div>
+              <nav className="space-y-1.5">
+                {WORKSHOP_SECTIONS.map((item) => (
                   <button
+                    key={`mobile-${item}`}
                     type="button"
-                    onClick={() => setIsSidebarOpen(false)}
-                    className="rounded-lg border px-2 py-1 text-sm"
-                    aria-label="Zamknij menu"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <nav className="space-y-1.5">
-                  {WORKSHOP_SECTIONS.map((item) => (
-                    <button
-                      key={`mobile-${item}`}
-                      type="button"
-                      onClick={() => {
-                        setActiveSection(item);
-                        setIsSidebarOpen(false);
-                      }}
-                      className={`w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
-                        activeSection === item
-                          ? "bg-gradient-to-r from-blue-600 to-orange-500 text-white"
+                    onClick={() => {
+                      setActiveSection(item);
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
+                      activeSection === item
+                        ? "bg-gradient-to-r from-blue-600 to-orange-500 text-white"
+                        : isDark
+                          ? "text-zinc-200 hover:bg-zinc-800/80"
                           : "text-zinc-700 hover:bg-blue-50"
-                      }`}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        {item === "Moje wiadomości" ? (
-                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                            <rect x="3" y="5" width="18" height="14" rx="2" />
-                            <path d="m4 7 8 6 8-6" />
-                          </svg>
-                        ) : null}
-                        <span>{item}</span>
-                        {item === "Moje wiadomości" && unreadMessages > 0 ? (
-                          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
-                            {unreadMessages > 99 ? "99+" : unreadMessages}
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
-                  ))}
-                </nav>
-              </aside>
-            </div>
-          ) : null}
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {item === "Moje wiadomości" ? (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <rect x="3" y="5" width="18" height="14" rx="2" />
+                          <path d="m4 7 8 6 8-6" />
+                        </svg>
+                      ) : null}
+                      <span>{t(WORKSHOP_SECTION_LABEL_PATH[item])}</span>
+                      {item === "Moje wiadomości" && unreadMessages > 0 ? (
+                        <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+                          {unreadMessages > 99 ? "99+" : unreadMessages}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </nav>
+            </aside>
+          </div>
 
           <section className="min-w-0 flex-1 space-y-4">
             <header className={`rounded-3xl border px-4 py-3 backdrop-blur-xl sm:px-5 ${isDark ? "border-blue-500/25 bg-zinc-900/88" : "border-blue-200/85 bg-white/86"}`}>
@@ -2120,7 +2153,7 @@ function WorkshopPanelPageContent() {
                     type="button"
                     onClick={() => setIsSidebarOpen(true)}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-300/70 text-xl md:hidden"
-                    aria-label="Otwórz menu panelu"
+                    aria-label="Otwórz menu panelu warsztatu"
                   >
                     ☰
                   </button>
@@ -2517,6 +2550,12 @@ function WorkshopPanelPageContent() {
                                         Klient nie przyjechał
                                       </button>
                                       <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Zobacz</button>
+                                      {!readOnly ? (
+                                        <ClientInternalNotesTriggerButton
+                                          density="compact"
+                                          onClick={() => setClientInternalNotesTarget({ clientUserId: b.user_id, bookingId: b.id })}
+                                        />
+                                      ) : null}
                                     </div>
                                   </td>
                                 </tr>
@@ -3454,6 +3493,15 @@ function WorkshopPanelPageContent() {
                       </button>
                     </div>
 
+                    {!readOnly ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <ClientInternalNotesTriggerButton
+                          density="comfortable"
+                          onClick={() => setClientInternalNotesTarget({ clientUserId: b.user_id, bookingId: b.id })}
+                        />
+                      </div>
+                    ) : null}
+
                     <section className={`mt-5 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
                       {secTitle("Klient")}
                       <dl className="space-y-2">
@@ -3559,6 +3607,19 @@ function WorkshopPanelPageContent() {
             </div>
           </div>
         ) : null}
+
+        <ClientInternalNotesModal
+          open={Boolean(clientInternalNotesTarget && workshop && !readOnly)}
+          onClose={() => setClientInternalNotesTarget(null)}
+          mode="workshop"
+          clientUserId={clientInternalNotesTarget?.clientUserId ?? null}
+          bookingId={clientInternalNotesTarget?.bookingId ?? null}
+          workshopId={workshop?.id ?? null}
+          isDark={isDark}
+          adminUserId={currentUserId}
+        />
+
+        <SystemChangelogModal audience="workshop" isDark={isDark} showWhen={!loading && Boolean(workshop)} />
 
         {cancelModalBooking ? (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">

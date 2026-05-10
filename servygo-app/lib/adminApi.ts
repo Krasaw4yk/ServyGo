@@ -123,6 +123,8 @@ export type WorkshopMonthlyLeadMetricsRow = {
 
 export type AdminBookingListRow = {
   id: string;
+  /** Konto klienta (auth.users.id) — m.in. wewnętrzne notatki */
+  client_user_id: string;
   workshop_id: string;
   workshop_name: string;
   service_name: string;
@@ -364,13 +366,14 @@ export async function listBookingsWithLeadSettlementForAdmin(
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, workshop_id, workshop_name, service_name, status, created_at, booking_date, date, time, start_time, booking_lead_settlements ( settlement_status, lead_fee_amount, test_mode, dispute_reason )",
+      "id, user_id, workshop_id, workshop_name, service_name, status, created_at, booking_date, date, time, start_time, booking_lead_settlements ( settlement_status, lead_fee_amount, test_mode, dispute_reason )",
     )
     .order("created_at", { ascending: false })
     .limit(400);
   if (error) throw new Error(formatSupabaseError(error));
   type Raw = {
     id: string;
+    user_id: string;
     workshop_id: string;
     workshop_name: string;
     service_name: string;
@@ -389,6 +392,7 @@ export async function listBookingsWithLeadSettlementForAdmin(
     const timeLine = (b.start_time ? b.start_time.slice(0, 5) : null) ?? (b.time ? b.time.slice(0, 5) : null);
     return {
       id: b.id,
+      client_user_id: b.user_id,
       workshop_id: b.workshop_id,
       workshop_name: b.workshop_name,
       service_name: b.service_name,

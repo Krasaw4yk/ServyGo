@@ -24,16 +24,20 @@ export function resolveClientBookingBadge(input: {
   rescheduleStatus?: string | null;
   proposedBy?: string | null;
   isDark?: boolean;
+  /** When set, badge labels use `translations` keys (e.g. bookingsPage.badgeCancelled). */
+  t?: (path: string) => string;
 }): ClientBookingBadge {
   const st = normalizeBookingStatus(input.status);
   const qs = (input.quoteStatus ?? "").trim().toLowerCase();
   const rs = (input.rescheduleStatus ?? "").trim().toLowerCase();
   const pb = (input.proposedBy ?? "").trim().toLowerCase();
   const dark = Boolean(input.isDark);
+  const t = input.t;
+  const lab = (path: string, pl: string) => (t ? t(path) : pl);
 
   if (st === "cancelled") {
     return {
-      label: "Anulowana",
+      label: lab("bookingsPage.badgeCancelled", "Anulowana"),
       className: dark
         ? "border border-zinc-600 bg-zinc-800/90 text-zinc-200 shadow-sm"
         : "border border-zinc-300 bg-zinc-100 text-zinc-800 shadow-sm",
@@ -42,7 +46,7 @@ export function resolveClientBookingBadge(input: {
 
   if (rs === "pending_client_decision" || st === "awaiting_reschedule") {
     return {
-      label: "Propozycja zmiany terminu",
+      label: lab("bookingsPage.badgeRescheduleProposal", "Propozycja zmiany terminu"),
       className: dark
         ? "border border-amber-500/40 bg-amber-500/15 text-amber-100 shadow-sm"
         : "border border-yellow-200 bg-yellow-100 text-yellow-900 shadow-sm",
@@ -51,7 +55,7 @@ export function resolveClientBookingBadge(input: {
 
   if (rs === "pending_workshop_decision" && pb === "client") {
     return {
-      label: "Prośba o zmianę terminu",
+      label: lab("bookingsPage.badgeRescheduleRequest", "Prośba o zmianę terminu"),
       className: dark
         ? "border border-sky-500/40 bg-sky-500/15 text-sky-100 shadow-sm"
         : "border border-sky-200 bg-sky-50 text-sky-900 shadow-sm",
@@ -60,7 +64,10 @@ export function resolveClientBookingBadge(input: {
 
   if (st === "quote_rejected" || st === "awaiting_new_quote") {
     return {
-      label: st === "awaiting_new_quote" ? "Oczekuje na nową wycenę" : "Wycena odrzucona",
+      label:
+        st === "awaiting_new_quote"
+          ? lab("bookingsPage.badgeAwaitingNewQuote", "Oczekuje na nową wycenę")
+          : lab("bookingsPage.badgeQuoteRejected", "Wycena odrzucona"),
       className: dark
         ? "border border-red-500/45 bg-red-500/15 text-red-100 shadow-sm"
         : "border border-red-200 bg-red-100 text-red-700 shadow-sm",
@@ -69,7 +76,7 @@ export function resolveClientBookingBadge(input: {
 
   if (st === "confirmed") {
     return {
-      label: "Potwierdzona",
+      label: lab("bookingsPage.badgeConfirmed", "Potwierdzona"),
       className: dark
         ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-100 shadow-sm"
         : "border border-green-200 bg-green-100 text-green-700 shadow-sm",
@@ -78,7 +85,7 @@ export function resolveClientBookingBadge(input: {
 
   if (st === "quote_sent" || qs === "sent" || qs === "pending_client_decision") {
     return {
-      label: "Wycena gotowa",
+      label: lab("bookingsPage.badgeQuoteReady", "Wycena gotowa"),
       className: dark
         ? "border border-yellow-500/35 bg-yellow-500/12 text-yellow-100 shadow-sm"
         : "border border-yellow-200 bg-yellow-100 text-yellow-800 shadow-sm",
@@ -87,7 +94,7 @@ export function resolveClientBookingBadge(input: {
 
   if (st === "pending_quote" || !st) {
     return {
-      label: "Oczekuje na wycenę",
+      label: lab("bookingsPage.badgeAwaitingQuote", "Oczekuje na wycenę"),
       className: dark
         ? "border border-orange-500/45 bg-orange-500/15 text-orange-100 shadow-sm"
         : "border border-orange-200 bg-orange-100 text-orange-700 shadow-sm",
@@ -95,7 +102,7 @@ export function resolveClientBookingBadge(input: {
   }
 
   return {
-    label: st || "—",
+    label: st || (t ? t("commonUi.dash") : "—"),
     className: dark
       ? "border border-zinc-600 bg-zinc-800/80 text-zinc-200 shadow-sm"
       : "border border-zinc-200 bg-zinc-50 text-zinc-700 shadow-sm",

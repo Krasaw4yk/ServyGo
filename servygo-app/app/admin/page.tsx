@@ -13,6 +13,9 @@ import {
 } from "@/lib/useServyGoRealtime";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
+import SystemChangelogModal from "@/components/SystemChangelogModal";
+import ClientInternalNotesModal from "@/components/ClientInternalNotesModal";
+import ClientInternalNotesTriggerButton from "@/components/ClientInternalNotesTriggerButton";
 import AdminServyGoMapSection from "@/components/admin/AdminServyGoMapSection";
 import InternalInbox from "@/components/InternalInbox";
 import { sendSystemMessage } from "@/lib/messagesApi";
@@ -64,6 +67,7 @@ import {
 import { isValidWorkshopGoogleMapsUrl } from "@/lib/workshopApi";
 import { getAdminDashboardStats, type AdminDashboardStats } from "@/lib/adminStatsApi";
 import { useIsClient } from "@/lib/useIsClient";
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
 
 const SIDEBAR_ITEMS = [
   "Dashboard",
@@ -82,6 +86,22 @@ const SIDEBAR_ITEMS = [
 ] as const;
 type SidebarItem = (typeof SIDEBAR_ITEMS)[number];
 type SidebarBadgeState = Record<SidebarItem, number>;
+
+const ADMIN_SIDEBAR_LABEL_PATH: Record<SidebarItem, string> = {
+  Dashboard: "admin.sidebarLabels.dashboard",
+  "Moje wiadomości": "admin.sidebarLabels.messages",
+  "Zgłoszenia problemów": "admin.sidebarLabels.supportIssues",
+  "Zgłoszenia warsztatów": "admin.sidebarLabels.workshopSignup",
+  Warsztaty: "admin.sidebarLabels.workshops",
+  "Mapa ServyGo": "admin.sidebarLabels.servyGoMap",
+  Rezerwacje: "admin.sidebarLabels.bookings",
+  "Rozliczenie leadów MVP": "admin.sidebarLabels.leadSettlementMvp",
+  Użytkownicy: "admin.sidebarLabels.users",
+  "Usługi i ceny": "admin.sidebarLabels.servicesPricing",
+  "Opinie / Google Maps": "admin.sidebarLabels.reviewsMaps",
+  "Statystyki strony": "admin.sidebarLabels.websiteStats",
+  Ustawienia: "admin.sidebarLabels.settingsSection",
+};
 
 const EMPTY_SIDEBAR_BADGES: SidebarBadgeState = {
   Dashboard: 0,
@@ -274,6 +294,7 @@ type WorkshopEditDraft = {
 };
 
 export default function AdminPage() {
+  const { t } = useServyGoTranslator();
   const router = useRouter();
   const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -324,6 +345,11 @@ export default function AdminPage() {
   const [leadMetricsLoading, setLeadMetricsLoading] = useState(false);
   const [leadMetricsError, setLeadMetricsError] = useState("");
   const [disputeModalBookingId, setDisputeModalBookingId] = useState<string | null>(null);
+  const [clientInternalNotesCtx, setClientInternalNotesCtx] = useState<{
+    clientUserId: string;
+    bookingId: string | null;
+    workshopId: string | null;
+  } | null>(null);
   const [disputeModalReason, setDisputeModalReason] = useState("");
   const [disputeBusy, setDisputeBusy] = useState(false);
   const [leadSettingsBusyWorkshopId, setLeadSettingsBusyWorkshopId] = useState<string | null>(null);
@@ -1063,11 +1089,11 @@ export default function AdminPage() {
       setDashboardStatsData(stats);
     } catch (err) {
       setDashboardStatsData(null);
-      setDashboardStatsError(err instanceof Error ? err.message : "Nie udało się pobrać statystyk.");
+      setDashboardStatsError(err instanceof Error ? err.message : t("admin.statsLoadErrorFallback"));
     } finally {
       setLoadingDashboardStats(false);
     }
-  }, [currentUser]);
+  }, [currentUser, t]);
 
   useEffect(() => {
     if (!currentUser || !isAdmin) return;
@@ -1142,7 +1168,7 @@ export default function AdminPage() {
         <main className={`min-h-screen w-full max-w-none px-6 py-6 sm:px-8 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
           <ServyGoSubpageNavBar isDark={isDark} showMojeKonto={false} />
           <div className="mx-auto mt-6 w-full max-w-none">
-            <p className={isDark ? "text-zinc-300" : "text-zinc-700"}>Sprawdzanie uprawnień administratora...</p>
+            <p className={isDark ? "text-zinc-300" : "text-zinc-700"}>{t("admin.checkingAccess")}</p>
           </div>
         </main>
       </ServyGoPageShell>
@@ -1156,10 +1182,10 @@ export default function AdminPage() {
           <div className="mx-auto max-w-4xl">
             <ServyGoSubpageNavBar isDark={isDark} showMojeKonto={false} />
             <div className="mx-auto mt-6 w-full max-w-4xl rounded-2xl border border-orange-400/30 bg-orange-500/10 p-6">
-              <h1 className="text-2xl font-bold">Panel administratora</h1>
-              <p className="mt-3">Przekierowanie do logowania...</p>
+              <h1 className="text-2xl font-bold">{t("admin.panelTitle")}</h1>
+              <p className="mt-3">{t("admin.redirectLogin")}</p>
               <Link href="/?auth=login" className="mt-4 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
-                Przejdź do logowania
+                {t("admin.goToLoginCta")}
               </Link>
             </div>
           </div>
@@ -1175,8 +1201,8 @@ export default function AdminPage() {
           <div className="mx-auto max-w-4xl">
             <ServyGoSubpageNavBar isDark={isDark} />
             <div className="mx-auto mt-6 w-full rounded-2xl border border-orange-400/30 bg-orange-500/10 p-6">
-              <h1 className="text-2xl font-bold">Panel administratora</h1>
-              <p className="mt-3">Brak dostępu.</p>
+              <h1 className="text-2xl font-bold">{t("admin.panelTitle")}</h1>
+              <p className="mt-3">{t("admin.accessDeniedShort")}</p>
             </div>
           </div>
         </main>
@@ -1203,13 +1229,13 @@ export default function AdminPage() {
               }`}
             >
               <div className="mb-4 flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold uppercase tracking-wider text-blue-400">ServyGo Admin</span>
+                <span className="text-sm font-semibold uppercase tracking-wider text-blue-400">{t("admin.sidebarTitle")}</span>
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
                   className="rounded-lg border px-2 py-1 text-xs lg:hidden"
                 >
-                  Zamknij
+                  {t("admin.closeSidebar")}
                 </button>
               </div>
               <nav className="space-y-1.5">
@@ -1240,7 +1266,7 @@ export default function AdminPage() {
                             <path d="m4 7 8 6 8-6" />
                           </svg>
                         ) : null}
-                        <span>{item}</span>
+                        <span>{t(ADMIN_SIDEBAR_LABEL_PATH[item])}</span>
                       </span>
                       {unreadSidebarBadges[item] > 0 ? (
                         <span
@@ -2399,14 +2425,27 @@ export default function AdminPage() {
                               ) : null}
                             </td>
                             <td className="px-3 py-2 align-top">
-                              <button
-                                type="button"
-                                disabled={!b.settlement_status || (b.settlement_status ?? "").toLowerCase() === "disputed"}
-                                onClick={() => openDisputeModal(b.id)}
-                                className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                              >
-                                Oznacz jako sporne
-                              </button>
+                              <div className="flex max-w-[12rem] flex-col gap-1">
+                                <button
+                                  type="button"
+                                  disabled={!b.settlement_status || (b.settlement_status ?? "").toLowerCase() === "disputed"}
+                                  onClick={() => openDisputeModal(b.id)}
+                                  className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                >
+                                  Oznacz jako sporne
+                                </button>
+                                <ClientInternalNotesTriggerButton
+                                  density="compact"
+                                  disabled={!b.client_user_id?.trim()}
+                                  onClick={() =>
+                                    setClientInternalNotesCtx({
+                                      clientUserId: b.client_user_id,
+                                      bookingId: b.id,
+                                      workshopId: b.workshop_id,
+                                    })
+                                  }
+                                />
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -3266,6 +3305,20 @@ export default function AdminPage() {
             </div>
           </div>
         ) : null}
+
+        <ClientInternalNotesModal
+          open={Boolean(clientInternalNotesCtx && currentUser)}
+          onClose={() => setClientInternalNotesCtx(null)}
+          mode="admin"
+          clientUserId={clientInternalNotesCtx?.clientUserId ?? null}
+          bookingId={clientInternalNotesCtx?.bookingId ?? null}
+          workshopId={clientInternalNotesCtx?.workshopId ?? null}
+          isDark={isDark}
+          adminUserId={currentUser?.id ?? null}
+          adminEmail={currentUser?.email ?? null}
+        />
+
+        <SystemChangelogModal audience="admin" isDark={isDark} showWhen={mounted && Boolean(currentUser) && isAdmin} />
 
         {disputeModalBookingId ? (
           <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">

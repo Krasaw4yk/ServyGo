@@ -25,6 +25,24 @@ import { supabase } from "@/lib/supabaseClient";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { useInboxRealtimeSync } from "@/lib/useServyGoRealtime";
 import { clientCanRespondToActiveBookingQuote } from "@/lib/bookingStatusUi";
+import { fillTemplate } from "@/lib/fillTemplate";
+import { localeTagForLanguage } from "@/lib/dateLocale";
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
+
+function formatInboxLoadError(e: unknown, t: (path: string) => string): string {
+  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+  const msg = raw.trim() || t("commonUi.unknownError");
+  if (/failed to fetch dynamically imported module/i.test(msg) || /loading chunk \d+ failed/i.test(msg)) {
+    return t("inboxPage.loadErrorChunk");
+  }
+  if (/failed to fetch/i.test(msg) || /networkerror/i.test(msg)) {
+    return t("inboxPage.loadErrorNetwork");
+  }
+  if (msg.length > 220) {
+    return t("inboxPage.loadErrorGeneric");
+  }
+  return msg;
+}
 
 type InternalInboxProps = {
   currentUserId: string;
@@ -46,27 +64,6 @@ function bookingListHref(viewerRole: InternalMessageRole): string {
   return "/moje-rezerwacje";
 }
 
-function formatDate(value: string) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString("pl-PL");
-}
-
-function formatInboxLoadError(e: unknown): string {
-  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : "";
-  const msg = raw.trim() || "Nieznany błąd.";
-  if (/failed to fetch dynamically imported module/i.test(msg) || /loading chunk \d+ failed/i.test(msg)) {
-    return "Nie udało się załadować fragmentu aplikacji. Odśwież stronę (Ctrl+F5) lub spróbuj ponownie przyciskiem „Odśwież”.";
-  }
-  if (/failed to fetch/i.test(msg) || /networkerror/i.test(msg)) {
-    return "Brak połączenia z serwerem. Sprawdź internet i spróbuj ponownie.";
-  }
-  if (msg.length > 220) {
-    return "Wystąpił problem podczas ładowania wiadomości. Spróbuj ponownie za chwilę.";
-  }
-  return msg;
-}
-
 export default function InternalInbox({
   currentUserId,
   isDark,
@@ -77,6 +74,14 @@ export default function InternalInbox({
   embeddedInPage = false,
   enableMobileMessenger = false,
 }: InternalInboxProps) {
+  const { t, language } = useServyGoTranslator();
+  const dateLocaleTag = localeTagForLanguage(language);
+  function formatDate(value: string) {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString(dateLocaleTag);
+  }
+
   const [loading, setLoading] = useState(true);
   const [inbox, setInbox] = useState<InternalMessage[]>([]);
   const [sent, setSent] = useState<InternalMessage[]>([]);
@@ -127,14 +132,13 @@ export default function InternalInbox({
   const canUseAdminCompose = viewerRole === "admin";
 
   const resolvedEmptyListHint = useMemo(() => {
-    if (viewerRole === "admin") return emptySidebarHint ?? "Brak pozycji.";
+    if (viewerRole === "admin") return emptySidebarHint ?? t("inboxPage.emptyListAdmin");
     if (enableMobileMessenger) {
-      if (viewerRole === "workshop")
-        return "Nie masz jeszcze wiadomości. Wiadomości pojawią się tutaj w ramach rezerwacji lub gdy klient do Ciebie napisze.";
-      return "Nie masz jeszcze wiadomości. Wiadomości pojawią się tutaj po rezerwacji lub kontakcie z warsztatem.";
+      if (viewerRole === "workshop") return t("inboxPage.emptyListWorkshop");
+      return t("inboxPage.emptyListClient");
     }
-    return emptySidebarHint ?? "Brak pozycji.";
-  }, [viewerRole, emptySidebarHint, enableMobileMessenger]);
+    return emptySidebarHint ?? t("inboxPage.emptyListAdmin");
+  }, [viewerRole, emptySidebarHint, enableMobileMessenger, t]);
 
   useEffect(() => {
     const gen = ++composeGuardGen.current;
@@ -164,10 +168,10 @@ export default function InternalInbox({
           ? `request:${message.service_request_id}`
           : `single:${message.id}`;
       const label = message.related_booking_id
-        ? `Rezerwacja #${message.related_booking_id.slice(0, 8)}`
+        ? fillTemplate(t("inboxPage.threadLabelBooking"), { id: message.related_booking_id.slice(0, 8) })
         : message.service_request_id
-          ? `Zapytanie #${message.service_request_id.slice(0, 8)}`
-          : "Wiadomość";
+          ? fillTemplate(t("inboxPage.threadLabelRequest"), { id: message.service_request_id.slice(0, 8) })
+          : t("inboxPage.threadLabelMessage");
       const existing = groups.get(key);
       if (!existing) {
         groups.set(key, {
@@ -183,7 +187,7 @@ export default function InternalInbox({
       }
     }
     return Array.from(groups.values());
-  }, [allMessages, currentUserId]);
+  }, [allMessages, currentUserId, t]);
 
   const mergedSidebarRows = useMemo(() => {
     type Row =
@@ -357,13 +361,13 @@ export default function InternalInbox({
       onUnreadCountChangeRef.current?.(unread);
     } catch (e) {
       if (gen !== reloadGeneration.current) return;
-      setError(formatInboxLoadError(e));
+      setError(formatInboxLoadError(e, t));
     } finally {
       if (gen === reloadGeneration.current) {
         setLoading(false);
       }
     }
-  }, [currentUserId, includeAllForAdmin]);
+  }, [currentUserId, includeAllForAdmin, t]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => void reload());
@@ -477,7 +481,7 @@ export default function InternalInbox({
 
   async function sendMessage() {
     if (!canUseAdminCompose) {
-      setError("Tworzenie nowej wiadomości jest dostępne tylko dla administratora.");
+      setError(t("inboxPage.errAdminOnlyCompose"));
       setComposeOpen(false);
       return;
     }
@@ -485,15 +489,15 @@ export default function InternalInbox({
     setInfo("");
     const trimmedBody = body.trim();
     if (!trimmedBody) {
-      setError("Wpisz treść wiadomości.");
+      setError(t("inboxPage.errBodyRequired"));
       return;
     }
     if (!recipientId.trim()) {
-      setError("Brak odbiorcy dla tej rozmowy.");
+      setError(t("inboxPage.errRecipientMissing"));
       return;
     }
     if (!relatedBookingId && !serviceRequestId) {
-      setError("Nowa wiadomość musi być powiązana z rezerwacją lub zapytaniem.");
+      setError(t("inboxPage.errComposeNeedsLink"));
       return;
     }
     setSending(true);
@@ -516,10 +520,10 @@ export default function InternalInbox({
       setRelatedWorkshopId(null);
       setServiceRequestId(null);
       setComposeOpen(false);
-      setInfo("Wiadomość wysłana.");
+      setInfo(t("inboxPage.infoMessageSent"));
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się wysłać wiadomości.");
+      setError(e instanceof Error ? e.message : t("inboxPage.sendFailed"));
     } finally {
       setSending(false);
     }
@@ -528,7 +532,7 @@ export default function InternalInbox({
   async function sendClientReplyToWorkshop() {
     const trimmed = clientReplyBody.trim();
     if (!trimmed || !workshopOwnerUserId || !selectedMessage?.related_booking_id) {
-      setError("Wpisz treść wiadomości.");
+      setError(t("inboxPage.errBodyRequired"));
       return;
     }
     setClientReplyBusy(true);
@@ -539,16 +543,16 @@ export default function InternalInbox({
         recipientId: workshopOwnerUserId,
         senderRole: "client",
         recipientRole: "workshop",
-        subject: selectedMessage.subject ? `RE: ${selectedMessage.subject}` : "Wiadomość od klienta",
+        subject: selectedMessage.subject ? `${t("inboxPage.replySubjectPrefix")}${selectedMessage.subject}` : t("inboxPage.subjectFromClient"),
         body: trimmed,
         relatedBookingId: selectedMessage.related_booking_id,
         relatedWorkshopId: selectedMessage.related_workshop_id,
       });
       setClientReplyBody("");
-      setInfo("Wysłano wiadomość do warsztatu.");
+      setInfo(t("inboxPage.sentToWorkshopInfo"));
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się wysłać wiadomości.");
+      setError(e instanceof Error ? e.message : t("inboxPage.sendFailed"));
     } finally {
       setClientReplyBusy(false);
     }
@@ -557,7 +561,7 @@ export default function InternalInbox({
   async function sendWorkshopReplyToClient() {
     const trimmed = workshopReplyBody.trim();
     if (!trimmed || !bookingClientUserId || !selectedMessage?.related_booking_id) {
-      setError("Wpisz treść odpowiedzi.");
+      setError(t("inboxPage.errReplyBodyRequired"));
       return;
     }
     setWorkshopReplyBusy(true);
@@ -568,16 +572,16 @@ export default function InternalInbox({
         recipientId: bookingClientUserId,
         senderRole: viewerRole,
         recipientRole: "client",
-        subject: "Wiadomość od warsztatu",
+        subject: t("inboxPage.subjectFromWorkshop"),
         body: trimmed,
         relatedBookingId: selectedMessage.related_booking_id,
         relatedWorkshopId: selectedMessage.related_workshop_id,
       });
       setWorkshopReplyBody("");
-      setInfo("Wysłano odpowiedź do klienta.");
+      setInfo(t("inboxPage.sentReplyToClientInfo"));
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się wysłać odpowiedzi.");
+      setError(e instanceof Error ? e.message : t("inboxPage.sendFailed"));
     } finally {
       setWorkshopReplyBusy(false);
     }
@@ -586,7 +590,7 @@ export default function InternalInbox({
   function startReply(message: InternalMessage) {
     if (!canUseAdminCompose) return;
     setComposeOpen(true);
-    setSubject(message.subject ? `RE: ${message.subject}` : "RE: Wiadomość");
+    setSubject(message.subject ? `${t("inboxPage.replySubjectPrefix")}${message.subject}` : t("inboxPage.replySubjectFallback"));
     setBody(`\n\n---\n${message.body}`);
     setRecipientId(message.sender_id ?? "");
     setRecipientRole((message.sender_role as InternalMessageRole) ?? "client");
@@ -652,10 +656,10 @@ export default function InternalInbox({
         bookingId: message.related_booking_id,
         workshopId: message.related_workshop_id,
         recipientId: ownerId,
-        subject: accepted ? "ServyGo: klient zaakceptował wycenę" : "ServyGo: klient odrzucił wycenę",
+        subject: accepted ? t("inboxPage.emailServygoQuoteAccepted") : t("inboxPage.emailServygoQuoteRejected"),
         message: accepted
-          ? "Klient zaakceptował wycenę. Sprawdź szczegóły w panelu ServyGo."
-          : "Klient odrzucił wycenę. Sprawdź szczegóły w panelu ServyGo.",
+          ? `${t("inboxPage.emailShortQuoteAccepted")} ${t("inboxPage.quoteDetailsInServyGo")}`
+          : `${t("inboxPage.emailShortQuoteRejected")} ${t("inboxPage.quoteDetailsInServyGo")}`,
       });
     }
   }
@@ -672,20 +676,20 @@ export default function InternalInbox({
         .maybeSingle();
       if (bErr) throw new Error(bErr.message);
       const qid = ((bRow as { current_quote_id?: string | null } | null)?.current_quote_id ?? "").trim();
-      if (!qid) throw new Error("Brak aktywnej wyceny — odśwież listę.");
+      if (!qid) throw new Error(t("inboxPage.errNoActiveQuote"));
       await respondToBookingQuote(selectedMessage.related_booking_id, qid, accept);
       await notifyWorkshopAboutQuoteDecisionEmailOnly(selectedMessage, accept);
-      setInfo(accept ? "Wycena została zaakceptowana." : "Wycena została odrzucona.");
+      setInfo(accept ? t("inboxPage.quoteAcceptedInfo") : t("inboxPage.quoteRejectedInfo"));
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji.");
+      setError(e instanceof Error ? e.message : t("inboxPage.quoteDecisionSaveError"));
     }
   }
 
   async function handleCancelBooking() {
     if (!supabase) return;
     if (!selectedMessage?.related_booking_id) return;
-    const reason = window.prompt("Podaj krótki powód anulowania:");
+    const reason = window.prompt(t("inboxPage.promptCancelReason"));
     if (!reason?.trim()) return;
     setError("");
     setInfo("");
@@ -701,8 +705,8 @@ export default function InternalInbox({
         await sendSystemMessage({
           recipientId: ownerId,
           recipientRole: "workshop",
-          subject: "Klient anulował rezerwację",
-          body: `Powód anulowania: ${reason.trim()}`,
+          subject: t("inboxPage.systemSubjectClientCancelled"),
+          body: `${t("inboxPage.systemBodyCancelPrefix")} ${reason.trim()}`,
           relatedBookingId: selectedMessage.related_booking_id,
           relatedWorkshopId: selectedMessage.related_workshop_id,
         });
@@ -711,15 +715,15 @@ export default function InternalInbox({
             bookingId: selectedMessage.related_booking_id,
             workshopId: selectedMessage.related_workshop_id,
             recipientId: ownerId,
-            subject: "ServyGo: klient anulował rezerwację",
-            message: `Klient anulował rezerwację. Powód: ${reason.trim()}`,
+            subject: t("inboxPage.emailServygoBookingCancelled"),
+            message: fillTemplate(t("inboxPage.emailCancelNotificationBody"), { reason: reason.trim() }),
           });
         }
       }
-      setInfo(`Rezerwacja anulowana (${status}).`);
+      setInfo(fillTemplate(t("inboxPage.infoBookingCancelled"), { status }));
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się anulować rezerwacji.");
+      setError(e instanceof Error ? e.message : t("inboxPage.cancelBookingError"));
     }
   }
 
@@ -740,10 +744,10 @@ export default function InternalInbox({
           await sendSystemMessage({
             recipientId: ownerId,
             recipientRole: "workshop",
-            subject: accept ? "Klient zaakceptował zmianę terminu" : "Klient odrzucił zmianę terminu",
-            body: accept
-              ? "Klient zaakceptował nowy termin rezerwacji."
-              : "Klient odrzucił proponowaną zmianę terminu.",
+            subject: accept
+              ? t("bookingsPage.systemSubjectClientAcceptedReschedule")
+              : t("bookingsPage.systemSubjectClientRejectedReschedule"),
+            body: accept ? t("inboxPage.rescheduleSystemBodyAccepted") : t("inboxPage.rescheduleSystemBodyRejected"),
             relatedBookingId: selectedMessage.related_booking_id,
             relatedWorkshopId: selectedMessage.related_workshop_id,
           });
@@ -751,24 +755,22 @@ export default function InternalInbox({
             bookingId: selectedMessage.related_booking_id,
             workshopId: selectedMessage.related_workshop_id,
             recipientId: ownerId,
-            subject: accept ? "ServyGo: klient zaakceptował nowy termin" : "ServyGo: klient odrzucił nowy termin",
-            message: accept
-              ? "Klient zaakceptował propozycję zmiany terminu."
-              : "Klient odrzucił propozycję zmiany terminu.",
+            subject: accept ? t("inboxPage.emailServygoRescheduleAccepted") : t("inboxPage.emailServygoRescheduleRejected"),
+            message: accept ? t("inboxPage.emailShortRescheduleAccepted") : t("inboxPage.emailShortRescheduleRejected"),
           });
         }
       }
-      setInfo(accept ? "Zaakceptowano nowy termin." : "Odrzucono propozycję nowego terminu.");
+      setInfo(accept ? t("inboxPage.rescheduleAcceptedInfo") : t("inboxPage.rescheduleRejectedInfo"));
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji.");
+      setError(e instanceof Error ? e.message : t("inboxPage.quoteDecisionSaveError"));
     }
   }
 
   function notificationKindLabel(n: UserNotificationRow): string {
-    if (n.notification_type === "completion_check") return "Przypomnienie po wizycie";
-    if (n.notification_type === "visit_reminder") return "Przypomnienie o wizycie";
-    return "Powiadomienie";
+    if (n.notification_type === "completion_check") return t("inboxPage.notificationKindCompletion");
+    if (n.notification_type === "visit_reminder") return t("inboxPage.notificationKindVisitReminder");
+    return t("inboxPage.notificationKindGeneric");
   }
 
   function threadPartnerSubtitle(): string {
@@ -826,10 +828,10 @@ export default function InternalInbox({
             <rect x="3" y="5" width="18" height="14" rx="2" />
             <path d="m4 7 8 6 8-6" />
           </svg>
-          <h3 className="text-lg font-semibold">Moje wiadomości</h3>
+          <h3 className="text-lg font-semibold">{t("inboxPage.toolbarTitle")}</h3>
         </>
       ) : (
-        <span className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>Moje wiadomości</span>
+        <span className={`text-sm font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{t("inboxPage.toolbarTitle")}</span>
       )}
       {unreadCount > 0 ? (
         <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
@@ -843,11 +845,11 @@ export default function InternalInbox({
     <div className="flex gap-2">
       {canUseAdminCompose ? (
         <button type="button" onClick={() => setComposeOpen((prev) => !prev)} className="rounded-lg border px-3 py-1.5 text-sm">
-          {composeOpen ? "Zamknij" : "Nowa wiadomość"}
+          {composeOpen ? t("commonUi.close") : t("inboxPage.composeNew")}
         </button>
       ) : null}
       <button type="button" onClick={() => void reload()} className="rounded-lg border px-3 py-1.5 text-sm">
-        Odśwież
+        {t("commonUi.refresh")}
       </button>
     </div>
   );
@@ -860,7 +862,7 @@ export default function InternalInbox({
           onClick={() => setComposeOpen((prev) => !prev)}
           className={`rounded-2xl border px-4 py-2 text-sm shadow-sm ${isDark ? "border-blue-800/60 bg-zinc-900/90" : "border-blue-100 bg-white/90"}`}
         >
-          {composeOpen ? "Zamknij" : "Nowa wiadomość"}
+          {composeOpen ? t("commonUi.close") : t("inboxPage.composeNew")}
         </button>
       ) : null}
       <button
@@ -868,7 +870,7 @@ export default function InternalInbox({
         onClick={() => void reload()}
         className={`rounded-2xl border px-4 py-2 text-sm shadow-sm ${isDark ? "border-blue-800/60 bg-zinc-900/90" : "border-blue-100 bg-white/90"}`}
       >
-        Odśwież
+        {t("commonUi.refresh")}
       </button>
     </div>
   );
@@ -884,33 +886,33 @@ export default function InternalInbox({
     <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border p-3">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span>Rola odbiorcy</span>
+          <span>{t("inboxPage.roleRecipient")}</span>
           <select value={recipientRole} onChange={(e) => setRecipientRole(e.target.value as InternalMessageRole)} className="rounded-lg border px-3 py-2 text-sm text-black">
-            <option value="admin">Admin</option>
-            <option value="workshop">Warsztat</option>
-            <option value="client">Klient</option>
+            <option value="admin">{t("inboxPage.roleAdmin")}</option>
+            <option value="workshop">{t("inboxPage.roleWorkshop")}</option>
+            <option value="client">{t("inboxPage.roleClient")}</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span>Odbiorca (UUID)</span>
-          <input value={recipientId} onChange={(e) => setRecipientId(e.target.value)} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder="opcjonalnie przy wysyłce do admina" />
+          <span>{t("inboxPage.recipientUuid")}</span>
+          <input value={recipientId} onChange={(e) => setRecipientId(e.target.value)} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder={t("inboxPage.recipientUuidPlaceholder")} />
         </label>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span>Powiązana rezerwacja (UUID)</span>
+          <span>{t("inboxPage.relatedBookingUuid")}</span>
           <input value={relatedBookingId ?? ""} onChange={(e) => setRelatedBookingId(e.target.value.trim() || null)} className="rounded-lg border px-3 py-2 text-sm text-black" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span>Powiązane zapytanie (UUID)</span>
+          <span>{t("inboxPage.relatedRequestUuid")}</span>
           <input value={serviceRequestId ?? ""} onChange={(e) => setServiceRequestId(e.target.value.trim() || null)} className="rounded-lg border px-3 py-2 text-sm text-black" />
         </label>
       </div>
-      <input value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder="Temat" />
-      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder="Treść wiadomości" />
+      <input value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder={t("inboxPage.subjectPlaceholder")} />
+      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} className="rounded-lg border px-3 py-2 text-sm text-black" placeholder={t("inboxPage.bodyPlaceholder")} />
       <div>
         <button type="button" disabled={sending} onClick={() => void sendMessage()} className="rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-60">
-          {sending ? "Wysyłanie..." : "Wyślij"}
+          {sending ? t("commonUi.sending") : t("commonUi.send")}
         </button>
       </div>
     </div>
@@ -920,33 +922,33 @@ export default function InternalInbox({
     <div className={`mb-4 grid grid-cols-1 gap-3 rounded-2xl border p-4 shadow-sm ${isDark ? "border-zinc-700 bg-zinc-900/85" : "border-blue-100 bg-white/90"}`}>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span>Rola odbiorcy</span>
+          <span>{t("inboxPage.roleRecipient")}</span>
           <select value={recipientRole} onChange={(e) => setRecipientRole(e.target.value as InternalMessageRole)} className="rounded-xl border px-3 py-2 text-sm text-black">
-            <option value="admin">Admin</option>
-            <option value="workshop">Warsztat</option>
-            <option value="client">Klient</option>
+            <option value="admin">{t("inboxPage.roleAdmin")}</option>
+            <option value="workshop">{t("inboxPage.roleWorkshop")}</option>
+            <option value="client">{t("inboxPage.roleClient")}</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span>Odbiorca (UUID)</span>
-          <input value={recipientId} onChange={(e) => setRecipientId(e.target.value)} className="rounded-xl border px-3 py-2 text-sm text-black" placeholder="opcjonalnie przy wysyłce do admina" />
+          <span>{t("inboxPage.recipientUuid")}</span>
+          <input value={recipientId} onChange={(e) => setRecipientId(e.target.value)} className="rounded-xl border px-3 py-2 text-sm text-black" placeholder={t("inboxPage.recipientUuidPlaceholder")} />
         </label>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span>Powiązana rezerwacja (UUID)</span>
+          <span>{t("inboxPage.relatedBookingUuid")}</span>
           <input value={relatedBookingId ?? ""} onChange={(e) => setRelatedBookingId(e.target.value.trim() || null)} className="rounded-xl border px-3 py-2 text-sm text-black" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span>Powiązane zapytanie (UUID)</span>
+          <span>{t("inboxPage.relatedRequestUuid")}</span>
           <input value={serviceRequestId ?? ""} onChange={(e) => setServiceRequestId(e.target.value.trim() || null)} className="rounded-xl border px-3 py-2 text-sm text-black" />
         </label>
       </div>
-      <input value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-xl border px-3 py-2 text-sm text-black" placeholder="Temat" />
-      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} className="rounded-xl border px-3 py-2 text-sm text-black" placeholder="Treść wiadomości" />
+      <input value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-xl border px-3 py-2 text-sm text-black" placeholder={t("inboxPage.subjectPlaceholder")} />
+      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} className="rounded-xl border px-3 py-2 text-sm text-black" placeholder={t("inboxPage.bodyPlaceholder")} />
       <div>
         <button type="button" disabled={sending} onClick={() => void sendMessage()} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-          {sending ? "Wysyłanie..." : "Wyślij"}
+          {sending ? t("commonUi.sending") : t("commonUi.send")}
         </button>
       </div>
     </div>
@@ -1002,16 +1004,17 @@ export default function InternalInbox({
         >
           <div className="flex items-center justify-between gap-2">
             <p className={`truncate text-sm font-medium ${row.thread.unreadCount > 0 ? (isDark ? "text-orange-400" : "text-orange-600") : isDark ? "text-zinc-100" : "text-zinc-900"}`}>
-              {row.thread.latest.subject || "(bez tematu)"}
+              {row.thread.latest.subject || t("inboxPage.noSubject")}
             </p>
             {row.thread.unreadCount > 0 ? <span className="h-2 w-2 rounded-full bg-rose-500" /> : null}
           </div>
           <p className="truncate text-xs text-zinc-500">
-            Wiadomość · {row.thread.label} · od: {row.thread.latest.sender_label}
+            {fillTemplate(t("inboxPage.sidebarLine"), { label: row.thread.label, sender: row.thread.latest.sender_label ?? "" })}
           </p>
           {row.thread.latest.body ? <p className={`mt-1 line-clamp-2 text-xs leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{row.thread.latest.body}</p> : null}
           <p className="mt-1 text-[11px] text-zinc-500">
-            {formatDate(row.thread.latest.created_at)} · {row.thread.unreadCount > 0 ? "nieprzeczytane" : "przeczytane"}
+            {formatDate(row.thread.latest.created_at)} ·{" "}
+            {row.thread.unreadCount > 0 ? t("inboxPage.readStateUnread") : t("inboxPage.readStateRead")}
           </p>
         </button>
       ),
@@ -1050,7 +1053,9 @@ export default function InternalInbox({
               <p className={`mt-1 text-xs font-medium ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{notificationKindLabel(row.notification)}</p>
               {row.notification.body ? <p className={`mt-2 line-clamp-3 max-w-full break-words text-sm ${isDark ? "text-zinc-400" : "text-zinc-700"}`}>{row.notification.body}</p> : null}
               <p className="mt-3 text-[11px] text-zinc-500">{formatDate(row.notification.created_at)}</p>
-              <p className="mt-1 text-[11px] text-zinc-500">{!row.notification.is_read ? "nieprzeczytane" : "przeczytane"}</p>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                {!row.notification.is_read ? t("inboxPage.readStateUnread") : t("inboxPage.readStateRead")}
+              </p>
             </button>
           ) : (
             <button
@@ -1062,7 +1067,7 @@ export default function InternalInbox({
               } ${row.thread.unreadCount > 0 ? mobileUnreadCardHighlight : !isDark ? "border-blue-100 bg-white/90" : "border-zinc-700 bg-zinc-900/85"}`}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className={`flex-1 break-words font-semibold ${row.thread.unreadCount > 0 ? (isDark ? "text-blue-300" : "text-blue-700") : isDark ? "text-zinc-100" : "text-zinc-900"}`}>{row.thread.latest.subject || "(bez tematu)"}</p>
+                <p className={`flex-1 break-words font-semibold ${row.thread.unreadCount > 0 ? (isDark ? "text-blue-300" : "text-blue-700") : isDark ? "text-zinc-100" : "text-zinc-900"}`}>{row.thread.latest.subject || t("inboxPage.noSubject")}</p>
                 {row.thread.unreadCount > 0 ? (
                   <span className="mt-1 flex shrink-0 items-center gap-1.5" aria-hidden={true}>
                     {row.thread.unreadCount > 1 ? (
@@ -1077,7 +1082,9 @@ export default function InternalInbox({
               </p>
               {row.thread.latest.body ? <p className={`mt-2 line-clamp-3 max-w-full break-words text-sm ${isDark ? "text-zinc-400" : "text-zinc-700"}`}>{row.thread.latest.body}</p> : null}
               <p className="mt-3 text-[11px] text-zinc-500">{formatDate(row.thread.latest.created_at)}</p>
-              <p className="mt-1 text-[11px] text-zinc-500">{row.thread.unreadCount > 0 ? "nieprzeczytane" : "przeczytane"}</p>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                {row.thread.unreadCount > 0 ? t("inboxPage.readStateUnread") : t("inboxPage.readStateRead")}
+              </p>
             </button>
           ),
         )}
@@ -1092,17 +1099,17 @@ export default function InternalInbox({
             <h4 className="break-words text-base font-semibold">{selectedNotification.title}</h4>
             <p className="text-xs text-zinc-500">{formatDate(selectedNotification.created_at)}</p>
             <p className="mt-1 text-xs font-medium text-zinc-500">
-              Typ:{" "}
+              {t("inboxPage.typeLabel")}{" "}
               {selectedNotification.notification_type === "completion_check"
-                ? "Po wizycie"
+                ? t("inboxPage.typePostVisit")
                 : selectedNotification.notification_type === "visit_reminder"
-                  ? "Przypomnienie o wizycie"
+                  ? t("inboxPage.typeVisitReminder")
                   : selectedNotification.notification_type}
             </p>
             {selectedNotification.booking_id ? (
               <p className="mt-2">
                 <Link href={bookingListHref(viewerRole)} className={`text-sm font-semibold underline-offset-2 hover:underline ${isDark ? "text-sky-400" : "text-blue-600"}`}>
-                  Przejdź do rezerwacji
+                  {t("inboxPage.goToBookings")}
                 </Link>
               </p>
             ) : null}
@@ -1117,26 +1124,30 @@ export default function InternalInbox({
         <div className="space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <h4 className="break-words text-base font-semibold">{selectedMessage.subject || "(bez tematu)"}</h4>
-              <p className="text-xs text-zinc-500">Ostatnia aktywność · {formatDate(selectedMessage.created_at)}</p>
-              <p className="mt-1 text-xs font-medium text-zinc-500">Typ: Wiadomość wewnętrzna</p>
+              <h4 className="break-words text-base font-semibold">{selectedMessage.subject || t("inboxPage.noSubject")}</h4>
+              <p className="text-xs text-zinc-500">
+                {fillTemplate(t("inboxPage.lastActivity"), { date: formatDate(selectedMessage.created_at) })}
+              </p>
+              <p className="mt-1 text-xs font-medium text-zinc-500">
+                {t("inboxPage.typeLabel")} {t("inboxPage.internalMessageType")}
+              </p>
               {selectedMessage.related_booking_id ? (
                 <p className="mt-2">
                   <Link href={bookingListHref(viewerRole)} className={`text-sm font-semibold underline-offset-2 hover:underline ${isDark ? "text-sky-400" : "text-blue-600"}`}>
-                    Przejdź do rezerwacji
+                    {t("inboxPage.goToBookings")}
                   </Link>
                 </p>
               ) : null}
             </div>
             {canUseAdminCompose && selectedMessage.sender_id && selectedMessage.sender_id !== currentUserId ? (
               <button type="button" onClick={() => startReply(selectedMessage)} className="rounded-lg border px-3 py-1 text-sm">
-                Odpowiedz (klasycznie)
+                {t("inboxPage.replyClassic")}
               </button>
             ) : null}
           </div>
           <div className={`max-h-[46vh] space-y-3 overflow-y-auto overflow-x-hidden rounded-2xl border p-4 text-sm ${isDark ? "border-zinc-700 bg-zinc-950/40" : "border-zinc-200 bg-zinc-50/50"}`}>
             {threadMessages.length === 0 ? (
-              <p className={`rounded-xl px-3 py-6 text-center text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Brak wiadomości w tej rozmowie.</p>
+              <p className={`rounded-xl px-3 py-6 text-center text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("inboxPage.emptyThread")}</p>
             ) : (
               threadMessages.map((msg) => (
                 <div key={msg.id} className={`rounded-2xl border px-4 py-3 ${bubbleTone(msg)}`}>
@@ -1152,13 +1163,13 @@ export default function InternalInbox({
           </div>
           {viewerRole === "client" && workshopOwnerUserId && selectedMessage.related_booking_id ? (
             <div className={`rounded-xl border p-3 ${isDark ? "border-blue-500/30 bg-blue-950/20" : "border-blue-200 bg-blue-50/60"}`}>
-              <p className="text-sm font-semibold">Napisz do warsztatu / Odpowiedz</p>
+              <p className="text-sm font-semibold">{t("inboxPage.writeToWorkshop")}</p>
               <textarea
                 value={clientReplyBody}
                 onChange={(e) => setClientReplyBody(e.target.value)}
                 rows={4}
                 className="mt-2 w-full max-w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-black"
-                placeholder="Treść wiadomości do warsztatu…"
+                placeholder={t("inboxPage.clientMessagePlaceholder")}
               />
               <button
                 type="button"
@@ -1166,19 +1177,19 @@ export default function InternalInbox({
                 onClick={() => void sendClientReplyToWorkshop()}
                 className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {clientReplyBusy ? "Wysyłanie…" : "Wyślij"}
+                {clientReplyBusy ? t("commonUi.sending") : t("commonUi.send")}
               </button>
             </div>
           ) : null}
           {viewerRole === "workshop" && bookingClientUserId && selectedMessage.related_booking_id ? (
             <div className={`rounded-xl border p-3 ${isDark ? "border-blue-500/30 bg-blue-950/20" : "border-blue-200 bg-blue-50/60"}`}>
-              <p className="text-sm font-semibold">Odpowiedź do klienta</p>
+              <p className="text-sm font-semibold">{t("inboxPage.replyToClient")}</p>
               <textarea
                 value={workshopReplyBody}
                 onChange={(e) => setWorkshopReplyBody(e.target.value)}
                 rows={4}
                 className="mt-2 w-full max-w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-black"
-                placeholder="Treść wiadomości…"
+                placeholder={t("inboxPage.replyPlaceholder")}
               />
               <button
                 type="button"
@@ -1186,7 +1197,7 @@ export default function InternalInbox({
                 onClick={() => void sendWorkshopReplyToClient()}
                 className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {workshopReplyBusy ? "Wysyłanie…" : "Wyślij odpowiedź"}
+                {workshopReplyBusy ? t("commonUi.sending") : t("inboxPage.sendReplyWorkshop")}
               </button>
             </div>
           ) : null}
@@ -1198,39 +1209,39 @@ export default function InternalInbox({
                     isDark ? "border-emerald-500/35 bg-emerald-950/30 text-emerald-100" : "border-emerald-200 bg-emerald-50 text-emerald-900"
                   }`}
                 >
-                  Wycena zaakceptowana. Wizyta potwierdzona.
+                  {t("inboxPage.quoteConfirmedNotice")}
                 </p>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 {canRespondToQuote ? (
                   <>
                     <button type="button" onClick={() => void handleQuoteDecision(true)} className="rounded-lg border border-emerald-500/60 px-3 py-1 text-sm font-semibold">
-                      Akceptuję wycenę
+                      {t("inboxPage.acceptQuoteInbox")}
                     </button>
                     <button type="button" onClick={() => void handleQuoteDecision(false)} className="rounded-lg border border-rose-500/60 px-3 py-1 text-sm font-semibold">
-                      Odrzucam wycenę
+                      {t("inboxPage.rejectQuoteInbox")}
                     </button>
                   </>
                 ) : null}
                 {canRespondToReschedule ? (
                   <>
                     <button type="button" onClick={() => void handleRescheduleDecision(true)} className="rounded-lg border border-purple-500/60 px-3 py-1 text-sm font-semibold">
-                      Akceptuję nowy termin
+                      {t("inboxPage.acceptNewTimeInbox")}
                     </button>
                     <button type="button" onClick={() => void handleRescheduleDecision(false)} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm font-semibold">
-                      Odrzucam nowy termin
+                      {t("inboxPage.rejectNewTimeInbox")}
                     </button>
                   </>
                 ) : null}
                 <button type="button" onClick={() => void handleCancelBooking()} className="rounded-lg border border-zinc-500/60 px-3 py-1 text-sm">
-                  Anuluj rezerwację
+                  {t("inboxPage.cancelBooking")}
                 </button>
               </div>
             </div>
           ) : null}
         </div>
       ) : (
-        <p className="text-sm text-zinc-500">Wybierz pozycję z listy.</p>
+        <p className="text-sm text-zinc-500">{t("inboxPage.selectFromList")}</p>
       )}
     </div>
   );
@@ -1248,7 +1259,7 @@ export default function InternalInbox({
             onClick={() => void reload()}
             className={`mt-3 rounded-lg border px-3 py-1.5 text-xs font-semibold ${isDark ? "border-rose-400/50 hover:bg-rose-950/60" : "border-rose-300 bg-white hover:bg-rose-50"}`}
           >
-            Odśwież
+            {t("commonUi.refresh")}
           </button>
         </div>
       ) : null}
@@ -1266,7 +1277,7 @@ export default function InternalInbox({
         className={`h-[min(420px,55vh)] animate-pulse rounded-xl border ${isDark ? "border-zinc-700 bg-zinc-800/50" : "border-zinc-200 bg-zinc-100/90"}`}
         aria-hidden
       />
-      <p className={`col-span-full text-center text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Ładowanie wiadomości…</p>
+      <p className={`col-span-full text-center text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("inboxPage.loadingMessages")}</p>
     </div>
   );
 
@@ -1275,9 +1286,7 @@ export default function InternalInbox({
       className={`rounded-xl border p-10 text-center ${isDark ? "border-zinc-700 bg-zinc-900/60" : "border-blue-200 bg-white/85"}`}
     >
       <p className={`text-sm font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{resolvedEmptyListHint}</p>
-      <p className={`mt-3 text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-        Skrzynka jest pusta. Gdy pojawią się wiadomości lub powiadomienia, zobaczysz je na liście po lewej.
-      </p>
+      <p className={`mt-3 text-sm leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("inboxPage.emptyClassicExtra")}</p>
     </div>
   );
 
@@ -1299,7 +1308,7 @@ export default function InternalInbox({
 
   const messengerThreadScrollContent = (
     <>
-      {!selectedNotification && !selectedMessage ? <p className="text-center text-sm text-zinc-500">Nic nie wybrano.</p> : null}
+      {!selectedNotification && !selectedMessage ? <p className="text-center text-sm text-zinc-500">{t("inboxPage.nothingSelected")}</p> : null}
       {selectedNotification ? (
         <div className="flex flex-col gap-3">
           {selectedNotification.notification_type === "completion_check" && viewerRole === "client" ? (
@@ -1325,7 +1334,7 @@ export default function InternalInbox({
                 isDark ? "border-slate-700 bg-slate-900/80 text-zinc-400" : "border-blue-100 bg-white/90 text-zinc-600"
               }`}
             >
-              Brak wiadomości w tej rozmowie.
+              {t("inboxPage.emptyThread")}
             </p>
           ) : (
             threadMessages.map((msg) => {
@@ -1346,7 +1355,7 @@ export default function InternalInbox({
               return (
                 <div key={msg.id} className={`flex w-full min-w-0 px-1 ${mStyle.row}`}>
                   <div className={`${mStyle.bubble} text-sm shadow-sm`}>
-                    <p className={`break-words font-semibold ${sys ? "text-[11px]" : "text-xs"} ${senderClass}`}>{sys ? "System" : msg.sender_label}</p>
+                    <p className={`break-words font-semibold ${sys ? "text-[11px]" : "text-xs"} ${senderClass}`}>{sys ? t("commonUi.systemSender") : msg.sender_label}</p>
                     {msg.subject ? <p className={`mt-1 break-words text-xs font-semibold ${mStyle.body}`}>{msg.subject}</p> : null}
                     <p className={`mt-1 whitespace-pre-wrap break-words leading-relaxed ${mStyle.body}`}>{msg.body}</p>
                     <p className={`mt-2 ${mStyle.meta}`}>{formatDate(msg.created_at)}</p>
@@ -1363,7 +1372,7 @@ export default function InternalInbox({
                     isDark ? "border-emerald-500/35 bg-emerald-950/30 text-emerald-100" : "border-emerald-200 bg-emerald-50 text-emerald-900"
                   }`}
                 >
-                  Wycena zaakceptowana. Wizyta potwierdzona.
+                  {t("inboxPage.quoteConfirmedNotice")}
                 </p>
               ) : null}
               <div className="flex flex-wrap gap-2">
@@ -1374,14 +1383,14 @@ export default function InternalInbox({
                       onClick={() => void handleQuoteDecision(true)}
                       className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-emerald-500/35" : "border-emerald-500/60"}`}
                     >
-                      Akceptuję wycenę
+                      {t("inboxPage.acceptQuoteInbox")}
                     </button>
                     <button
                       type="button"
                       onClick={() => void handleQuoteDecision(false)}
                       className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-rose-500/35" : "border-rose-500/60"}`}
                     >
-                      Odrzucam wycenę
+                      {t("inboxPage.rejectQuoteInbox")}
                     </button>
                   </>
                 ) : null}
@@ -1392,14 +1401,14 @@ export default function InternalInbox({
                       onClick={() => void handleRescheduleDecision(true)}
                       className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-purple-500/35" : "border-purple-500/60"}`}
                     >
-                      Akceptuję nowy termin
+                      {t("inboxPage.acceptNewTimeInbox")}
                     </button>
                     <button
                       type="button"
                       onClick={() => void handleRescheduleDecision(false)}
                       className={`rounded-2xl border px-3 py-2 text-xs font-semibold ${isDark ? "border-zinc-600" : "border-zinc-500/60"}`}
                     >
-                      Odrzucam nowy termin
+                      {t("inboxPage.rejectNewTimeInbox")}
                     </button>
                   </>
                 ) : null}
@@ -1408,7 +1417,7 @@ export default function InternalInbox({
                   onClick={() => void handleCancelBooking()}
                   className={`rounded-2xl border px-3 py-2 text-xs ${isDark ? "border-zinc-600" : "border-zinc-500/60"}`}
                 >
-                  Anuluj rezerwację
+                  {t("inboxPage.cancelBooking")}
                 </button>
               </div>
             </div>
@@ -1431,7 +1440,7 @@ export default function InternalInbox({
             className={`min-h-[48px] max-h-40 min-w-0 flex-1 resize-none rounded-2xl border px-4 py-3 text-sm [touch-action:manipulation] ${
               isDark ? "border-slate-600 bg-slate-800 text-white" : "border-blue-100 bg-white text-black"
             }`}
-            placeholder="Treść wiadomości…"
+            placeholder={t("inboxPage.footerPlaceholderWide")}
             enterKeyHint="send"
           />
           <button
@@ -1440,7 +1449,13 @@ export default function InternalInbox({
             onClick={() => void (showClientComposer ? sendClientReplyToWorkshop() : sendWorkshopReplyToClient())}
             className="shrink-0 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-45"
           >
-            {showClientComposer ? (clientReplyBusy ? "…" : "Wyślij") : workshopReplyBusy ? "…" : "Wyślij"}
+            {showClientComposer
+              ? clientReplyBusy
+                ? t("inboxPage.sendBusyShort")
+                : t("commonUi.send")
+              : workshopReplyBusy
+                ? t("inboxPage.sendBusyShort")
+                : t("commonUi.send")}
           </button>
         </div>
       </div>
@@ -1459,7 +1474,7 @@ export default function InternalInbox({
                   isDark ? "border-slate-700 bg-slate-900/90 text-zinc-300" : "border-blue-100 bg-white/90 text-zinc-700"
                 }`}
               >
-                Ładowanie…
+                {t("commonUi.loading")}
               </div>
             ) : (
               <div
@@ -1470,14 +1485,14 @@ export default function InternalInbox({
                 <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden md:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] md:gap-6">
                   <aside className={`flex min-h-0 flex-col pb-4 md:border-r md:pb-0 md:pr-6 ${isDark ? "border-slate-700" : "border-blue-100"}`}>
                     <div className="mb-4 flex shrink-0 flex-col gap-3">
-                      <h3 className={`text-lg font-bold tracking-tight ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Rozmowy</h3>
+                      <h3 className={`text-lg font-bold tracking-tight ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{t("inboxPage.messengerConversations")}</h3>
                       {toolbarButtonsMobileMessenger}
                     </div>
                     {mergedSidebarRows.length === 0 ? (
                       <div
                         className={`flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed p-8 text-center ${isDark ? "border-slate-600 bg-slate-950/40 text-zinc-400" : "border-blue-200/80 bg-blue-50/30 text-zinc-600"}`}
                       >
-                        <p className={`text-base font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Brak rozmów</p>
+                        <p className={`text-base font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{t("inboxPage.emptyConversationsTitle")}</p>
                         <p className="mt-2 max-w-xs text-sm">{resolvedEmptyListHint}</p>
                       </div>
                     ) : (
@@ -1491,7 +1506,7 @@ export default function InternalInbox({
                       <div
                         className={`flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed p-10 text-center ${isDark ? "border-slate-600 bg-slate-950/40" : "border-blue-200/80 bg-blue-50/20"}`}
                       >
-                        <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Wybierz rozmowę z listy po lewej, gdy pojawią się nowe wiadomości.</p>
+                        <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{t("inboxPage.pickConversationHint")}</p>
                       </div>
                     ) : (
                       <>
@@ -1499,7 +1514,7 @@ export default function InternalInbox({
                           className={`shrink-0 border-b pb-4 ${isDark ? "border-slate-700 bg-slate-900/80" : "border-blue-100 bg-white/80"}`}
                         >
                           <h2 className={`break-words text-xl font-bold leading-snug ${isDark ? "text-zinc-50" : "text-zinc-900"}`}>
-                            {selectedNotification?.title ?? selectedMessage?.subject ?? "Rozmowa"}
+                            {selectedNotification?.title ?? selectedMessage?.subject ?? t("inboxPage.conversationDefaultTitle")}
                           </h2>
                           {(selectedNotification || selectedMessage) && (
                             <p className={`mt-1 break-words text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
@@ -1512,7 +1527,7 @@ export default function InternalInbox({
                                 href={bookingListHref(viewerRole)}
                                 className={`text-sm font-semibold underline-offset-2 hover:underline ${isDark ? "text-sky-400" : "text-blue-600"}`}
                               >
-                                Przejdź do rezerwacji
+                                {t("inboxPage.goToBookings")}
                               </Link>
                             </p>
                           ) : null}
@@ -1538,7 +1553,7 @@ export default function InternalInbox({
                 {inboxAlerts}
                 {composeMobileMessenger}
                 {loading ? (
-                  <p className={`rounded-2xl border border-blue-100 bg-white/90 p-4 text-sm shadow-sm ${isDark ? "border-zinc-700 bg-zinc-900/80" : ""}`}>Ładowanie…</p>
+                  <p className={`rounded-2xl border border-blue-100 bg-white/90 p-4 text-sm shadow-sm ${isDark ? "border-zinc-700 bg-zinc-900/80" : ""}`}>{t("commonUi.loading")}</p>
                 ) : (
                   sidebarListMobileAsCards
                 )}
@@ -1553,13 +1568,13 @@ export default function InternalInbox({
                       type="button"
                       onClick={() => setMobileView("list")}
                       className={`rounded-2xl border px-3 py-2 text-sm font-medium ${isDark ? "border-zinc-600 bg-zinc-800" : "border-blue-100 bg-white"}`}
-                      aria-label="Wróć do listy"
+                      aria-label={t("inboxPage.mobileBackToListAria")}
                     >
-                      ← Wróć
+                      ← {t("inboxPage.mobileBackToList")}
                     </button>
                   </div>
                   <h2 className="mt-3 break-words text-lg font-bold">
-                    {selectedNotification?.title ?? selectedMessage?.subject ?? "Rozmowa"}
+                    {selectedNotification?.title ?? selectedMessage?.subject ?? t("inboxPage.conversationDefaultTitle")}
                   </h2>
                   <p className={`mt-1 break-words text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                     {selectedNotification ? notificationKindLabel(selectedNotification) : threadPartnerSubtitle() || selectedMessage?.sender_label || ""}
@@ -1567,7 +1582,7 @@ export default function InternalInbox({
                   {mobileBookingHref ? (
                     <p className="mt-3">
                       <Link href={bookingListHref(viewerRole)} className={`text-sm font-semibold underline-offset-2 hover:underline ${isDark ? "text-sky-400" : "text-blue-600"}`}>
-                        Przejdź do rezerwacji
+                        {t("inboxPage.goToBookings")}
                       </Link>
                     </p>
                   ) : null}

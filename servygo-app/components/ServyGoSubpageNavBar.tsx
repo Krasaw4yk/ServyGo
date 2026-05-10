@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
 
 export type ServyGoSubpageNavBarProps = {
   isDark: boolean;
@@ -18,6 +19,7 @@ export default function ServyGoSubpageNavBar({
   showMojeKonto = true,
   variant = "default",
 }: ServyGoSubpageNavBarProps) {
+  const { t } = useServyGoTranslator();
   const isCompactNav = variant === "messages" || variant === "calendar";
   const logoSrc = isDark ? "/servygo-logo-dark-cropped.png" : "/servygo-logo-light-cropped.png";
 
@@ -46,7 +48,11 @@ export default function ServyGoSubpageNavBar({
 
   return (
     <header className={`mb-5 sm:mb-6 ${barClass}`}>
-      <Link href="/" className="flex min-w-0 flex-1 items-center overflow-hidden pr-2" aria-label="ServyGo — strona główna">
+      <Link
+        href="/"
+        className="flex min-w-0 flex-1 items-center overflow-hidden pr-2"
+        aria-label={t("subpageNav.logoHomeAria")}
+      >
         <Image
           src={logoSrc}
           alt="ServyGo"
@@ -60,22 +66,22 @@ export default function ServyGoSubpageNavBar({
         {isCompactNav ? (
           <>
             <Link href="/ustawienia" className={outlineBtnCompact}>
-              Ustawienia
+              {t("subpageNav.settings")}
             </Link>
             <Link href="/" className={outlineBtnCompact}>
-              Strona główna
+              {t("subpageNav.home")}
             </Link>
           </>
         ) : (
           <>
             {showMojeKonto ? (
               <Link href="/moje-konto" className={`${outlineBtnDefault} hidden sm:inline-flex`}>
-                Moje konto
+                {t("subpageNav.myAccount")}
               </Link>
             ) : null}
             <Link href="/" className={outlineBtnDefault}>
-              <span className="inline sm:hidden">Start</span>
-              <span className="hidden sm:inline">Strona główna</span>
+              <span className="inline sm:hidden">{t("subpageNav.start")}</span>
+              <span className="hidden sm:inline">{t("subpageNav.home")}</span>
             </Link>
           </>
         )}

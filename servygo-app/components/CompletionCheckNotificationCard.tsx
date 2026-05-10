@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   clientConfirmServiceCompleted,
   clientReportServiceNotCompleted,
@@ -8,14 +8,7 @@ import {
   type UserNotificationRow,
 } from "@/lib/notificationsApi";
 import { supabase } from "@/lib/supabaseClient";
-
-const NOT_COMPLETED_REASONS: { value: string; label: string }[] = [
-  { value: "workshop_refused", label: "Warsztat odmówił wykonania usługi" },
-  { value: "price_mismatch", label: "Cena była inna niż ustalona" },
-  { value: "workshop_closed", label: "Warsztat był zamknięty" },
-  { value: "client_no_show", label: "Nie miałem czasu / nie przyjechałem" },
-  { value: "other", label: "Inny powód" },
-];
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
 
 function googleReviewUrl(mapsUrl: string | null | undefined, placeId: string | null | undefined): string | null {
   const u = mapsUrl?.trim();
@@ -32,7 +25,27 @@ type Props = {
   onResolved: () => void;
 };
 
+const NOT_COMPLETED_REASON_ENTRIES = [
+  ["workshop_refused", "completionCheck.reasonWorkshopRefused"],
+  ["price_mismatch", "completionCheck.reasonPriceMismatch"],
+  ["workshop_closed", "completionCheck.reasonClosed"],
+  ["client_no_show", "completionCheck.reasonNoShow"],
+  ["other", "completionCheck.reasonOther"],
+] as const;
+
+type NotCompletedReasonCode = (typeof NOT_COMPLETED_REASON_ENTRIES)[number][0];
+
 export default function CompletionCheckNotificationCard({ notification, currentUserId, isDark, onResolved }: Props) {
+  const { t } = useServyGoTranslator();
+  const notCompletedReasons = useMemo(
+    () =>
+      NOT_COMPLETED_REASON_ENTRIES.map(([value, key]) => ({
+        value,
+        label: t(key),
+      })),
+    [t],
+  );
+
   const bid = notification.booking_id;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -42,7 +55,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
   const [workshopPlaceId, setWorkshopPlaceId] = useState<string | null>(null);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
-  const [reason, setReason] = useState(NOT_COMPLETED_REASONS[0].value);
+  const [reason, setReason] = useState<NotCompletedReasonCode>(NOT_COMPLETED_REASON_ENTRIES[0][0]);
   const [note, setNote] = useState("");
 
   useEffect(() => {
@@ -67,7 +80,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
   }, [bid]);
 
   if (!bid) {
-    return <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Brak powiązanej rezerwacji.</p>;
+    return <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("completionCheck.missingBooking")}</p>;
   }
 
   const bookingId = bid;
@@ -79,7 +92,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
       await clientConfirmServiceCompleted(bookingId);
       setPhase("rate");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się zapisać.");
+      setError(e instanceof Error ? e.message : t("completionCheck.saveErrorGeneric"));
     } finally {
       setBusy(false);
     }
@@ -90,7 +103,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
     setBusy(true);
     try {
       const wsId = notification.workshop_id;
-      if (!wsId) throw new Error("Brak warsztatu w powiadomieniu.");
+      if (!wsId) throw new Error(t("completionCheck.workshopMissingReview"));
       await insertServiceReview({
         bookingId,
         workshopId: wsId,
@@ -101,7 +114,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
       setPhase("done");
       onResolved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie zapisano opinii.");
+      setError(e instanceof Error ? e.message : t("completionCheck.reviewSaveError"));
     } finally {
       setBusy(false);
     }
@@ -128,7 +141,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
       setPhase("done");
       onResolved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie zapisano zgłoszenia.");
+      setError(e instanceof Error ? e.message : t("completionCheck.reportSaveError"));
     } finally {
       setBusy(false);
     }
@@ -139,41 +152,41 @@ export default function CompletionCheckNotificationCard({ notification, currentU
   if (bookingStatus && bookingStatus !== "confirmed" && phase === "check") {
     return (
       <div className={`rounded-xl border px-4 py-3 text-sm ${isDark ? "border-zinc-600 bg-zinc-950/40" : "border-zinc-200 bg-zinc-50"}`}>
-        <p className="font-semibold">To zgłoszenie nie jest już aktualne</p>
-        <p className={`mt-1 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Status rezerwacji: {bookingStatus}</p>
+        <p className="font-semibold">{t("completionCheck.notCurrentTitle")}</p>
+        <p className={`mt-1 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+          {t("completionCheck.bookingStatusPrefix")} {bookingStatus}
+        </p>
       </div>
     );
   }
 
   if (phase === "done") {
-    return (
-      <p className={`text-sm ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>Zapisano. Dziękujemy za informację.</p>
-    );
+    return <p className={`text-sm ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{t("completionCheck.savedThanks")}</p>;
   }
 
   if (phase === "report") {
     return (
       <div className={`space-y-3 rounded-xl border p-4 ${isDark ? "border-rose-500/30 bg-rose-950/20" : "border-rose-200 bg-rose-50/80"}`}>
-        <p className="text-sm font-semibold">Powiedz nam, co się stało</p>
-        <label className="block text-xs font-medium opacity-80">Powód</label>
+        <p className="text-sm font-semibold">{t("completionCheck.reportLead")}</p>
+        <label className="block text-xs font-medium opacity-80">{t("completionCheck.reasonLabel")}</label>
         <select
           value={reason}
-          onChange={(e) => setReason(e.target.value)}
+          onChange={(e) => setReason(e.target.value as NotCompletedReasonCode)}
           className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-black"
         >
-          {NOT_COMPLETED_REASONS.map((r) => (
+          {notCompletedReasons.map((r) => (
             <option key={r.value} value={r.value}>
               {r.label}
             </option>
           ))}
         </select>
-        <label className="block text-xs font-medium opacity-80">Opisz sytuację</label>
+        <label className="block text-xs font-medium opacity-80">{t("completionCheck.noteLabel")}</label>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={4}
           className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-black"
-          placeholder="Opcjonalnie dodaj szczegóły…"
+          placeholder={t("completionCheck.notePlaceholder")}
         />
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         <button
@@ -182,7 +195,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
           onClick={() => void submitReport()}
           className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {busy ? "Wysyłanie…" : "Wyślij zgłoszenie"}
+          {busy ? t("completionCheck.submitReportBusy") : t("completionCheck.submitReportCta")}
         </button>
       </div>
     );
@@ -191,7 +204,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
   if (phase === "rate") {
     return (
       <div className={`space-y-3 rounded-xl border p-4 ${isDark ? "border-emerald-500/30 bg-emerald-950/15" : "border-emerald-200 bg-emerald-50/70"}`}>
-        <p className="text-sm font-semibold">Oceń warsztat w ServyGo</p>
+        <p className="text-sm font-semibold">{t("completionCheck.rateTitle")}</p>
         <div className="flex flex-wrap items-center gap-2">
           {[1, 2, 3, 4, 5].map((s) => (
             <button
@@ -209,11 +222,11 @@ export default function CompletionCheckNotificationCard({ notification, currentU
           onChange={(e) => setComment(e.target.value)}
           rows={3}
           className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-black"
-          placeholder="Krótki komentarz (opcjonalnie)"
+          placeholder={t("completionCheck.commentPlaceholder")}
         />
         {mapsLink ? (
           <a href={mapsLink} target="_blank" rel="noopener noreferrer" className="inline-block text-sm font-semibold text-blue-600 underline">
-            Oceń w Google Maps
+            {t("completionCheck.googleMapsLink")}
           </a>
         ) : null}
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
@@ -224,10 +237,10 @@ export default function CompletionCheckNotificationCard({ notification, currentU
             onClick={() => void submitRating()}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {busy ? "Zapisuję…" : "Wyślij ocenę"}
+            {busy ? t("completionCheck.saveRatingBusy") : t("completionCheck.sendRating")}
           </button>
           <button type="button" disabled={busy} onClick={() => void skipRating()} className="rounded-lg border px-4 py-2 text-sm">
-            Pomiń ocenę
+            {t("completionCheck.skipRating")}
           </button>
         </div>
       </div>
@@ -244,7 +257,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
           onClick={() => void onYes()}
           className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          Tak, usługa wykonana
+          {t("completionCheck.yesDone")}
         </button>
         <button
           type="button"
@@ -252,7 +265,7 @@ export default function CompletionCheckNotificationCard({ notification, currentU
           onClick={() => setPhase("report")}
           className="rounded-lg border border-rose-400 px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50"
         >
-          Nie, usługa nie została wykonana
+          {t("completionCheck.noNotDone")}
         </button>
       </div>
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { createTranslator, LanguageCode } from "@/lib/translations";
+import { useServyGoLanguage } from "@/lib/useServyGoLanguage";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopsAsMock, matchWorkshopServicesForVehicle } from "@/lib/publicWorkshopsFromDb";
 import { resolveAvailableSlotsForWorkshopDay, toLocalDateKey } from "@/lib/bookingAvailability";
@@ -80,7 +81,7 @@ function displayWord(raw: string) {
 export default function OffersPageClient() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [language, setLanguage] = useState<LanguageCode>("pl");
+  const language = useServyGoLanguage();
   const [loading, setLoading] = useState(true);
   const [workshops, setWorkshops] = useState<MockWorkshop[]>([]);
   const [offersError, setOffersError] = useState("");
@@ -121,11 +122,7 @@ export default function OffersPageClient() {
     const frameId = window.requestAnimationFrame(() => {
       setMounted(true);
       const savedTheme = window.localStorage.getItem("servygo-theme");
-      const savedLanguage = window.localStorage.getItem("servygo_language");
       if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
-      if (savedLanguage === "pl" || savedLanguage === "en" || savedLanguage === "ua") {
-        setLanguage(savedLanguage);
-      }
     });
     return () => window.cancelAnimationFrame(frameId);
   }, []);

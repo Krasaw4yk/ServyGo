@@ -29,23 +29,19 @@ import {
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
 import { VinOptionalHint } from "@/components/VinOptionalHint";
-import { createTranslator, type LanguageCode } from "@/lib/translations";
+import { createTranslator } from "@/lib/translations";
 import { useIsClient } from "@/lib/useIsClient";
+import { useServyGoLanguage } from "@/lib/useServyGoLanguage";
 
 const fieldLight =
   "rounded-xl border border-blue-200/80 bg-slate-100/85 px-4 py-3 text-zinc-900 placeholder:text-zinc-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300/60";
 const fieldDark =
   "rounded-xl border border-zinc-600/70 bg-zinc-900/70 px-4 py-3 text-zinc-100 placeholder:text-zinc-400 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/40";
 
-function parseStoredLanguage(raw: string | null): LanguageCode {
-  if (raw === "en" || raw === "ua" || raw === "pl") return raw;
-  return "pl";
-}
-
 export default function MojeAutaPage() {
   const mounted = useIsClient();
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [language, setLanguage] = useState<LanguageCode>("pl");
+  const language = useServyGoLanguage();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -73,7 +69,6 @@ export default function MojeAutaPage() {
     queueMicrotask(() => {
       const th = window.localStorage.getItem("servygo-theme");
       if (th === "dark" || th === "light") setTheme(th);
-      setLanguage(parseStoredLanguage(window.localStorage.getItem("servygo_language")));
     });
   }, [mounted]);
 

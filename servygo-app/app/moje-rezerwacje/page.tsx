@@ -26,6 +26,9 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { useBookingsRealtimeSync } from "@/lib/useServyGoRealtime";
 import { useIsClient } from "@/lib/useIsClient";
 import { inferEndTime } from "@/lib/bookingAvailability";
+import { fillTemplate } from "@/lib/fillTemplate";
+import { localeTagForLanguage } from "@/lib/dateLocale";
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
 
 type ConversationOpen = {
   row: BookingRow & { pickup: string };
@@ -65,25 +68,6 @@ type BookingRow = {
   current_quote_status?: string | null;
 };
 
-function formatDate(dateRaw: string | null | undefined) {
-  if (!dateRaw) return "—";
-  const parsed = new Date(`${dateRaw}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return dateRaw;
-  return parsed.toLocaleDateString("pl-PL", { year: "numeric", month: "2-digit", day: "2-digit" });
-}
-
-function trimTime(value: string | null | undefined) {
-  return (value ?? "").slice(0, 5) || "—";
-}
-
-function formatPrice(row: BookingRow) {
-  const q = row.quoted_price;
-  if (q != null && Number.isFinite(q)) return `${q} zł`;
-  if (row.final_price != null && Number.isFinite(row.final_price)) return `${row.final_price} zł`;
-  if (row.price != null && Number.isFinite(row.price) && row.price > 0) return `${row.price} zł`;
-  return "Do potwierdzenia";
-}
-
 function MojeRezerwacjePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -107,6 +91,36 @@ function MojeRezerwacjePageContent() {
   const [cancelReasonDraft, setCancelReasonDraft] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const [rescheduleModalRow, setRescheduleModalRow] = useState<(BookingRow & { pickup: string }) | null>(null);
+
+  const { t, language } = useServyGoTranslator();
+  const localeTag = localeTagForLanguage(language);
+  const trimTimeDisplay = useCallback(
+    (value: string | null | undefined) => {
+      const v = (value ?? "").slice(0, 5);
+      return v || t("commonUi.dash");
+    },
+    [t],
+  );
+  const formatBookingDate = useCallback(
+    (dateRaw: string | null | undefined) => {
+      if (!dateRaw) return t("commonUi.dash");
+      const parsed = new Date(`${dateRaw}T00:00:00`);
+      if (Number.isNaN(parsed.getTime())) return dateRaw;
+      return parsed.toLocaleDateString(localeTag, { year: "numeric", month: "2-digit", day: "2-digit" });
+    },
+    [localeTag, t],
+  );
+  const formatPriceBooking = useCallback(
+    (row: BookingRow) => {
+      const cur = t("commonUi.currencyZl");
+      const q = row.quoted_price;
+      if (q != null && Number.isFinite(q)) return `${q} ${cur}`;
+      if (row.final_price != null && Number.isFinite(row.final_price)) return `${row.final_price} ${cur}`;
+      if (row.price != null && Number.isFinite(row.price) && row.price > 0) return `${row.price} ${cur}`;
+      return t("bookingsPage.priceToConfirm");
+    },
+    [t],
+  );
 
   const refreshBookings = useCallback(async () => {
     if (!user || !supabase) return;
@@ -205,15 +219,15 @@ function MojeRezerwacjePageContent() {
   const bookingsWithPickup = useMemo(
     () =>
       bookings.map((row) => {
-        const start = trimTime(row.start_time);
+        const start = trimTimeDisplay(row.start_time);
         const pickup = row.end_time
-          ? trimTime(row.end_time)
-          : start !== "—"
+          ? trimTimeDisplay(row.end_time)
+          : start !== t("commonUi.dash")
             ? inferEndTime(start, row.duration_minutes ?? 60)
-            : "—";
+            : t("commonUi.dash");
         return { ...row, pickup };
       }),
-    [bookings],
+    [bookings, trimTimeDisplay, t],
   );
 
   useEffect(() => {
@@ -244,13 +258,16 @@ function MojeRezerwacjePageContent() {
       const { data: wRow } = await supabase.from("workshops").select("owner_id").eq("id", row.workshop_id).maybeSingle();
       const ownerId = (wRow as { owner_id?: string | null } | null)?.owner_id ?? null;
       if (ownerId) {
+        const svc = row.service_name ?? t("bookingsPage.vehicleWord");
         await sendSystemMessage({
           recipientId: ownerId,
           recipientRole: "workshop",
-          subject: accept ? "Klient zaakceptował zmianę terminu" : "Klient odrzucił zmianę terminu",
+          subject: accept
+            ? t("bookingsPage.systemSubjectClientAcceptedReschedule")
+            : t("bookingsPage.systemSubjectClientRejectedReschedule"),
           body: accept
-            ? `Klient zaakceptował nowy termin dla usługi „${row.service_name ?? "usługa"}”.`
-            : `Klient odrzucił propozycję zmiany terminu dla usługi „${row.service_name ?? "usługa"}”.`,
+            ? fillTemplate(t("bookingsPage.systemBodyAcceptedReschedule"), { service: svc })
+            : fillTemplate(t("bookingsPage.systemBodyRejectedReschedule"), { service: svc }),
           relatedBookingId: row.id,
           relatedWorkshopId: row.workshop_id,
         });
@@ -267,7 +284,7 @@ function MojeRezerwacjePageContent() {
         setBookings((prev) => prev.map((b) => (b.id === row.id ? { ...b, ...patch } : b)));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji o terminie.");
+      setError(e instanceof Error ? e.message : t("bookingsPage.rescheduleError"));
     } finally {
       setRescheduleBusyId(null);
     }
@@ -283,7 +300,7 @@ function MojeRezerwacjePageContent() {
       setCancelReasonDraft("");
       await refreshBookings();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się zrezygnować z wizyty.");
+      setError(e instanceof Error ? e.message : t("bookingsPage.cancelError"));
     } finally {
       setCancelBusy(false);
     }
@@ -293,7 +310,7 @@ function MojeRezerwacjePageContent() {
     if (!supabase) return;
     const quoteId = (row.current_quote_id ?? "").trim();
     if (!quoteId) {
-      setError("Brak aktywnej wyceny — odśwież stronę.");
+      setError(t("bookingsPage.quoteMissing"));
       return;
     }
     setQuoteBusyId(row.id);
@@ -312,18 +329,35 @@ function MojeRezerwacjePageContent() {
           : row.final_price != null && Number.isFinite(row.final_price)
             ? row.final_price
             : null;
+      const svc = row.service_name ?? t("bookingsPage.vehicleWord");
+      const ws = w?.name ?? row.workshop_name ?? t("commonUi.workshopFallback");
+      const priceLine =
+        accept && priceForEmail != null
+          ? fillTemplate(t("bookingsPage.workshopQuoteEmailPriceLine"), {
+              amount: priceForEmail.toFixed(2),
+              currency: t("commonUi.currencyZl"),
+            })
+          : "";
       await notifyWorkshopOwnerQuoteResponded({
         ownerUserId: w?.owner_id ?? null,
         bookingId: row.id,
         workshopId: row.workshop_id,
-        workshopName: w?.name ?? row.workshop_name ?? "Warsztat",
-        serviceName: row.service_name ?? "Usługa",
+        workshopName: ws,
+        serviceName: svc,
         accepted: accept,
         finalPrice: priceForEmail,
+        emailSubject: accept ? t("bookingsPage.workshopQuoteAcceptedEmailSubject") : t("bookingsPage.workshopQuoteRejectedEmailSubject"),
+        emailBody: accept
+          ? fillTemplate(t("bookingsPage.workshopQuoteAcceptedEmailBody"), {
+              service: svc,
+              priceLine,
+              workshop: ws,
+            })
+          : fillTemplate(t("bookingsPage.workshopQuoteRejectedEmailBody"), { service: svc, workshop: ws }),
       });
       await refreshBookings();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Nie udało się zapisać decyzji.");
+      setError(e instanceof Error ? e.message : t("bookingsPage.quoteDecisionError"));
     } finally {
       setQuoteBusyId(null);
     }
@@ -341,24 +375,22 @@ function MojeRezerwacjePageContent() {
           }`}
         >
           <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Moje rezerwacje</h1>
-            <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
-              Aktualne i poprzednie wizyty w warsztatach ServyGo.
-            </p>
+            <h1 className="text-2xl font-bold sm:text-3xl">{t("bookingsPage.title")}</h1>
+            <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{t("bookingsPage.subtitle")}</p>
           </div>
         </section>
 
         {loading ? (
           <div className={`mt-5 rounded-2xl border p-6 text-sm ${isDark ? "border-zinc-700 bg-zinc-900/70 text-zinc-200" : "border-blue-200 bg-white text-zinc-700"}`}>
-            Ładowanie rezerwacji...
+            {t("bookingsPage.loading")}
           </div>
         ) : error ? (
           <div className={`mt-5 rounded-2xl border p-6 text-sm ${isDark ? "border-orange-500/40 bg-orange-500/10 text-orange-200" : "border-orange-200 bg-orange-50 text-orange-700"}`}>
-            Nie udało się pobrać rezerwacji: {error}
+            {t("bookingsPage.loadFailedPrefix")} {error}
           </div>
         ) : bookingsWithPickup.length === 0 ? (
           <div className={`mt-5 rounded-2xl border p-6 text-sm ${isDark ? "border-zinc-700 bg-zinc-900/70 text-zinc-200" : "border-blue-200 bg-white text-zinc-700"}`}>
-            Nie masz jeszcze żadnych rezerwacji.
+            {t("bookingsPage.empty")}
           </div>
         ) : (
           <section className="mt-5 space-y-4">
@@ -372,6 +404,7 @@ function MojeRezerwacjePageContent() {
                 rescheduleStatus: row.reschedule_status,
                 proposedBy: row.proposed_by,
                 isDark,
+                t,
               });
               const statusLc = (row.status ?? "").trim().toLowerCase();
               const qidTrim = (row.current_quote_id ?? "").trim();
@@ -427,10 +460,12 @@ function MojeRezerwacjePageContent() {
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-semibold">{row.workshop_name || "Warsztat"}</h2>
-                      <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{row.service_name || "Usługa"}</p>
+                      <h2 className="text-lg font-semibold">{row.workshop_name || t("commonUi.workshopFallback")}</h2>
+                      <p className={`mt-1 text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{row.service_name || t("commonUi.serviceFallback")}</p>
                       {row.service_category ? (
-                        <p className={`mt-0.5 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Kategoria: {row.service_category}</p>
+                        <p className={`mt-0.5 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                          {t("bookingsPage.categoryLabelPrefix")} {row.service_category}
+                        </p>
                       ) : null}
                     </div>
                     <span
@@ -442,27 +477,29 @@ function MojeRezerwacjePageContent() {
 
                   <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
                     <div>
-                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Data</p>
-                      <p className="font-medium">{formatDate(row.booking_date)}</p>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{t("bookingsPage.dataLabel")}</p>
+                      <p className="font-medium">{formatBookingDate(row.booking_date)}</p>
                     </div>
                     <div>
-                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Godzina</p>
-                      <p className="font-medium">{trimTime(row.start_time)}</p>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{t("bookingsPage.timeLabel")}</p>
+                      <p className="font-medium">{trimTimeDisplay(row.start_time)}</p>
                     </div>
                     <div>
-                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Przewidywany odbiór</p>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{t("bookingsPage.pickupLabel")}</p>
                       <p className="font-medium">{row.pickup}</p>
                     </div>
                     <div>
-                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Cena</p>
-                      <p className="font-medium">{formatPrice(row)}</p>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{t("bookingsPage.priceLabel")}</p>
+                      <p className="font-medium">{formatPriceBooking(row)}</p>
                     </div>
                     <div>
-                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Czas usługi</p>
-                      <p className="font-medium">{row.duration_minutes ?? 60} min</p>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{t("bookingsPage.serviceDurationLabel")}</p>
+                      <p className="font-medium">
+                        {row.duration_minutes ?? 60} {t("commonUi.minSuffix")}
+                      </p>
                     </div>
                     <div>
-                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>ID</p>
+                      <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{t("bookingsPage.idLabel")}</p>
                       <p className="font-mono text-xs">{row.id.slice(0, 8)}...</p>
                     </div>
                   </div>
@@ -473,18 +510,20 @@ function MojeRezerwacjePageContent() {
                     }`}
                   >
                     <div>
-                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Auto (z zapytania)</p>
+                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("bookingsPage.vehicleFromRequest")}</p>
                       <p className="mt-1 font-medium">{dash([vd.brand, vd.model].filter(Boolean).join(" "))}</p>
                       <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                        {dash(vd.vehicleType)} · rocznik {dash(vd.year)} · {dash(vd.fuel)}
+                        {dash(vd.vehicleType)} · {t("bookingsPage.yearWord")} {dash(vd.year)} · {dash(vd.fuel)}
                       </p>
-                      <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>VIN: {dash(vd.vin)}</p>
+                      <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        {t("bookingsPage.vinLabel")} {dash(vd.vin)}
+                      </p>
                     </div>
                     <div>
-                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Opis problemu</p>
-                      <p className={`mt-1 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{problemText || "—"}</p>
+                      <p className={`text-xs font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("bookingsPage.problemLabel")}</p>
+                      <p className={`mt-1 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{problemText || t("commonUi.dash")}</p>
                       {!problemText ? (
-                        <p className={`mt-1 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>Klient nie podał opisu.</p>
+                        <p className={`mt-1 text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>{t("bookingsPage.problemMissingNote")}</p>
                       ) : null}
                     </div>
                   </div>
@@ -521,16 +560,16 @@ function MojeRezerwacjePageContent() {
                         }`}
                       >
                         {quoteRejected
-                          ? "Wycena warsztatu"
+                          ? t("bookingsPage.quoteHeaderRejected")
                           : quotePanelAccepted
-                            ? "Wycena zaakceptowana"
+                            ? t("bookingsPage.quoteHeaderAccepted")
                             : quoteReadonlyNonActionable && statusLc !== "quote_sent"
-                              ? "Wycena (informacja)"
-                              : "Wycena warsztatu"}
+                              ? t("bookingsPage.quoteHeaderInfo")
+                              : t("bookingsPage.quoteHeaderRejected")}
                       </p>
                       {quotePanelAccepted && !quoteRejected ? (
                         <p className={`mt-1 text-xs font-medium ${isDark ? "text-emerald-100/90" : "text-emerald-900/90"}`}>
-                          Wizyta potwierdzona — decyzji o wycenie nie trzeba powtarzać.
+                          {t("bookingsPage.quoteVisitConfirmedHint")}
                         </p>
                       ) : null}
                       <p
@@ -545,10 +584,10 @@ function MojeRezerwacjePageContent() {
                         }`}
                       >
                         {row.quoted_price != null && Number.isFinite(row.quoted_price)
-                          ? `${Number(row.quoted_price).toFixed(2)} zł`
+                          ? `${Number(row.quoted_price).toFixed(2)} ${t("commonUi.currencyZl")}`
                           : row.final_price != null && Number.isFinite(row.final_price)
-                            ? `${Number(row.final_price).toFixed(2)} zł`
-                            : "—"}
+                            ? `${Number(row.final_price).toFixed(2)} ${t("commonUi.currencyZl")}`
+                            : t("commonUi.dash")}
                       </p>
                       {(row.quote_note ?? "").trim() ? (
                         <p
@@ -576,7 +615,7 @@ function MojeRezerwacjePageContent() {
                                 : "text-emerald-800/80"
                           }`}
                         >
-                          Brak dodatkowej wiadomości od warsztatu.
+                          {t("bookingsPage.quoteNoExtraMessage")}
                         </p>
                       )}
                       <p
@@ -590,15 +629,13 @@ function MojeRezerwacjePageContent() {
                               : "text-emerald-800/90"
                         }`}
                       >
-                        Status decyzji: {quoteDecisionLabel(row.quote_status, row.status)}
+                        {t("bookingsPage.quoteDecisionPrefix")} {quoteDecisionLabel(row.quote_status, row.status, t)}
                       </p>
                     </div>
                   ) : (
                     <p className={`mt-4 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                      {norm === "pending_quote" ? "Oczekuje na wycenę od warsztatu." : null}
-                      {norm === "awaiting_new_quote"
-                        ? "Odrzuciłeś ostatnią wycenę — warsztat może wysłać nową propozycję."
-                        : null}
+                      {norm === "pending_quote" ? t("bookingsPage.pendingQuoteHint") : null}
+                      {norm === "awaiting_new_quote" ? t("bookingsPage.awaitingNewQuoteHint") : null}
                     </p>
                   )}
 
@@ -607,11 +644,14 @@ function MojeRezerwacjePageContent() {
                       className={`mt-4 rounded-xl border p-4 ${isDark ? "border-amber-500/25 bg-amber-950/20" : "border-yellow-200 bg-yellow-50/80"}`}
                     >
                       <p className={`text-sm font-semibold ${isDark ? "text-amber-100" : "text-yellow-950"}`}>
-                        Warsztat zaproponował zmianę terminu
+                        {t("bookingsPage.rescheduleWorkshopProposalTitle")}
                       </p>
                       <p className={`mt-2 text-sm ${isDark ? "text-amber-100/90" : "text-yellow-950"}`}>
-                        Nowy termin: {formatDate(row.proposed_booking_date)} · {trimTime(row.proposed_start_time)}
-                        {row.proposed_end_time ? ` – odbiór ok. ${trimTime(row.proposed_end_time)}` : ""}
+                        {t("bookingsPage.rescheduleNewSlotPrefix")}{" "}
+                        {formatBookingDate(row.proposed_booking_date)} · {trimTimeDisplay(row.proposed_start_time)}
+                        {row.proposed_end_time
+                          ? `${t("bookingsPage.reschedulePickupApprox")} ${trimTimeDisplay(row.proposed_end_time)}`
+                          : ""}
                       </p>
                       {(row.reschedule_reason ?? "").trim() ? (
                         <p className={`mt-2 whitespace-pre-wrap text-sm ${isDark ? "text-amber-100/85" : "text-yellow-950"}`}>
@@ -627,7 +667,7 @@ function MojeRezerwacjePageContent() {
                             isDark ? "bg-emerald-600 hover:bg-emerald-500" : "bg-emerald-600 hover:bg-emerald-500"
                           }`}
                         >
-                          Akceptuję nowy termin
+                          {t("bookingsPage.acceptNewSlot")}
                         </button>
                         <button
                           type="button"
@@ -637,7 +677,7 @@ function MojeRezerwacjePageContent() {
                             isDark ? "border-zinc-500 text-zinc-100 hover:bg-zinc-800" : "border-zinc-300 text-zinc-800 hover:bg-zinc-50"
                           }`}
                         >
-                          Odrzucam zmianę
+                          {t("bookingsPage.rejectChange")}
                         </button>
                       </div>
                     </div>
@@ -647,9 +687,12 @@ function MojeRezerwacjePageContent() {
                     <div
                       className={`mt-4 rounded-xl border p-4 ${isDark ? "border-sky-500/25 bg-sky-950/25" : "border-sky-200 bg-sky-50/85"}`}
                     >
-                      <p className={`text-sm font-semibold ${isDark ? "text-sky-100" : "text-sky-950"}`}>Oczekujemy na decyzję warsztatu</p>
+                      <p className={`text-sm font-semibold ${isDark ? "text-sky-100" : "text-sky-950"}`}>
+                        {t("bookingsPage.awaitingWorkshopDecision")}
+                      </p>
                       <p className={`mt-2 text-sm ${isDark ? "text-sky-100/90" : "text-sky-950"}`}>
-                        Proponowany termin: {formatDate(row.proposed_booking_date)} · {trimTime(row.proposed_start_time)}
+                        {t("bookingsPage.proposedSlotPrefix")}{" "}
+                        {formatBookingDate(row.proposed_booking_date)} · {trimTimeDisplay(row.proposed_start_time)}
                       </p>
                       {(row.reschedule_reason ?? "").trim() ? (
                         <p className={`mt-2 whitespace-pre-wrap text-sm ${isDark ? "text-sky-100/85" : "text-sky-950"}`}>{row.reschedule_reason}</p>
@@ -667,7 +710,7 @@ function MojeRezerwacjePageContent() {
                           isDark ? "bg-emerald-600 hover:bg-emerald-500" : "bg-emerald-600 hover:bg-emerald-500"
                         }`}
                       >
-                        Akceptuję wycenę
+                        {t("bookingsPage.acceptQuote")}
                       </button>
                       <button
                         type="button"
@@ -677,7 +720,7 @@ function MojeRezerwacjePageContent() {
                           isDark ? "border-rose-400/60 text-rose-100 hover:bg-rose-950/40" : "border-rose-300 text-rose-700 hover:bg-rose-50"
                         }`}
                       >
-                        Odrzucam
+                        {t("bookingsPage.rejectQuoteShort")}
                       </button>
                     </div>
                   ) : null}
@@ -696,7 +739,7 @@ function MojeRezerwacjePageContent() {
                             : "border-rose-400 text-rose-800 hover:bg-rose-50"
                         }`}
                       >
-                        Zrezygnuj z wizyty
+                        {t("bookingsPage.cancelVisit")}
                       </button>
                       <button
                         type="button"
@@ -705,8 +748,12 @@ function MojeRezerwacjePageContent() {
                             norm === "pending_quote"
                               ? {
                                   row,
-                                  draftSubject: `Pytanie o wycenę — ${row.service_name ?? "usługa"}`,
-                                  draftBody: `Dzień dobry,\n\nChciałbym dopytać o wycenę usługi „${row.service_name ?? "usługa"}”.\n\n`,
+                                  draftSubject: fillTemplate(t("bookingsPage.messageQuoteDraft"), {
+                                    service: row.service_name ?? t("bookingsPage.vehicleWord"),
+                                  }),
+                                  draftBody: fillTemplate(t("bookingsPage.messageQuoteBodyLead"), {
+                                    service: row.service_name ?? t("bookingsPage.vehicleWord"),
+                                  }),
                                 }
                               : { row },
                           )
@@ -715,7 +762,7 @@ function MojeRezerwacjePageContent() {
                           isDark ? "border-blue-500/50 bg-blue-950/20 text-blue-100 hover:bg-blue-950/40" : "border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100"
                         }`}
                       >
-                        {norm === "pending_quote" ? "Wyślij wiadomość (wycena)" : "Wyślij wiadomość"}
+                        {norm === "pending_quote" ? t("bookingsPage.sendMessageQuote") : t("bookingsPage.sendMessage")}
                       </button>
                       {allowReschedule ? (
                         <button
@@ -727,7 +774,7 @@ function MojeRezerwacjePageContent() {
                               : "border-orange-400 bg-white text-orange-900 hover:bg-orange-50"
                           }`}
                         >
-                          Przenieś wizytę
+                          {t("bookingsPage.rescheduleVisit")}
                         </button>
                       ) : null}
                     </div>
@@ -741,22 +788,22 @@ function MojeRezerwacjePageContent() {
 
       {cancelModalRow ? (
         <div className="fixed inset-0 z-[10052] flex items-center justify-center p-4">
-          <button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" aria-label="Zamknij" onClick={() => !cancelBusy && setCancelModalRow(null)} />
+          <button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" aria-label={t("commonUi.close")} onClick={() => !cancelBusy && setCancelModalRow(null)} />
           <div
             className={`relative z-[1] w-full max-w-md rounded-2xl border p-6 shadow-2xl ${
               isDark ? "border-zinc-600 bg-zinc-900 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
             }`}
           >
-            <h3 className="text-lg font-bold">Zrezygnuj z wizyty</h3>
-            <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Czy na pewno chcesz zrezygnować z tej wizyty?</p>
+            <h3 className="text-lg font-bold">{t("bookingsPage.cancelModalTitle")}</h3>
+            <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("bookingsPage.cancelModalConfirm")}</p>
             <label className={`mt-4 block text-sm font-medium ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-              Powód rezygnacji (opcjonalnie)
+              {t("bookingsPage.cancelReasonLabel")}
               <textarea
                 value={cancelReasonDraft}
                 onChange={(e) => setCancelReasonDraft(e.target.value)}
                 rows={3}
                 className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm text-black ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
-                placeholder="Np. zmiana planów…"
+                placeholder={t("bookingsPage.cancelReasonPlaceholder")}
               />
             </label>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
@@ -766,7 +813,7 @@ function MojeRezerwacjePageContent() {
                 onClick={() => setCancelModalRow(null)}
                 className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-zinc-500 text-zinc-200" : "border-zinc-300 text-zinc-800"}`}
               >
-                Nie, wróć
+                {t("bookingsPage.cancelBack")}
               </button>
               <button
                 type="button"
@@ -774,7 +821,7 @@ function MojeRezerwacjePageContent() {
                 onClick={() => void confirmCancelVisit()}
                 className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {cancelBusy ? "Zapisywanie…" : "Tak, rezygnuję"}
+                {cancelBusy ? t("bookingsPage.cancelSaving") : t("bookingsPage.cancelSubmit")}
               </button>
             </div>
           </div>
@@ -785,8 +832,8 @@ function MojeRezerwacjePageContent() {
         <ClientRescheduleModal
           bookingId={rescheduleModalRow.id}
           workshopId={rescheduleModalRow.workshop_id}
-          workshopName={rescheduleModalRow.workshop_name || "Warsztat"}
-          serviceLabel={rescheduleModalRow.service_name || "Usługa"}
+          workshopName={rescheduleModalRow.workshop_name || t("commonUi.workshopFallback")}
+          serviceLabel={rescheduleModalRow.service_name || t("commonUi.serviceFallback")}
           durationMinutes={rescheduleModalRow.duration_minutes ?? 60}
           employeeId={rescheduleModalRow.employee_id}
           defaultDateKey={rescheduleModalRow.booking_date}
@@ -800,8 +847,8 @@ function MojeRezerwacjePageContent() {
         <BookingConversationModal
           key={`${conversation.row.id}-${conversation.draftBody ?? ""}-${conversation.draftSubject ?? ""}`}
           bookingId={conversation.row.id}
-          workshopName={conversation.row.workshop_name || "Warsztat"}
-          serviceName={conversation.row.service_name || "Usługa"}
+          workshopName={conversation.row.workshop_name || t("commonUi.workshopFallback")}
+          serviceName={conversation.row.service_name || t("commonUi.serviceFallback")}
           userId={user.id}
           isDark={isDark}
           onClose={closeConversation}

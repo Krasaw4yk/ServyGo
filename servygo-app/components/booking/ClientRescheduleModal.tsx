@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAvailableSlots } from "@/lib/bookingAvailability";
 import { clientProposeBookingReschedule } from "@/lib/messagesApi";
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -38,6 +39,7 @@ export default function ClientRescheduleModal({
   onClose,
   onSuccess,
 }: ClientRescheduleModalProps) {
+  const { t } = useServyGoTranslator();
   const minDate = todayDateKey();
   const [dateKey, setDateKey] = useState(() => {
     const d = (defaultDateKey ?? "").trim();
@@ -64,11 +66,11 @@ export default function ClientRescheduleModal({
       setSlots(list);
     } catch (e) {
       setSlots([]);
-      setError(e instanceof Error ? e.message : "Nie udało się pobrać terminów.");
+      setError(e instanceof Error ? e.message : t("bookingsPage.rescheduleSlotsError"));
     } finally {
       setLoadingSlots(false);
     }
-  }, [workshopId, dateKey, durationMinutes, employeeId]);
+  }, [workshopId, dateKey, durationMinutes, employeeId, t]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => void loadSlots());
@@ -77,7 +79,7 @@ export default function ClientRescheduleModal({
 
   async function submit() {
     if (!selectedSlot) {
-      setError("Wybierz godzinę.");
+      setError(t("bookingsPage.reschedulePickTime"));
       return;
     }
     setBusy(true);
@@ -87,9 +89,9 @@ export default function ClientRescheduleModal({
       onSuccess();
       onClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Nie zapisano propozycji.";
-      if (msg.includes("SLOT_CONFLICT")) setError("Ten termin został już zajęty. Wybierz inny.");
-      else if (msg.includes("OUTSIDE_OPENING_HOURS")) setError("Wybrana godzina poza godzinami pracy warsztatu.");
+      const msg = e instanceof Error ? e.message : t("bookingsPage.rescheduleSaveFailed");
+      if (msg.includes("SLOT_CONFLICT")) setError(t("bookingsPage.rescheduleSlotTaken"));
+      else if (msg.includes("OUTSIDE_OPENING_HOURS")) setError(t("bookingsPage.rescheduleOutsideHours"));
       else setError(msg);
     } finally {
       setBusy(false);
@@ -101,21 +103,21 @@ export default function ClientRescheduleModal({
 
   return (
     <div className="fixed inset-0 z-[10055] flex items-end justify-center p-0 sm:items-center sm:p-4">
-      <button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" aria-label="Zamknij" onClick={onClose} />
+      <button type="button" className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" aria-label={t("commonUi.close")} onClick={onClose} />
       <div
         className={`relative z-[1] flex max-h-[min(92vh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border shadow-2xl sm:rounded-3xl ${shell}`}
       >
         <div className={`border-b px-5 py-4 ${isDark ? "border-zinc-700" : "border-blue-100"}`}>
-          <h2 className="text-lg font-bold">Przenieś wizytę</h2>
-          <p className={`mt-1 text-sm ${labelMuted}`}>Wybierz nowy dzień i godzinę z dostępnych terminów warsztatu.</p>
+          <h2 className="text-lg font-bold">{t("bookingsPage.rescheduleModalTitle")}</h2>
+          <p className={`mt-1 text-sm ${labelMuted}`}>{t("bookingsPage.rescheduleModalLead")}</p>
           <p className={`mt-2 text-xs ${labelMuted}`}>
-            {workshopName} · {serviceLabel} · {durationMinutes} min
+            {workshopName} · {serviceLabel} · {durationMinutes} {t("commonUi.minSuffix")}
           </p>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <label className="block text-sm font-semibold">
-            Data
+            {t("bookingsPage.rescheduleDateLabel")}
             <input
               type="date"
               min={minDate}
@@ -126,11 +128,11 @@ export default function ClientRescheduleModal({
           </label>
 
           <div>
-            <p className="text-sm font-semibold">Dostępne godziny</p>
+            <p className="text-sm font-semibold">{t("bookingsPage.rescheduleSlotsTitle")}</p>
             {loadingSlots ? (
-              <p className={`mt-2 text-sm ${labelMuted}`}>Ładowanie…</p>
+              <p className={`mt-2 text-sm ${labelMuted}`}>{t("commonUi.loading")}</p>
             ) : slots.length === 0 ? (
-              <p className={`mt-2 text-sm ${labelMuted}`}>Brak wolnych terminów w tym dniu — wybierz inną datę.</p>
+              <p className={`mt-2 text-sm ${labelMuted}`}>{t("bookingsPage.rescheduleSlotsEmpty")}</p>
             ) : (
               <div className="mt-2 flex flex-wrap gap-2">
                 {slots.map((s) => {
@@ -159,13 +161,13 @@ export default function ClientRescheduleModal({
           </div>
 
           <label className="block text-sm font-semibold">
-            Uwagi do warsztatu (opcjonalnie)
+            {t("bookingsPage.rescheduleNoteLabel")}
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={3}
               className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm text-black ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
-              placeholder="Np. wolałbym wcześniejszy termin…"
+              placeholder={t("bookingsPage.rescheduleNotePlaceholder")}
             />
           </label>
 
@@ -181,7 +183,7 @@ export default function ClientRescheduleModal({
             onClick={onClose}
             className={`rounded-xl border px-4 py-2 text-sm font-semibold ${isDark ? "border-zinc-500 text-zinc-200" : "border-zinc-300 text-zinc-800"}`}
           >
-            Anuluj
+            {t("commonUi.cancel")}
           </button>
           <button
             type="button"
@@ -189,7 +191,7 @@ export default function ClientRescheduleModal({
             onClick={() => void submit()}
             className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2 text-sm font-semibold text-white shadow disabled:opacity-50"
           >
-            {busy ? "Wysyłanie…" : "Zaproponuj nowy termin"}
+            {busy ? t("commonUi.sending") : t("bookingsPage.rescheduleProposeCta")}
           </button>
         </div>
       </div>

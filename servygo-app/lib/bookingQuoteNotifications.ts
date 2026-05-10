@@ -15,19 +15,34 @@ function originForLinks(): string {
 export function quoteDecisionLabel(
   quoteStatus: string | null | undefined,
   bookingStatus: string | null | undefined,
+  t?: (path: string) => string,
 ): string {
   const qs = (quoteStatus ?? "").trim().toLowerCase();
   const bs = (bookingStatus ?? "").trim().toLowerCase();
-  if (qs === "sent" || qs === "pending_client_decision") return "Oczekuje na decyzję klienta";
-  if (qs === "accepted") return "Zaakceptowana przez klienta";
-  if (qs === "rejected") return "Odrzucona przez klienta";
-  if (qs === "cancelled") return "Anulowana (wycena)";
-  if (bs === "quote_sent") return "Oczekuje na decyzję klienta";
-  if (bs === "awaiting_new_quote") return "Odrzucona — oczekuje na nową wycenę";
-  if (bs === "quote_rejected") return "Wycena odrzucona";
-  if (bs === "confirmed" && qs === "") return "Zaakceptowana — potwierdzona";
-  return "—";
+
+  let pathKey: keyof typeof FALLBACK_DECISION_LABELS_BY_PATH | null = null;
+  if (qs === "sent" || qs === "pending_client_decision") pathKey = "bookingsPage.quoteDecision.pendingClient";
+  else if (qs === "accepted") pathKey = "bookingsPage.quoteDecision.acceptedByClient";
+  else if (qs === "rejected") pathKey = "bookingsPage.quoteDecision.rejectedByClient";
+  else if (qs === "cancelled") pathKey = "bookingsPage.quoteDecision.quoteCancelled";
+  else if (bs === "quote_sent") pathKey = "bookingsPage.quoteDecision.pendingClient";
+  else if (bs === "awaiting_new_quote") pathKey = "bookingsPage.quoteDecision.awaitingNewQuote";
+  else if (bs === "quote_rejected") pathKey = "bookingsPage.quoteDecision.quoteRejectedShort";
+  else if (bs === "confirmed" && qs === "") pathKey = "bookingsPage.quoteDecision.acceptedConfirmed";
+
+  if (pathKey) return t ? t(pathKey) : FALLBACK_DECISION_LABELS_BY_PATH[pathKey];
+  return t ? t("commonUi.dash") : "—";
 }
+
+const FALLBACK_DECISION_LABELS_BY_PATH = {
+  "bookingsPage.quoteDecision.pendingClient": "Oczekuje na decyzję klienta",
+  "bookingsPage.quoteDecision.acceptedByClient": "Zaakceptowana przez klienta",
+  "bookingsPage.quoteDecision.rejectedByClient": "Odrzucona przez klienta",
+  "bookingsPage.quoteDecision.quoteCancelled": "Anulowana (wycena)",
+  "bookingsPage.quoteDecision.awaitingNewQuote": "Odrzucona — oczekuje na nową wycenę",
+  "bookingsPage.quoteDecision.quoteRejectedShort": "Wycena odrzucona",
+  "bookingsPage.quoteDecision.acceptedConfirmed": "Zaakceptowana — potwierdzona",
+} as const;
 
 export async function notifyClientBookingQuoteSent(payload: {
   clientUserId: string;
@@ -84,18 +99,26 @@ export async function notifyWorkshopOwnerQuoteResponded(payload: {
   serviceName: string;
   accepted: boolean;
   finalPrice?: number | null;
+  /** Overrides default Polish workshop notification copy (UI language). */
+  emailSubject?: string;
+  emailBody?: string;
 }): Promise<void> {
   if (!payload.ownerUserId) return;
   const priceBit =
     payload.accepted && payload.finalPrice != null && Number.isFinite(payload.finalPrice)
       ? ` Kwota: ${payload.finalPrice.toFixed(2)} zł.`
       : "";
+  const subject =
+    payload.emailSubject ?? (payload.accepted ? "Klient zaakceptował wycenę" : "Klient odrzucił wycenę");
+  const body =
+    payload.emailBody ??
+    (payload.accepted
+      ? `Klient zaakceptował wycenę dla usługi „${payload.serviceName}”.${priceBit} Warsztat: ${payload.workshopName}.`
+      : `Klient odrzucił wycenę dla usługi „${payload.serviceName}”. Warsztat: ${payload.workshopName}.`);
   await sendBookingNotificationEmail({
     type: payload.accepted ? "quote_accepted" : "quote_rejected",
     bookingId: payload.bookingId,
-    subject: payload.accepted ? "Klient zaakceptował wycenę" : "Klient odrzucił wycenę",
-    body: payload.accepted
-      ? `Klient zaakceptował wycenę dla usługi „${payload.serviceName}”.${priceBit} Warsztat: ${payload.workshopName}.`
-      : `Klient odrzucił wycenę dla usługi „${payload.serviceName}”. Warsztat: ${payload.workshopName}.`,
+    subject,
+    body,
   });
 }

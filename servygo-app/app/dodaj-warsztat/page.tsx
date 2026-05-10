@@ -7,7 +7,8 @@ import AutocompleteSelect from "@/components/AutocompleteSelect";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { polishCityOptions } from "@/lib/locationData";
 import { sortAlphabetically } from "@/lib/vehicleData";
-import { createTranslator, LanguageCode } from "@/lib/translations";
+import { createTranslator } from "@/lib/translations";
+import { useServyGoLanguage } from "@/lib/useServyGoLanguage";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { createWorkshopLead, isValidWorkshopGoogleMapsUrl } from "@/lib/workshopApi";
 import { trackEvent } from "@/lib/analytics";
@@ -57,7 +58,7 @@ function formatPolishPhone(phoneDigits: string) {
 export default function AddWorkshopPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [language, setLanguage] = useState<LanguageCode>("pl");
+  const language = useServyGoLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -85,11 +86,7 @@ export default function AddWorkshopPage() {
     const frameId = window.requestAnimationFrame(() => {
       setMounted(true);
       const savedTheme = window.localStorage.getItem("servygo-theme");
-      const savedLanguage = window.localStorage.getItem("servygo_language");
       if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
-      if (savedLanguage === "pl" || savedLanguage === "en" || savedLanguage === "ua") {
-        setLanguage(savedLanguage);
-      }
     });
     return () => window.cancelAnimationFrame(frameId);
   }, []);

@@ -7,18 +7,12 @@ import InternalInbox from "@/components/InternalInbox";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import ServyGoSubpageNavBar from "@/components/ServyGoSubpageNavBar";
 import { resolveMessageViewerContext, type InternalMessageRole } from "@/lib/messagesApi";
-import { createTranslator, type LanguageCode } from "@/lib/translations";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { useIsClient } from "@/lib/useIsClient";
+import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
 
 export default function MojeWiadomosciPage() {
   const mounted = useIsClient();
-  const language = useMemo<LanguageCode>(() => {
-    if (!mounted) return "pl";
-    const lang = window.localStorage.getItem("servygo_language");
-    if (lang === "pl" || lang === "en" || lang === "ua") return lang;
-    return "pl";
-  }, [mounted]);
   const theme = useMemo<"light" | "dark">(() => {
     if (!mounted) return "light";
     const saved = window.localStorage.getItem("servygo-theme");
@@ -29,7 +23,7 @@ export default function MojeWiadomosciPage() {
   const [includeAllForAdmin, setIncludeAllForAdmin] = useState(false);
   const [unread, setUnread] = useState(0);
 
-  const t = useMemo(() => createTranslator(language), [language]);
+  const { t } = useServyGoTranslator();
 
   useEffect(() => {
     if (!mounted || !isSupabaseConfigured || !supabase) return;
@@ -71,7 +65,7 @@ export default function MojeWiadomosciPage() {
       <ServyGoPageShell isDark={false}>
         <main className="mx-auto max-w-lg px-4 py-6 text-center text-sm">
           <ServyGoSubpageNavBar isDark={false} variant="messages" />
-          <p className="mt-4">Brak konfiguracji Supabase.</p>
+          <p className="mt-4">{t("auth.errors.supabaseMissing")}</p>
         </main>
       </ServyGoPageShell>
     );
@@ -85,9 +79,9 @@ export default function MojeWiadomosciPage() {
         <main className="mx-auto max-w-lg px-4 py-8">
           <ServyGoSubpageNavBar isDark={isDark} variant="messages" />
           <div className="mt-8 text-center">
-            <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Zaloguj się, aby zobaczyć wiadomości.</p>
+            <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("inboxPage.loginPrompt")}</p>
             <Link href="/?auth=login" className="mt-4 inline-block text-blue-600 underline">
-              Logowanie
+              {t("inboxPage.loginLink")}
             </Link>
           </div>
         </main>

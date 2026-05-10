@@ -22,6 +22,7 @@ import LandingInfoDialogs from "@/components/home/LandingInfoDialogs";
 import LegalReacceptanceModal from "@/components/legal/LegalReacceptanceModal";
 import { countryOptions, polishCityOptions } from "@/lib/locationData";
 import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
+import { persistServyGoLanguage, SERVYGO_LANGUAGE_STORAGE_KEY } from "@/lib/servygoLanguageConstants";
 import {
   createTranslator,
   getTranslationNode,
@@ -241,7 +242,7 @@ function HomePageContent() {
       if (savedTheme === "dark" || savedTheme === "light") {
         setTheme(savedTheme);
       }
-      const savedLanguage = window.localStorage.getItem("servygo_language");
+      const savedLanguage = window.localStorage.getItem(SERVYGO_LANGUAGE_STORAGE_KEY);
       if (savedLanguage === "pl" || savedLanguage === "en" || savedLanguage === "ua") {
         setLanguage(savedLanguage);
       }
@@ -303,7 +304,7 @@ function HomePageContent() {
 
   useEffect(() => {
     if (!mounted) return;
-    window.localStorage.setItem("servygo_language", language);
+    persistServyGoLanguage(language);
   }, [mounted, language]);
 
   useEffect(() => {
@@ -439,6 +440,7 @@ function HomePageContent() {
       setDashboardBookingsCount(rows.length);
       const upcoming = pickDashboardUpcomingBooking(rows);
       const dark = theme === "dark";
+      const tBadge = createTranslator(language);
       if (!upcoming) {
         setDashboardUpcomingBooking(null);
       } else {
@@ -448,6 +450,7 @@ function HomePageContent() {
           rescheduleStatus: upcoming.reschedule_status,
           proposedBy: upcoming.proposed_by,
           isDark: dark,
+          t: tBadge,
         });
         setDashboardUpcomingBooking({
           id: upcoming.id,
@@ -464,7 +467,7 @@ function HomePageContent() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser, theme]);
+  }, [currentUser, theme, language]);
 
   useEffect(() => {
     if (!currentUser) {
