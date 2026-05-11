@@ -3318,7 +3318,12 @@ export default function AdminPage() {
           adminEmail={currentUser?.email ?? null}
         />
 
-        <SystemChangelogModal audience="admin" isDark={isDark} showWhen={mounted && Boolean(currentUser) && isAdmin} />
+        <SystemChangelogModal
+          audience="admin"
+          isDark={isDark}
+          showWhen={mounted && Boolean(currentUser) && isAdmin}
+          userId={currentUser?.id ?? null}
+        />
 
         {disputeModalBookingId ? (
           <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">

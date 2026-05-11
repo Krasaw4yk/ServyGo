@@ -3629,7 +3629,14 @@ function WorkshopPanelPageContent() {
           adminUserId={currentUserId}
         />
 
-        <SystemChangelogModal audience="workshop" isDark={isDark} showWhen={!loading && Boolean(workshop)} />
+        <SystemChangelogModal
+          audience="workshop"
+          isDark={isDark}
+          // `userId` jest opcjonalny: modal może działać jako fallback do localStorage,
+          // jeśli użytkownik nie zdążył jeszcze się zautoryzować.
+          showWhen={!loading && Boolean(workshop)}
+          userId={currentUserId}
+        />
 
         {cancelModalBooking ? (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">

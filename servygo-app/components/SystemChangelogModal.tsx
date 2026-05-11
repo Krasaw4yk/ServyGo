@@ -5,7 +5,9 @@ import type { LanguageCode } from "@/lib/translations";
 import {
   getLatestSystemChangelogForAudience,
   getSeenChangelogStorageKey,
+  getSeenSystemChangelogSignatureForUser,
   getSystemChangelogSignatureForAudience,
+  setSeenSystemChangelogSignatureForUser,
 } from "@/lib/systemChangelog";
 import type { SystemChangelogChangeType } from "@/lib/systemChangelog";
 import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
@@ -16,6 +18,7 @@ type Props = {
   isDark: boolean;
   /** Panel gotowy — np. załadowany warsztat / potwierdzony dostęp admina */
   showWhen: boolean;
+  userId?: string | null;
 };
 
 function typeBadgeClass(type: SystemChangelogChangeType, isDark: boolean): string {
@@ -49,7 +52,7 @@ function typeLabelKey(type: SystemChangelogChangeType): string {
   return `systemChangelog.type.${type}`;
 }
 
-export default function SystemChangelogModal({ audience, isDark, showWhen }: Props) {
+export default function SystemChangelogModal({ audience, isDark, showWhen, userId }: Props) {
   const mounted = useIsClient();
   const { t, language } = useServyGoTranslator();
   const [open, setOpen] = useState(false);
@@ -64,37 +67,77 @@ export default function SystemChangelogModal({ audience, isDark, showWhen }: Pro
 
   const storageKey = getSeenChangelogStorageKey(audience);
 
-  const considerOpen = useCallback(() => {
-    if (!mounted || typeof window === "undefined" || !showWhen) return;
-    const rows = getLatestSystemChangelogForAudience(audience);
-    if (rows.length === 0) return;
-    const sig = getSystemChangelogSignatureForAudience(audience);
-    try {
-      const prev = window.localStorage.getItem(storageKey);
-      if (prev === sig) return;
-    } catch {
+  const signature = useMemo(() => getSystemChangelogSignatureForAudience(audience), [audience]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!mounted || typeof window === "undefined" || !showWhen) {
+      queueMicrotask(() => {
+        if (!cancelled) setOpen(false);
+      });
       return;
     }
-    queueMicrotask(() => setOpen(true));
-  }, [audience, mounted, showWhen, storageKey]);
+    if (resolved.length === 0) {
+      queueMicrotask(() => {
+        if (!cancelled) setOpen(false);
+      });
+      return;
+    }
 
-  useEffect(() => {
-    if (!showWhen) queueMicrotask(() => setOpen(false));
-  }, [showWhen]);
+    const run = async () => {
+      // 1) Primary: per-user state in DB.
+      if (userId && userId.trim() && resolved.length > 0) {
+        const seenSig = await getSeenSystemChangelogSignatureForUser(userId, audience);
+        if (cancelled) return;
+        if (seenSig === signature) {
+          setOpen(false);
+          return;
+        }
+        // Fallback: jeśli DB nie ma wpisu lub nie zwrócił wartości (np. brak migracji),
+        // możemy użyć lokalnego "seen" dla stabilności UX.
+        try {
+          const prev = window.localStorage.getItem(storageKey);
+          if (prev === signature) {
+            setOpen(false);
+            return;
+          }
+        } catch {
+          /* ignore */
+        }
+        setOpen(true);
+        return;
+      }
 
-  useEffect(() => {
-    considerOpen();
-  }, [considerOpen]);
+      // 2) Fallback: localStorage (per-device).
+      try {
+        const prev = window.localStorage.getItem(storageKey);
+        if (cancelled) return;
+        setOpen(prev !== signature);
+      } catch {
+        if (cancelled) return;
+        setOpen(true);
+      }
+    };
 
-  const persistSeenAndClose = useCallback(() => {
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [audience, mounted, resolved.length, showWhen, signature, storageKey, userId]);
+
+  const persistSeenAndClose = useCallback(async () => {
+    const sig = signature;
+    // Zawsze aktualizuj lokalne state (fallback + szybki UX).
     try {
-      const sig = getSystemChangelogSignatureForAudience(audience);
       window.localStorage.setItem(storageKey, sig);
     } catch {
       /* ignore */
     }
+    if (userId && userId.trim()) {
+      await setSeenSystemChangelogSignatureForUser(userId, audience, sig);
+    }
     setOpen(false);
-  }, [audience, storageKey]);
+  }, [audience, signature, storageKey, userId]);
 
   const muted = isDark ? "text-zinc-400" : "text-zinc-600";
   const panel = isDark ? "border-blue-500/35 bg-zinc-900 shadow-2xl" : "border-blue-200 bg-white shadow-xl";
@@ -109,7 +152,7 @@ export default function SystemChangelogModal({ audience, isDark, showWhen }: Pro
         type="button"
         className="absolute inset-0 bg-zinc-950/75 backdrop-blur-[1px]"
         aria-label={t("systemChangelog.closeButton")}
-        onClick={persistSeenAndClose}
+        onClick={() => void persistSeenAndClose()}
       />
 
       <div
@@ -127,7 +170,7 @@ export default function SystemChangelogModal({ audience, isDark, showWhen }: Pro
           </div>
           <button
             type="button"
-            onClick={persistSeenAndClose}
+            onClick={() => void persistSeenAndClose()}
             className={`shrink-0 rounded-xl border px-2.5 py-1.5 text-lg leading-none font-semibold ${isDark ? "border-zinc-600 text-zinc-300 hover:bg-zinc-800" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"}`}
             aria-label={t("systemChangelog.closeButton")}
           >
@@ -183,14 +226,14 @@ export default function SystemChangelogModal({ audience, isDark, showWhen }: Pro
         <div className={`flex shrink-0 flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end sm:px-5 ${isDark ? "border-zinc-700 bg-zinc-950/40" : "border-blue-100 bg-blue-50/40"}`}>
           <button
             type="button"
-            onClick={persistSeenAndClose}
+            onClick={() => void persistSeenAndClose()}
             className={`rounded-xl border px-4 py-2.5 text-sm font-semibold ${isDark ? "border-zinc-600 text-zinc-200" : "border-zinc-300 text-zinc-800"}`}
           >
             {t("systemChangelog.closeButton")}
           </button>
           <button
             type="button"
-            onClick={persistSeenAndClose}
+            onClick={() => void persistSeenAndClose()}
             className="rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white"
           >
             {t("systemChangelog.understoodButton")}

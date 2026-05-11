@@ -1,4 +1,5 @@
 import type { LanguageCode } from "@/lib/translations";
+import { supabase } from "@/lib/supabaseClient";
 
 export type SystemChangelogChangeType = "new" | "fix" | "important" | "info";
 export type SystemChangelogAudience = "workshop" | "admin" | "all";
@@ -174,6 +175,72 @@ export const SYSTEM_CHANGELOG_ENTRIES: SystemChangelogEntry[] = [
     },
   },
   {
+    id: "ws-vehicle-price-difficulty-per-variant",
+    date: "2026-05-11",
+    type: "important",
+    audience: "workshop",
+    copy: {
+      pl: {
+        title: "Trudność teraz dla konkretnego auta w cenniku",
+        description:
+          "W panelu konfigurujesz poziom trudności wyłącznie dla konkretnego wariantu auta w sekcji „Ceny dla aut”.",
+      },
+      en: {
+        title: "Difficulty is now per vehicle variant in pricing",
+        description:
+          "In the workshop panel you configure difficulty only for a specific vehicle variant in „Ceny dla aut”.",
+      },
+      ua: {
+        title: "Складність — лише для конкретного варіанту авто в прайсі",
+        description:
+          "У панелі СТО рівень складності встановлюється тільки для конкретного варіанту авто в секції „Ceny dla aut”.",
+      },
+    },
+  },
+  {
+    id: "ws-workshop-panel-i18n-and-ui-fixes",
+    date: "2026-05-11",
+    type: "fix",
+    audience: "workshop",
+    copy: {
+      pl: {
+        title: "Poprawki UI i tłumaczeń w panelu warsztatu",
+        description:
+          "Usprawniono spójność komunikatów oraz poprawiono widoczność elementów panelu (w tym mobilne menu boczne).",
+      },
+      en: {
+        title: "UI and translation fixes in workshop panel",
+        description:
+          "Improved messaging consistency and fixed visibility of panel elements (including the mobile sidebar).",
+      },
+      ua: {
+        title: "Виправлення UI та перекладів у панелі СТО",
+        description:
+          "Покращено узгодженість повідомлень та виправлено видимість елементів панелі (у т.ч. мобільне бічне меню).",
+      },
+    },
+  },
+  {
+    id: "adm-system-messages-and-panel-updates",
+    date: "2026-05-11",
+    type: "new",
+    audience: "admin",
+    copy: {
+      pl: {
+        title: "Aktualizacje komunikatów w panelu admina",
+        description: "Dodano/odświeżono komunikaty systemowe dla administratora i poprawiono sekcje panelu.",
+      },
+      en: {
+        title: "Admin panel system updates",
+        description: "Added/refreshed system messages for administrators and improved panel sections.",
+      },
+      ua: {
+        title: "Оновлення системних повідомлень у панелі адміна",
+        description: "Додано/оновлено системні повідомлення для адміністратора та покращено секції панелі.",
+      },
+    },
+  },
+  {
     id: "all-realtime-banner",
     date: "2026-05-04",
     type: "info",
@@ -217,8 +284,10 @@ export function getAllSystemChangelogEntriesForAudience(audience: "workshop" | "
  * Porównywany z wartością w localStorage – zmiana przy nowym lub zmienionym wpisie dla danego panelu.
  */
 export function getSystemChangelogSignatureForAudience(audience: "workshop" | "admin"): string {
+  // Signature musi zmieniać się także wtedy, gdy zmieniamy treść wpisu (np. copy title/description),
+  // nawet bez zmiany `id` / `date` — wtedy modal pokaże aktualizację ponownie.
   return getAllSystemChangelogEntriesForAudience(audience)
-    .map((e) => `${e.id}@${e.date}`)
+    .map((e) => `${e.id}@${e.date}@${e.type}@${e.audience}@${JSON.stringify(e.copy)}`)
     .join("|");
 }
 
@@ -228,4 +297,38 @@ export function getSeenChangelogStorageKey(audience: "workshop" | "admin"): stri
 
 export function getLatestSystemChangelogForAudience(audience: "workshop" | "admin"): SystemChangelogEntry[] {
   return getAllSystemChangelogEntriesForAudience(audience).slice(0, MAX_ENTRIES);
+}
+
+export async function getSeenSystemChangelogSignatureForUser(
+  userId: string,
+  audience: "workshop" | "admin",
+): Promise<string | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("system_changelog_seen")
+      .select("signature")
+      .eq("user_id", userId)
+      .eq("audience", audience)
+      .maybeSingle();
+    if (error) return null;
+    return data?.signature ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setSeenSystemChangelogSignatureForUser(
+  userId: string,
+  audience: "workshop" | "admin",
+  signature: string,
+): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase
+      .from("system_changelog_seen")
+      .upsert({ user_id: userId, audience, signature }, { onConflict: "user_id,audience" });
+  } catch {
+    // fallback: jeśli nie da się zapisać w DB, modal nadal działa na localStorage
+  }
 }
