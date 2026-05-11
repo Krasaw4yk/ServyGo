@@ -11,6 +11,7 @@ import { fetchPublicWorkshopsAsMock, matchWorkshopServicesForVehicle } from "@/l
 import { resolveAvailableSlotsForWorkshopDay, toLocalDateKey } from "@/lib/bookingAvailability";
 import { getApproxCityCenterCoords, haversineDistanceKm } from "@/lib/offersGeo";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
+import ServiceDifficultyBadge from "@/components/ServiceDifficultyBadge";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import { trackEvent } from "@/lib/analytics";
@@ -883,8 +884,18 @@ export default function OffersPageClient() {
                           <p>
                             <strong>{t("offers.duration")}:</strong> {firstOffer.duration_minutes} min
                           </p>
-                          <p>
-                            <strong>{t("offers.service")}:</strong> {firstOffer.service_name}
+                          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <strong>{t("offers.service")}:</strong>
+                            <span className="inline-flex flex-wrap items-center gap-2">
+                              <span>{firstOffer.service_name}</span>
+                              {"difficulty_level" in firstOffer && firstOffer.difficulty_level != null ? (
+                                <ServiceDifficultyBadge
+                                  difficulty_level={firstOffer.difficulty_level}
+                                  isDark={isDark}
+                                  compact
+                                />
+                              ) : null}
+                            </span>
                           </p>
                           <p>
                             <strong>{t("offers.nearestSlot")}:</strong> {firstOffer.next_available}

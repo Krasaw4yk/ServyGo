@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
 import type { MockWorkshop, WorkshopAvailabilityConfig, WorkshopServiceOffer } from "@/lib/mockWorkshops";
+import { normalizeServiceDifficultyLevel } from "@/lib/serviceDifficulty";
 import { mockWorkshops } from "@/lib/mockWorkshops";
 import { getApproxCityCenterCoords } from "@/lib/offersGeo";
 import { normalizeServiceTextForMatch } from "@/lib/serviceCategoryClassifier";
@@ -189,6 +190,7 @@ type WorkshopVehiclePriceRow = {
   price_to: number | null;
   duration_minutes: number | null;
   is_active: boolean;
+  difficulty_level?: string | null;
 };
 
 export type VehicleSearchCriteria = {
@@ -218,6 +220,7 @@ function buildVehicleSpecificOffers(rows: WorkshopVehiclePriceRow[]): WorkshopSe
       id: row.workshop_service_id ?? row.id,
       service_name: row.service_name.trim(),
       service_key: null,
+      difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
       vehicle_type: (row.vehicle_type ?? "").trim() || "Osobowy",
       brand: (row.brand ?? "").trim() || "—",
       model: (row.model ?? "").trim() || "—",
@@ -491,7 +494,9 @@ export async function fetchPublicWorkshopsAsMock(): Promise<MockWorkshop[]> {
   const { data: vehiclePricesRaw, error: vehiclePricesError } = workshopIds.length
     ? await supabase
         .from("workshop_service_vehicle_prices")
-        .select("id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
+        .select(
+          "id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active, difficulty_level",
+        )
         .in("workshop_id", workshopIds)
     : { data: [], error: null };
   if (vehiclePricesError) throw new Error(formatSupabaseError(vehiclePricesError));
@@ -519,7 +524,9 @@ export async function fetchPublicWorkshopByIdAsMock(id: string): Promise<MockWor
   const base = buildMockWorkshopFromDbRow(row);
   const { data: vehiclePricesRaw, error: vehiclePricesError } = await supabase
     .from("workshop_service_vehicle_prices")
-    .select("id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active")
+    .select(
+      "id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, price_from, price_to, duration_minutes, is_active, difficulty_level",
+    )
     .eq("workshop_id", id.trim());
   if (vehiclePricesError) throw new Error(formatSupabaseError(vehiclePricesError));
   const specific = buildVehicleSpecificOffers((vehiclePricesRaw as WorkshopVehiclePriceRow[] | null) ?? []);

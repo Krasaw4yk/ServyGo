@@ -3,6 +3,8 @@ export type WorkshopServiceOffer = {
   service_name: string;
   workshopId?: string;
   service_key?: string | null;
+  /** Tylko dla ofert z wiersza `workshop_service_vehicle_prices` (konkretne auto). */
+  difficulty_level?: "low" | "medium" | "high";
   vehicle_type: string;
   brand: string;
   model: string;

@@ -1,6 +1,8 @@
 "use client";
 
 import { memo, useMemo, useState } from "react";
+import ServiceDifficultyBadge from "@/components/ServiceDifficultyBadge";
+import type { ServiceDifficultyLevel } from "@/lib/serviceDifficulty";
 
 const VEHICLE_PRICE_MODAL_PAGE = 50;
 
@@ -19,6 +21,7 @@ export type WorkshopVehiclePricingListRow = {
   price_from: string;
   price_to: string;
   duration_minutes: string;
+  difficulty_level: ServiceDifficultyLevel;
   is_active: boolean;
 };
 
@@ -108,6 +111,7 @@ function WorkshopVehiclePricingListModalInner({
                     <th className="px-2 py-2 text-left">Cena od</th>
                     <th className="px-2 py-2 text-left">Cena do</th>
                     <th className="px-2 py-2 text-left">Czas (min)</th>
+                    <th className="px-2 py-2 text-left">Trudność</th>
                     <th className="px-2 py-2 text-left">Aktywne</th>
                     <th className="px-2 py-2 text-left">Akcje</th>
                   </tr>
@@ -133,6 +137,13 @@ function WorkshopVehiclePricingListModalInner({
                         <td className="px-2 py-2">{row.price_from.trim() ? `${row.price_from} zł` : "—"}</td>
                         <td className="px-2 py-2">{row.price_to.trim() ? `${row.price_to} zł` : "—"}</td>
                         <td className="px-2 py-2">{row.duration_minutes.trim() ? `${row.duration_minutes} min` : "—"}</td>
+                        <td className="px-2 py-2 align-middle">
+                          <ServiceDifficultyBadge
+                            difficulty_level={row.difficulty_level}
+                            isDark={isDark}
+                            compact
+                          />
+                        </td>
                         <td className="px-2 py-2">
                           <button
                             type="button"

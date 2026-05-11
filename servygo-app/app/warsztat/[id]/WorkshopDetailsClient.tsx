@@ -17,6 +17,7 @@ import { getAvailableSlots, inferEndTime } from "@/lib/bookingAvailability";
 import { trackEvent } from "@/lib/analytics";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
+import ServiceDifficultyBadge from "@/components/ServiceDifficultyBadge";
 import WorkshopFavoriteToggle from "@/components/WorkshopFavoriteToggle";
 import WorkshopLocationMiniMap from "@/components/workshop/WorkshopLocationMiniMap";
 import {
@@ -985,8 +986,13 @@ function WorkshopDetailsPageContent() {
                         }`}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-2">
-                          <p className="break-words text-base font-semibold">{service.service_name}</p>
-                          <div className="flex items-center gap-2">
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                            <p className="break-words text-base font-semibold">{service.service_name}</p>
+                            {"difficulty_level" in service && service.difficulty_level != null ? (
+                              <ServiceDifficultyBadge difficulty_level={service.difficulty_level} isDark={isDark} />
+                            ) : null}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
                             {highlighted ? (
                               <span className="rounded-full border border-blue-300/40 bg-blue-500/15 px-2 py-0.5 text-xs font-semibold text-blue-200">
                                 {t("workshopDetails.selected")}

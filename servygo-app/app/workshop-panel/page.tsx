@@ -37,6 +37,7 @@ import {
   resolveWorkshopServiceCategory,
   WORKSHOP_SERVICE_CATEGORY_OPTIONS,
 } from "@/lib/serviceCatalog";
+import { normalizeServiceDifficultyLevel, type ServiceDifficultyLevel } from "@/lib/serviceDifficulty";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 import { useIsClient } from "@/lib/useIsClient";
 import { useServyGoTranslator } from "@/lib/useServyGoLanguage";
@@ -155,6 +156,7 @@ type ServiceVehiclePriceDraftRow = {
   price_from: string;
   price_to: string;
   duration_minutes: string;
+  difficulty_level: ServiceDifficultyLevel;
   is_active: boolean;
 };
 type DayOverride = { closed: boolean; open: string; close: string };
@@ -744,6 +746,7 @@ function WorkshopPanelPageContent() {
         price_from: row.price_from == null ? "" : String(row.price_from),
         price_to: row.price_to == null ? "" : String(row.price_to),
         duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
+        difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
         is_active: row.is_active,
       })),
     );
@@ -962,6 +965,7 @@ function WorkshopPanelPageContent() {
                 price_from: row.price_from == null ? "" : String(row.price_from),
                 price_to: row.price_to == null ? "" : String(row.price_to),
                 duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
+                difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
                 is_active: row.is_active,
               })),
             );
@@ -1292,7 +1296,9 @@ function WorkshopPanelPageContent() {
               legacyKey);
         return matches ? { ...row, ...patch } : row;
       });
-      return merged.filter((r) => r.is_custom || r.service_key !== null || r.is_active || r.price_from || r.price_to || r.duration_minutes);
+      return merged.filter(
+        (r) => r.is_custom || r.service_key !== null || r.is_active || r.price_from || r.price_to || r.duration_minutes,
+      );
     });
   }, [mergedServiceRows]);
 
@@ -1438,6 +1444,7 @@ function WorkshopPanelPageContent() {
       price_from: "",
       price_to: "",
       duration_minutes: "",
+      difficulty_level: "medium" as ServiceDifficultyLevel,
       is_active: true,
     });
   }, []);
@@ -1856,6 +1863,7 @@ function WorkshopPanelPageContent() {
         price_from: row.price_from == null ? "" : String(row.price_from),
         price_to: row.price_to == null ? "" : String(row.price_to),
         duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
+        difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
         is_active: row.is_active,
       })),
     );
@@ -1889,6 +1897,7 @@ function WorkshopPanelPageContent() {
           price_from: draft.price_from.trim() ? Number(draft.price_from) : null,
           price_to: draft.price_to.trim() ? Number(draft.price_to) : null,
           duration_minutes: draft.duration_minutes.trim() ? Number(draft.duration_minutes) : null,
+          difficulty_level: normalizeServiceDifficultyLevel(draft.difficulty_level),
           is_active: draft.is_active,
         },
       ]);
@@ -1929,6 +1938,7 @@ function WorkshopPanelPageContent() {
           price_from: row.price_from.trim() ? Number(row.price_from) : null,
           price_to: row.price_to.trim() ? Number(row.price_to) : null,
           duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
+          difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
           is_active: nextValue,
         },
       ]);

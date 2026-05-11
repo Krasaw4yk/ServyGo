@@ -12,6 +12,7 @@ import {
   vehicleTypeOptions,
   type VehicleTypeKey,
 } from "@/lib/vehicleData";
+import { normalizeServiceDifficultyLevel, type ServiceDifficultyLevel } from "@/lib/serviceDifficulty";
 
 export type WorkshopVehiclePriceEditorDraft = {
   id?: string;
@@ -28,6 +29,7 @@ export type WorkshopVehiclePriceEditorDraft = {
   price_from: string;
   price_to: string;
   duration_minutes: string;
+  difficulty_level: ServiceDifficultyLevel;
   is_active: boolean;
 };
 
@@ -42,6 +44,9 @@ type WorkshopVehiclePriceEditorModalProps = {
 
 const modalFieldClassName =
   "h-11 rounded-[10px] border border-gray-200 bg-gray-50 px-3 text-[14px] text-gray-900 transition duration-200 hover:border-[#cbd5f5] focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60";
+
+const modalSmallFieldClassName =
+  "h-10 rounded-[10px] border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-900 transition duration-200 hover:border-[#cbd5f5] focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60";
 
 export default function WorkshopVehiclePriceEditorModal({
   draft,
@@ -215,6 +220,22 @@ export default function WorkshopVehiclePriceEditorModal({
                 onChange={(e) => onPatch({ duration_minutes: e.target.value })}
                 className={modalFieldClassName}
               />
+            </label>
+            <label className="mb-5 flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-gray-900">Poziom trudności</span>
+              <span className="text-[12px] text-gray-600">Dotyczy tylko tego wariantu auta.</span>
+              <select
+                disabled={readOnly || saving}
+                value={draft.difficulty_level}
+                onChange={(e) =>
+                  onPatch({ difficulty_level: normalizeServiceDifficultyLevel(e.target.value) })
+                }
+                className={modalSmallFieldClassName}
+              >
+                <option value="low">Niski</option>
+                <option value="medium">Średni</option>
+                <option value="high">Wysoki</option>
+              </select>
             </label>
             <div className="mb-5 flex items-center gap-3 text-sm md:pt-6">
               <button

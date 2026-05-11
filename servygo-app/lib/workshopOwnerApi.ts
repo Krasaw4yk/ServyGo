@@ -127,6 +127,7 @@ export type WorkshopServiceVehiclePriceRow = {
   price_to: number | null;
   duration_minutes: number | null;
   is_active: boolean;
+  difficulty_level?: "low" | "medium" | "high" | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -561,7 +562,9 @@ export async function listWorkshopServiceConfigsForOwner(workshopId: string): Pr
   if (!supabase) throw new Error("Supabase client not available.");
   const { data, error } = await supabase
     .from("workshop_services")
-    .select("id, workshop_id, service_key, service_name, category, category_manual, description, price_from, price_to, duration_minutes, is_active, is_custom, created_at, updated_at")
+    .select(
+      "id, workshop_id, service_key, service_name, category, category_manual, description, price_from, price_to, duration_minutes, is_active, is_custom, created_at, updated_at",
+    )
     .eq("workshop_id", workshopId)
     .order("service_name", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
@@ -638,7 +641,9 @@ export async function listWorkshopServiceVehiclePricesForOwner(workshopId: strin
   if (!supabase) throw new Error("Supabase client not available.");
   const { data, error } = await supabase
     .from("workshop_service_vehicle_prices")
-    .select("id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, transmission, price_from, price_to, duration_minutes, is_active, created_at, updated_at")
+    .select(
+      "id, workshop_id, workshop_service_id, service_name, vehicle_type, brand, model, year_from, year_to, engine, fuel, transmission, price_from, price_to, duration_minutes, is_active, difficulty_level, created_at, updated_at",
+    )
     .eq("workshop_id", workshopId)
     .order("service_name", { ascending: true });
   if (error) throw new Error(formatSupabaseError(error));
@@ -663,6 +668,7 @@ export async function upsertWorkshopServiceVehiclePricesForOwner(
     price_to?: number | null;
     duration_minutes?: number | null;
     is_active?: boolean;
+    difficulty_level?: "low" | "medium" | "high" | null;
   }>,
 ): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
@@ -683,6 +689,7 @@ export async function upsertWorkshopServiceVehiclePricesForOwner(
     price_to: row.price_to ?? null,
     duration_minutes: row.duration_minutes ?? null,
     is_active: row.is_active ?? true,
+    difficulty_level: row.difficulty_level ?? "medium",
   }));
   if (payload.length === 0) return;
   const { error } = await supabase
