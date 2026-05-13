@@ -2,6 +2,13 @@
 
 Ten dokument porządkuje uruchamianie SQL w projekcie ServyGo.
 
+## TL;DR — po co ten plik i czego **nie** robi sam z siebie
+
+- **Supabase to Twoja baza w chmurze.** Żaden plik w repozytorium Git **nie uruchamia się tam automatycznie** po `git push`. Skrypty z `supabase/sql/` musisz **Ty** (lub skrypt CI, który sam skonfigurujesz) wkleić i odpalić w **Supabase → SQL Editor** na **Twoim** projekcie. Ja nie mam dostępu do Twojego konta Supabase, więc **nie mogę** „kliknąć Run” za Ciebie ani dodać `SUPABASE_SERVICE_ROLE_KEY` na hosting — to fizycznie po Twojej stronie.
+- **Ta instrukcja to mapa:** jaka jest **zalecana kolejność** plików, co robi każdy etap, oraz osobno (**K.01–K.07**) co wpisać w **`.env.local` / env na hostingu** i co ustawić w **Authentication** w dashboardzie. Nie musisz jej „wykonywać” jak zadania domowego codziennie — tylko gdy stawiasz **nowe środowisko** (np. drugi projekt Supabase), **deploy na nowy hosting**, albo coś się wysypuje i szukasz „co powinno było być już na bazie”.
+- **Masz ~58 plików SQL, a „pierwsze 15” działają?** Świetnie — to jest rdzeń pod wczesny ServyGo. Kolejne numery to **kolejne funkcje** (rezerwacje sloty, wyceny, analityka itd.). Odpalasz je **wtedy, gdy korzystasz z tych części aplikacji** albo wg kolejności z sekcji poniżej, żeby uniknąć błędów typu „brakuje tabeli / funkcji”. Jeśli czegoś nie używasz, część migracji może chwilowo nie być potrzebna — ale wtedy i tak mogą pojawić się błędy w kodzie, który już zakłada nowszy schemat.
+- **Krótko:** instrukcja **nie zastępuje** Twojego jednego kliknięcia w Supabase ani wpisania sekretów na hostingu — **uporządkuje**, żebyś nie zgadywał kolejności i nie szukał kluczy „gdzie indziej niż trzeba”.
+
 ## Zasady dla kolejnych plików SQL
 
 1. **Nowe skrypty tylko w `supabase/sql/`** — każda nowa logika jako osobny plik `supabase-NN-opis.sql`. Nie dopisuj nowego kodu do starych, „pomieszanych” plików w katalogu głównym projektu (legacy).
@@ -16,6 +23,56 @@ Używaj plików z katalogu:
 - `supabase/sql/`
 
 Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, `supabase-bookings.sql`, `supabase-admin-approve-lead.sql`) są traktowane jako **legacy / historyczne źródła**.
+
+## Co wpisać i skonfigurować (ServyGo ↔ Supabase)
+
+Tu zbieramy **wszystko, co musisz uzupełnić poza samym SQL** — numeracja **K.01, K.02, …** jest robocza; kolejne ważne punkty dopisujemy na końcu jako **K.08**, **K.09** itd. (nie myl tego z numerami plików `supabase-NN-*.sql`).
+
+### K.01 — `NEXT_PUBLIC_SUPABASE_URL`
+
+- **Gdzie wpisać:** plik `.env.local` w katalogu **`servygo-app`** (obok `package.json`), albo zmienne środowiskowe na hostingu.
+- **Skąd wartość:** Supabase → *Project Settings* → *API* → **Project URL**.
+- **Po zmianie:** zrestartuj proces Node (`npm run dev` / redeploy).
+
+### K.02 — `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+- **Gdzie wpisać:** to samo co K.01 (`.env.local` / hosting).
+- **Skąd wartość:** *Project Settings* → *API* → **anon public** key.
+- **Uwaga:** ten klucz jest w bundle klienta — to normalne dla Supabase w przeglądarce.
+
+### K.03 — `SUPABASE_SERVICE_ROLE_KEY`
+
+- **Gdzie wpisać:** to samo co K.01 — **wyłącznie** po stronie serwera.
+- **Skąd wartość:** *Project Settings* → *API* → **service_role** (sekret).
+- **Uwagi:** **nigdy** nie dodawaj prefiksu `NEXT_PUBLIC_`. Bez tej zmiennej **nie zadziała** akceptacja zgłoszenia warsztatu z zaproszeniem do Auth (`/api/admin/approve-workshop-lead`, `lib/supabaseAdmin.ts`).
+- **Po zmianie:** zrestartuj serwer deweloperski / hosting.
+
+### K.04 — `NEXT_PUBLIC_SITE_URL` (zalecane w prod, opcjonalne lokalnie)
+
+- **Gdzie wpisać:** `.env.local` / hosting.
+- **Po co:** stabilny **bazowy URL** w redirectach z maili (zaproszenie / reset hasła). Kod bierze go w pierwszej kolejności (`lib/siteOrigin.ts`); jeśli puste, używa nagłówka żądania (`Host` / `X-Forwarded-Host`).
+- **Przykład lokalnie:** `http://localhost:3000`
+- **Przykład produkcja:** `https://twoja-domena.pl` (bez końcowego `/`)
+
+### K.05 — Supabase Dashboard → Authentication
+
+1. **Redirect URLs** — muszą zawierać adresy postaci `{origin}/auth/callback` (np. `http://localhost:3000/auth/callback` oraz URL produkcyjny). Inaczej link z maila po **zaproszeniu** lub **resecie hasła** może zostać odrzucony przez Supabase.
+2. **Site URL** — ustaw zgodnie z głównym adresem aplikacji (często jak K.04 w produkcji).
+3. **E-mail:** domyślny nadawca Supabase wystarczy do testów; na produkcji rozważ **własny SMTP** (*Authentication* → *SMTP Settings*).
+
+### K.06 — SQL pod przycisk „Akceptuj” (warsztat + właściciel Auth)
+
+- **Minimum:** wykonaj w *SQL Editor* łańcuch migracji z sekcji **„Kolejność uruchamiania (zalecana)”** (poniżej) **od początku listy „Wymagane”** aż do pliku **`supabase/sql/supabase-15-workshop-owner-access.sql`** (w kolejności zależności z tej sekcji — m.in. przed 15 muszą być 00–14 i odpowiednia kolejność względem pliku 11).
+- Ten plik definiuje m.in. **`admin_approve_workshop_lead(p_lead_id, p_owner_user_id)`** — bez niego aplikacja nie dokończy tworzenia warsztatu po stronie bazy.
+
+### K.07 — Szybka weryfikacja (akceptacja zgłoszenia z e-mailem warsztatu)
+
+1. Są ustawione **K.01–K.03**, zrestartowany dev / deploy.
+2. W Auth dopisane **Redirect URL** dla `/auth/callback` (K.05).
+3. W bazie wgrany łańcug SQL **do migracji 15** (K.06).
+4. W panelu `/admin` → *Zgłoszenia warsztatowe* → *Akceptuj*: backend (`app/api/admin/approve-workshop-lead/route.ts`) z **service role** szuka użytkownika Auth po e-mailu; jeśli **nie ma** — wywołuje **`inviteUserByEmail`** (link ustawienia hasła); jeśli **jest** — **`resetPasswordForEmail`** z kluczem anon. Potem z Twoją sesją admina wywoływane jest RPC **`admin_approve_workshop_lead`**, które tworzy warsztat i przypisuje **`owner_id`**.
+
+Jeśli brakuje tylko K.03, API zwraca **503** z czytelną listą brakujących zmiennych (komunikat z `describeMissingEnvForAdminSupabaseApis` w `lib/supabaseAdmin.ts`).
 
 ## Kolejność uruchamiania (zalecana)
 
@@ -46,9 +103,7 @@ Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, 
 
 ### Opcjonalne / testowe
 
-18. `supabase/sql/supabase-10-seed-test-workshop-lead.sql`
-
-> Plik 10 dodaje funkcję testową do szybkiego tworzenia przykładowego zgłoszenia warsztatu z panelu admina (krok 18 w kolejności).
+- **Opc. 1** — `supabase/sql/supabase-10-seed-test-workshop-lead.sql` — funkcja testowa do szybkiego tworzenia przykładowego zgłoszenia warsztatu z panelu admina. Uruchom **po** wymaganym łańcuchu (gdy reszta schematu już jest na bazie); nie jest konieczny do produkcji.
 
 ## Mapa tabel ServyGo
 
@@ -61,7 +116,6 @@ Pliki w katalogu głównym (`SQL_DLA_SUPABASE.sql`, `supabase-admin-users.sql`, 
 - `workshop_availability_exceptions` — wyjątki dostępności na konkretne dni (`date`, `is_closed`, `open_time`, `close_time`, `note`).
 - `service_requests` — zapytania klientów o usługę.
 - `bookings` — rezerwacje terminów; po migracji 18: `booking_date`, `start_time`, `end_time`, `duration_minutes`, `employee_id`, dane klienta/auta + statusy operacyjne (`new`, `confirmed`, `cancelled`, `rejected`, `done`).
-- `cars` — auta użytkowników.
 - `cars` — auta użytkowników (po migracji 20 także: `vin`, `city`; nadal wiele aut na użytkownika + jedno opcjonalne `is_primary`).
 - `analytics_events` — zdarzenia analityczne (np. `page_view`, `search_submit`, `workshop_click`, `booking_start`, `booking_confirm`) wykorzystywane przez dashboard admina.
 
@@ -80,7 +134,7 @@ Alternatywnie SQL (manualnie):
 
 1. Wyślij zgłoszenie z `/dodaj-warsztat` (status `pending` w `workshop_leads`).
 2. Otwórz `/admin` → `Zgłoszenia warsztatów` — widać realne rekordy z bazy.
-3. `Akceptuj` — API serwera tworzy/zaprasza konto Auth, powstaje wiersz w `workshops` z `owner_id` (status `active`), usługi trafiają do `workshop_services`, lead `approved` (wymaga migracji 15 i `SUPABASE_SERVICE_ROLE_KEY` na hostingu).
+3. `Akceptuj` — API serwera tworzy/zaprasza konto Auth, powstaje wiersz w `workshops` z `owner_id` (status `active`), usługi trafiają do `workshop_services`, lead `approved` (wymaga migracji 15 i `SUPABASE_SERVICE_ROLE_KEY` na hostingu). **Krok po kroku konfiguracja:** punkty **K.01–K.07** na początku tego pliku.
 4. Otwórz `/oferty` i `/warsztat/{uuid}` — widać tylko warsztaty ze statusem `active` (po migracji 14).
 5. `Odrzuć` / `Zarchiwizuj` — odpowiednie statusy leada, bez usuwania rekordu.
 

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   createSupabaseServiceRoleClient,
   createSupabaseUserClientFromAccessToken,
+  describeMissingEnvForAdminSupabaseApis,
 } from "@/lib/supabaseAdmin";
 import {
   findAuthUserIdByEmail,
@@ -26,7 +27,12 @@ export async function POST(request: Request) {
   const adminClient = createSupabaseServiceRoleClient();
   if (!userClient || !adminClient) {
     return NextResponse.json(
-      { error: "Brak konfiguracji Supabase (URL/klucze) lub SUPABASE_SERVICE_ROLE_KEY po stronie serwera." },
+      {
+        error: describeMissingEnvForAdminSupabaseApis({
+          hasUserClient: Boolean(userClient),
+          hasAdminClient: Boolean(adminClient),
+        }),
+      },
       { status: 503 },
     );
   }

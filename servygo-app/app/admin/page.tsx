@@ -892,9 +892,12 @@ export default function AdminPage() {
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Nie udało się zaakceptować zgłoszenia.";
-      setLeadsError(
-        `${msg} W Supabase uruchom m.in. supabase-15-workshop-owner-access.sql oraz ustaw zmienną SUPABASE_SERVICE_ROLE_KEY na serwerze aplikacji (bez prefiksu NEXT_PUBLIC).`,
-      );
+      const sqlHint =
+        /SUPABASE|konfigurac|zmienne|service_role|503|Brakuje zmiennych/i.test(msg) &&
+        !/supabase-15-workshop-owner-access/i.test(msg)
+          ? " Jeśli migracja nie była uruchomiona: w Supabase SQL Editor wykonaj plik supabase/sql/supabase-15-workshop-owner-access.sql (patrz SUPABASE_SQL_INSTRUKCJA.md)."
+          : "";
+      setLeadsError(`${msg}${sqlHint}`);
     } finally {
       setSavingId(null);
     }

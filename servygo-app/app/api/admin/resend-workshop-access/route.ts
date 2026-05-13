@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   createSupabaseServiceRoleClient,
   createSupabaseUserClientFromAccessToken,
+  describeMissingEnvForAdminSupabaseApis,
 } from "@/lib/supabaseAdmin";
 import { requireAdminFromAccessToken } from "@/lib/serverAdminAuth";
 import { getSiteOriginFromRequest } from "@/lib/siteOrigin";
@@ -22,7 +23,12 @@ export async function POST(request: Request) {
   const serviceAdmin = createSupabaseServiceRoleClient();
   if (!userClient || !serviceAdmin) {
     return NextResponse.json(
-      { error: "Brak konfiguracji Supabase lub SUPABASE_SERVICE_ROLE_KEY." },
+      {
+        error: describeMissingEnvForAdminSupabaseApis({
+          hasUserClient: Boolean(userClient),
+          hasAdminClient: Boolean(serviceAdmin),
+        }),
+      },
       { status: 503 },
     );
   }

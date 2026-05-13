@@ -7,13 +7,15 @@
 -- - zmienia RPC `admin_approve_workshop_lead`: wymaga UUID właściciela (Auth) i
 --   zapisuje go w `workshops.owner_id` przy tworzeniu warsztatu;
 -- - rozszerza `bookings`: statusy `completed`, `rejected`, opcjonalne `car_id`;
+--   przed zmianą CHECK normalizuje znane statusy legacy (np. `new`/`done`), żeby
+--   migracja nie padała na istniejących wierszach (błąd 23514);
 -- - RLS: właściciel warsztatu widzi i aktualizuje rezerwacje swojego warsztatu;
 -- - RLS: właściciel może czytać profile i auta klientów powiązanych z rezerwacją;
 -- - trigger: właściciel (bez roli admin) nie może zmieniać `status` warsztatu.
 --
 -- Jakie obiekty zmienia:
 -- - `public.workshops` (kolumna `owner_user_id`, trigger, funkcja triggera);
--- - `public.bookings` (kolumna `car_id`, constraint statusu);
+-- - `public.bookings` (kolumna `car_id`, normalizacja statusów przed CHECK, constraint statusu);
 -- - funkcja `public.admin_approve_workshop_lead(uuid, uuid)`;
 -- - polityki: `bookings_select_workshop_owner`, `bookings_update_workshop_owner`,
 --   `profiles_select_workshop_booking_counterparty`, `cars_select_workshop_booking_counterparty`.
@@ -51,6 +53,31 @@ comment on column public.workshops.owner_user_id is
 
 -- --- Rezerwacje: auto + szerszy status -----------------------------------------
 alter table public.bookings add column if not exists car_id uuid references public.cars(id) on delete set null;
+
+-- Istniejące bazy: dopasuj statusy przed nowym CHECK (np. `new`/`done` z migracji 18
+-- uruchomionej przed 15, lub inne legacy spoza listy poniżej — inaczej ADD CONSTRAINT
+-- kończy się błędem 23514 „violated by some row”).
+update public.bookings b
+set status = v.mapped
+from (
+  values
+    ('new', 'pending'),
+    ('done', 'completed'),
+    ('pending_quote', 'pending'),
+    ('quote_sent', 'confirmed'),
+    ('quote_rejected', 'rejected'),
+    ('awaiting_reschedule', 'pending'),
+    ('awaiting_quote', 'pending'),
+    ('quote_accepted', 'confirmed'),
+    ('cancelled_by_client', 'cancelled'),
+    ('cancelled_by_workshop', 'cancelled'),
+    ('cancelled_by_system', 'cancelled')
+) as v(legacy, mapped)
+where lower(trim(coalesce(b.status, ''))) = v.legacy;
+
+update public.bookings
+set status = 'pending'
+where lower(trim(coalesce(status, ''))) not in ('pending', 'confirmed', 'cancelled', 'completed', 'rejected');
 
 alter table public.bookings drop constraint if exists bookings_status_check;
 alter table public.bookings
