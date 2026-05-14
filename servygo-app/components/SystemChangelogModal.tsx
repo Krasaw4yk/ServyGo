@@ -27,6 +27,8 @@ function typeBadgeClass(type: SystemChangelogChangeType, isDark: boolean): strin
   switch (type) {
     case "new":
       return `${base} ${isDark ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`;
+    case "feature":
+      return `${base} ${isDark ? "border-violet-500/35 bg-violet-500/15 text-violet-100" : "border-violet-200 bg-violet-50 text-violet-950"}`;
     case "fix":
       return `${base} ${isDark ? "border-sky-500/35 bg-sky-500/15 text-sky-200" : "border-sky-200 bg-sky-50 text-sky-900"}`;
     case "important":

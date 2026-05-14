@@ -885,6 +885,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       },
       type: {
         new: "Nowość",
+        feature: "Funkcja",
         fix: "Poprawka",
         important: "Ważne",
         info: "Informacja",
@@ -2063,6 +2064,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       },
       type: {
         new: "New",
+        feature: "Feature",
         fix: "Fix",
         important: "Important",
         info: "Info",
@@ -3246,6 +3248,7 @@ export const translations: Record<LanguageCode, TranslationTree> = {
       },
       type: {
         new: "Новинка",
+        feature: "Функція",
         fix: "Виправлення",
         important: "Важливо",
         info: "Інформація",

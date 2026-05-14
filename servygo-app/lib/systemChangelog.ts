@@ -1,7 +1,7 @@
 import type { LanguageCode } from "@/lib/translations";
 import { supabase } from "@/lib/supabaseClient";
 
-export type SystemChangelogChangeType = "new" | "fix" | "important" | "info";
+export type SystemChangelogChangeType = "new" | "fix" | "important" | "info" | "feature";
 export type SystemChangelogAudience = "workshop" | "admin" | "all";
 
 export type SystemChangelogEntry = {
@@ -14,6 +14,29 @@ export type SystemChangelogEntry = {
 };
 
 export const SYSTEM_CHANGELOG_ENTRIES: SystemChangelogEntry[] = [
+  {
+    id: "booking-multi-services-visit-types",
+    date: "2026-05-14",
+    type: "feature",
+    audience: "all",
+    copy: {
+      pl: {
+        title: "Nowe funkcje rezerwacji i usług",
+        description:
+          "- Dodano możliwość wybierania kilku usług jednocześnie podczas rezerwacji.\n- Dodano nowy typ wizyty: rezerwacja godzinowa oraz „Zostaw auto”.",
+      },
+      en: {
+        title: "New booking and service options",
+        description:
+          "- You can now select multiple services in a single booking.\n- New visit types: hourly booking and “Leave your car at the workshop”.",
+      },
+      ua: {
+        title: "Нові можливості бронювання та послуг",
+        description:
+          "- Можна обрати кілька послуг одночасно під час запису.\n- Нові типи візиту: погодинне бронювання та «Залишити авто на СТО».",
+      },
+    },
+  },
   {
     id: "ws-mobile-sidebar",
     date: "2026-05-08",
