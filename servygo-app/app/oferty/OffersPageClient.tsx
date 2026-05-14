@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { createTranslator, LanguageCode } from "@/lib/translations";
@@ -11,6 +12,20 @@ import { fetchPublicWorkshopsAsMock, matchWorkshopServicesForVehicle } from "@/l
 import { resolveAvailableSlotsForWorkshopDay, toLocalDateKey } from "@/lib/bookingAvailability";
 import { getApproxCityCenterCoords, haversineDistanceKm } from "@/lib/offersGeo";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
+import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
+import type { VehicleTypeKey } from "@/lib/vehicleData";
+import {
+  calculateWorkshopMatch,
+  collectWorkshopOffersMatchingAnySelected,
+  decodeSelectedServicesFromQuery,
+  encodeSelectedServicesToQuery,
+  getCatalogSelectedItems,
+  getCustomSelectedItems,
+  resolveManualEntryToSelectedItem,
+  type SearchMode,
+  type SelectedServiceItem,
+  type WorkshopServiceMatchResult,
+} from "@/lib/selectedServices";
 import ServiceDifficultyBadge from "@/components/ServiceDifficultyBadge";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
@@ -28,8 +43,10 @@ const OffersLeafletMap = dynamic(() => import("@/components/offers/OffersLeaflet
 });
 
 type ViewMode = "list" | "map";
-type SortKey = "nearest" | "cheapest" | "rating" | "slot";
+type SortKey = "match" | "nearest" | "cheapest" | "rating" | "slot";
 type AvailFilter = "all" | "today" | "soon";
+
+type WorkshopListItem = MockWorkshop & { matchDetail: WorkshopServiceMatchResult };
 
 function normalizeSearchToken(value: string) {
   return value
@@ -80,6 +97,8 @@ function displayWord(raw: string) {
 }
 
 export default function OffersPageClient() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const language = useServyGoLanguage();
@@ -94,6 +113,9 @@ export default function OffersPageClient() {
   const [maxDistanceKm, setMaxDistanceKm] = useState("");
   const [serviceCategory, setServiceCategory] = useState("");
   const [availFilter, setAvailFilter] = useState<AvailFilter>("all");
+  const [selectedServiceItems, setSelectedServiceItems] = useState<SelectedServiceItem[]>([]);
+  const [searchMode, setSearchMode] = useState<SearchMode>("best_match");
+  const [fullMatchOnly, setFullMatchOnly] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -183,6 +205,17 @@ export default function OffersPageClient() {
         firstName: (params.get("firstName") ?? "").trim(),
         lastName: (params.get("lastName") ?? "").trim(),
       });
+      const vtRaw = (params.get("vehicleType") ?? "car").trim();
+      const vtKey = (["car", "motorcycle", "van"].includes(vtRaw) ? vtRaw : "car") as VehicleTypeKey;
+      const catalog = getServiceCatalogByVehicleType(vtKey);
+      setSelectedServiceItems(decodeSelectedServicesFromQuery(params, catalog));
+      const sm = (params.get("searchMode") ?? "best_match").trim();
+      setSearchMode(sm === "separate" ? "separate" : "best_match");
+      setFullMatchOnly(params.get("fullMatch") === "1");
+      const svcCsv = (params.get("services") ?? "").split(",").filter(Boolean);
+      if (svcCsv.length > 1) {
+        setSortKey("match");
+      }
     });
     return () => window.cancelAnimationFrame(frameId);
   }, []);
@@ -199,47 +232,100 @@ export default function OffersPageClient() {
   const t = useMemo(() => createTranslator(language), [language]);
   const isDark = mounted ? theme === "dark" : false;
 
+  const patchOffersQuery = useCallback(
+    (updates: Record<string, string | undefined>) => {
+      const p = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+      for (const [k, v] of Object.entries(updates)) {
+        if (v === undefined || v === "") p.delete(k);
+        else p.set(k, v);
+      }
+      router.replace(`${pathname}?${p.toString()}`);
+    },
+    [pathname, router],
+  );
+
   const cityCenter = useMemo(
     () => getApproxCityCenterCoords(queryFilters.city || queryFilters.cityLabel),
     [queryFilters.city, queryFilters.cityLabel],
   );
 
-  const exactMatches = useMemo(() => {
-    const parsedYear = Number.parseInt(queryFilters.year, 10);
-    const yearFilter = Number.isFinite(parsedYear) ? parsedYear : null;
+  const criteriaBase = useMemo(
+    () => ({
+      vehicleType: queryFilters.vehicleType,
+      brand: queryFilters.brand,
+      model: queryFilters.model,
+      year: Number.isFinite(Number.parseInt(queryFilters.year, 10))
+        ? Number.parseInt(queryFilters.year, 10)
+        : null,
+      engine: queryFilters.engine,
+      fuel: queryFilters.fuel,
+    }),
+    [queryFilters.brand, queryFilters.engine, queryFilters.fuel, queryFilters.model, queryFilters.vehicleType, queryFilters.year],
+  );
 
+  const catalogForOffersMatch = useMemo(() => {
+    const vtRaw = (queryFilters.vehicleType || "car").trim();
+    const vtKey = (["car", "motorcycle", "van"].includes(vtRaw) ? vtRaw : "car") as VehicleTypeKey;
+    return getServiceCatalogByVehicleType(vtKey);
+  }, [queryFilters.vehicleType]);
+
+  const selectedItemsForMatch = useMemo((): SelectedServiceItem[] => {
+    if (selectedServiceItems.length > 0) return selectedServiceItems;
+    const s = queryFilters.service.trim();
+    if (!s) return [];
+    return [resolveManualEntryToSelectedItem(s, catalogForOffersMatch)];
+  }, [catalogForOffersMatch, queryFilters.service, selectedServiceItems]);
+
+  const exactMatches = useMemo((): WorkshopListItem[] => {
+    const catalogNames = getCatalogSelectedItems(selectedItemsForMatch)
+      .map((i) => i.name.trim())
+      .filter(Boolean);
     return workshops
       .map((workshop) => {
         const workshopCityNorm = normalizeSearchToken(workshop.city ?? "");
-        const cityMatch =
-          !queryFilters.city || workshopCityNorm.includes(queryFilters.city);
-        if (!cityMatch) return { ...workshop, services: [] };
-        const matchingServices = matchWorkshopServicesForVehicle(workshop.services, {
-          service: queryFilters.service,
-          vehicleType: queryFilters.vehicleType,
-          brand: queryFilters.brand,
-          model: queryFilters.model,
-          year: yearFilter,
-          engine: queryFilters.engine,
-          fuel: queryFilters.fuel,
-        });
-        return { ...workshop, services: matchingServices };
+        const cityMatch = !queryFilters.city || workshopCityNorm.includes(queryFilters.city);
+        if (!cityMatch) return null;
+        const matchingServices =
+          catalogNames.length > 0
+            ? collectWorkshopOffersMatchingAnySelected(workshop.services, criteriaBase, catalogNames)
+            : matchWorkshopServicesForVehicle(workshop.services, {
+                ...criteriaBase,
+                service: selectedItemsForMatch.length > 0 ? "" : queryFilters.service,
+              });
+        if (matchingServices.length === 0) return null;
+        const matchDetail: WorkshopServiceMatchResult = calculateWorkshopMatch(
+          workshop.services,
+          criteriaBase,
+          selectedItemsForMatch,
+        );
+        return { ...workshop, services: matchingServices, matchDetail };
       })
-      .filter((workshop) => workshop.services.length > 0);
-  }, [queryFilters, workshops]);
+      .filter((row): row is WorkshopListItem => row != null);
+  }, [criteriaBase, queryFilters.city, queryFilters.service, selectedItemsForMatch, workshops]);
 
-  const cityFallbackMatches = useMemo(() => {
+  const cityFallbackMatches = useMemo((): WorkshopListItem[] => {
     if (exactMatches.length > 0 || !queryFilters.city) {
       return [];
     }
     return workshops
       .filter((workshop) => normalizeSearchToken(workshop.city ?? "").includes(queryFilters.city))
-      .map((workshop) => ({
-        ...workshop,
-        services: workshop.services.length > 0 ? [workshop.services[0]] : [],
-      }))
+      .map((workshop) => {
+        const matchingServices = workshop.services.length > 0 ? [workshop.services[0]] : [];
+        const matchDetail: WorkshopServiceMatchResult =
+          selectedItemsForMatch.length > 0
+            ? calculateWorkshopMatch(workshop.services, criteriaBase, selectedItemsForMatch)
+            : {
+                selectedCount: 0,
+                matchedCount: 0,
+                score: 0,
+                matchedServices: [],
+                missingServices: [],
+                isFullMatch: false,
+              };
+        return { ...workshop, services: matchingServices, matchDetail };
+      })
       .filter((workshop) => workshop.services.length > 0);
-  }, [exactMatches, queryFilters.city, workshops]);
+  }, [criteriaBase, exactMatches.length, queryFilters.city, selectedItemsForMatch, workshops]);
 
   const baseMatches = exactMatches.length > 0 ? exactMatches : cityFallbackMatches;
   const hasFallback = exactMatches.length === 0 && cityFallbackMatches.length > 0;
@@ -345,6 +431,7 @@ export default function OffersPageClient() {
     let rows = baseMatches.filter((w) => {
       const first = w.services[0];
       if (!first) return false;
+      if (fullMatchOnly && selectedItemsForMatch.length > 0 && !w.matchDetail.isFullMatch) return false;
       const price = priceFromFirstOffer(w);
       if (maxP != null && Number.isFinite(maxP) && price > maxP) return false;
       if (minR != null && Number.isFinite(minR) && w.rating < minR) return false;
@@ -368,6 +455,17 @@ export default function OffersPageClient() {
     const dist = (w: MockWorkshop) => haversineDistanceKm(cityCenter, { lat: w.lat, lng: w.lng });
 
     rows = [...rows].sort((a, b) => {
+      if (sortKey === "match" && selectedItemsForMatch.length > 0) {
+        const d = b.matchDetail.score - a.matchDetail.score;
+        if (d !== 0) return d;
+        const c = b.matchDetail.matchedCount - a.matchDetail.matchedCount;
+        if (c !== 0) return c;
+        const r = b.rating - a.rating || b.reviewsCount - a.reviewsCount;
+        if (r !== 0) return r;
+        const pc = priceFromFirstOffer(a) - priceFromFirstOffer(b);
+        if (pc !== 0) return pc;
+        return dist(a) - dist(b);
+      }
       if (sortKey === "cheapest") return priceFromFirstOffer(a) - priceFromFirstOffer(b);
       if (sortKey === "rating") return b.rating - a.rating || b.reviewsCount - a.reviewsCount;
       if (sortKey === "slot") {
@@ -383,7 +481,9 @@ export default function OffersPageClient() {
     baseMatches,
     availFilter,
     cityCenter,
+    fullMatchOnly,
     language,
+    selectedItemsForMatch,
     slotAvailability,
     slotsLoading,
     maxDistanceKm,
@@ -398,19 +498,27 @@ export default function OffersPageClient() {
   const buildDetailsParams = useCallback(
     (workshop: MockWorkshop) => {
       const firstOffer = workshop.services[0];
-      return new URLSearchParams({
+      const p = new URLSearchParams({
         city: queryFilters.cityLabel || queryFilters.city || workshop.city,
         service: queryFilters.service || firstOffer?.service_name || "",
+        vehicleType: queryFilters.vehicleType || "",
         brand: queryFilters.brand || firstOffer?.brand || "",
         model: queryFilters.model || firstOffer?.model || "",
         year: queryFilters.year || String(firstOffer?.year_from ?? ""),
         engine: queryFilters.engine || firstOffer?.engine || "",
+        fuel: queryFilters.fuel || "",
         vin: queryFilters.vin || "",
         firstName: queryFilters.firstName || "",
         lastName: queryFilters.lastName || "",
       });
+      if (queryFilters.problem) p.set("problem", queryFilters.problem);
+      const enc = encodeSelectedServicesToQuery(selectedServiceItems);
+      if (enc) p.set("services", enc);
+      if (searchMode === "separate") p.set("searchMode", "separate");
+      if (fullMatchOnly) p.set("fullMatch", "1");
+      return p;
     },
-    [queryFilters],
+    [fullMatchOnly, queryFilters, searchMode, selectedServiceItems],
   );
 
   const mapMarkers: OffersMapMarker[] = useMemo(() => {
@@ -462,9 +570,10 @@ export default function OffersPageClient() {
       minRating.trim() !== "" ||
       maxDistanceKm.trim() !== "" ||
       serviceCategory.trim() !== "" ||
-      availFilter !== "all"
+      availFilter !== "all" ||
+      fullMatchOnly
     );
-  }, [maxPrice, minRating, maxDistanceKm, serviceCategory, availFilter]);
+  }, [maxPrice, minRating, maxDistanceKm, serviceCategory, availFilter, fullMatchOnly]);
 
   const clearOffersFilters = useCallback(() => {
     setMaxPrice("");
@@ -472,7 +581,9 @@ export default function OffersPageClient() {
     setMaxDistanceKm("");
     setServiceCategory("");
     setAvailFilter("all");
-  }, []);
+    setFullMatchOnly(false);
+    patchOffersQuery({ fullMatch: undefined });
+  }, [patchOffersQuery]);
 
   const filterFieldClass = `rounded-lg border px-2 py-2 text-base ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`;
   const filterFieldClassSelect = `rounded-lg border px-2 py-2 text-base ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`;
@@ -517,6 +628,94 @@ export default function OffersPageClient() {
                 <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
                   {queryFilters.problem.length > 160 ? `${queryFilters.problem.slice(0, 160)}…` : queryFilters.problem}
                 </p>
+              ) : null}
+              {selectedItemsForMatch.length > 1 ? (
+                <div
+                  className={`mt-3 space-y-3 rounded-xl border px-3 py-3 text-sm ${
+                    isDark ? "border-zinc-700 bg-zinc-900/45" : "border-blue-200 bg-white/75"
+                  }`}
+                >
+                  <div className="flex flex-col gap-2">
+                    <p className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Tryb wyszukiwania</p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchMode("best_match");
+                          patchOffersQuery({ searchMode: undefined });
+                        }}
+                        className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold sm:flex-1 ${
+                          searchMode === "best_match"
+                            ? "border-blue-500 bg-blue-600 text-white"
+                            : isDark
+                              ? "border-zinc-600 text-zinc-200"
+                              : "border-zinc-300 text-zinc-800"
+                        }`}
+                      >
+                        Najlepsze dopasowanie warsztatu
+                        <span className={`mt-1 block font-normal ${searchMode === "best_match" ? "text-blue-100" : isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                          Pokażemy warsztaty, które mogą zrobić jak najwięcej wybranych usług podczas jednej wizyty.
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchMode("separate");
+                          patchOffersQuery({ searchMode: "separate" });
+                        }}
+                        className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold sm:flex-1 ${
+                          searchMode === "separate"
+                            ? "border-blue-500 bg-blue-600 text-white"
+                            : isDark
+                              ? "border-zinc-600 text-zinc-200"
+                              : "border-zinc-300 text-zinc-800"
+                        }`}
+                      >
+                        Dobierz warsztaty osobno
+                        <span className={`mt-1 block font-normal ${searchMode === "separate" ? "text-blue-100" : isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                          Sprawdź pasujące warsztaty dla każdej wybranej usługi osobno.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                  <label className={`flex cursor-pointer items-start gap-2 text-xs ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-zinc-400"
+                      checked={fullMatchOnly}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setFullMatchOnly(on);
+                        patchOffersQuery({ fullMatch: on ? "1" : undefined });
+                      }}
+                    />
+                    <span>Pokaż tylko warsztaty, które obsługują wszystko</span>
+                  </label>
+                  {searchMode === "separate" ? (
+                    <div className={`space-y-2 border-t pt-3 text-xs ${isDark ? "border-zinc-700 text-zinc-300" : "border-blue-100 text-zinc-700"}`}>
+                      {/* TODO(multi-booking): docelowy checkout wielu rezerwacji naraz — MVP: szybkie linki pod pojedyncze wyszukiwania. */}
+                      <p className="font-semibold">Usługi z Twojej listy</p>
+                      <ul className="space-y-1">
+                        {selectedItemsForMatch.map((item) => {
+                          const p = new URLSearchParams(window.location.search);
+                          p.set("services", encodeSelectedServicesToQuery([item]));
+                          p.delete("searchMode");
+                          return (
+                            <li key={item.id}>
+                              <Link
+                                href={`/oferty?${p.toString()}`}
+                                className={`font-medium underline ${isDark ? "text-blue-300" : "text-blue-700"}`}
+                              >
+                                {item.name}
+                              </Link>{" "}
+                              — zobacz warsztaty dla samej tej usługi
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : null}
@@ -605,6 +804,7 @@ export default function OffersPageClient() {
                       onChange={(e) => setSortKey(e.target.value as SortKey)}
                       className={filterFieldClassSelect}
                     >
+                      <option value="match">Dopasowanie (wiele usług)</option>
                       <option value="nearest">{t("offers.sortNearest")}</option>
                       <option value="cheapest">{t("offers.sortCheapest")}</option>
                       <option value="rating">{t("offers.sortRating")}</option>
@@ -713,6 +913,7 @@ export default function OffersPageClient() {
                     onChange={(e) => setSortKey(e.target.value as SortKey)}
                     className={`rounded-lg border px-2 py-2 text-sm ${isDark ? "border-zinc-600 bg-zinc-950 text-zinc-100" : "border-zinc-300 bg-white"}`}
                   >
+                    <option value="match">Dopasowanie (wiele usług)</option>
                     <option value="nearest">{t("offers.sortNearest")}</option>
                     <option value="cheapest">{t("offers.sortCheapest")}</option>
                     <option value="rating">{t("offers.sortRating")}</option>
@@ -901,6 +1102,44 @@ export default function OffersPageClient() {
                             <strong>{t("offers.nearestSlot")}:</strong> {firstOffer.next_available}
                           </p>
                         </div>
+                        {selectedItemsForMatch.length > 0 && workshop.matchDetail.selectedCount > 0 ? (
+                          <div
+                            className={`mt-2 rounded-lg border px-2 py-2 text-[11px] leading-snug ${
+                              isDark ? "border-zinc-600 bg-zinc-950/60" : "border-zinc-200 bg-slate-50"
+                            }`}
+                          >
+                            <p className="font-semibold">
+                              {workshop.matchDetail.matchedCount}/{workshop.matchDetail.selectedCount} usług ·{" "}
+                              {workshop.matchDetail.isFullMatch
+                                ? "Pełne dopasowanie"
+                                : `Częściowe dopasowanie · obsługuje ${workshop.matchDetail.matchedCount} z ${workshop.matchDetail.selectedCount}`}
+                            </p>
+                            {workshop.matchDetail.matchedServices.length > 0 ? (
+                              <p className="mt-1">
+                                <span className="font-medium">Obsługiwane z Twojej listy:</span>{" "}
+                                {workshop.matchDetail.matchedServices.map((s) => s.name).join(", ")}
+                              </p>
+                            ) : null}
+                            {workshop.matchDetail.missingServices.length > 0 ? (
+                              <p className={`mt-1 ${isDark ? "text-orange-200" : "text-orange-800"}`}>
+                                <span className="font-medium">Brakujące usługi:</span>{" "}
+                                {workshop.matchDetail.missingServices.map((s) => s.name).join(", ")}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {getCustomSelectedItems(selectedItemsForMatch).length > 0 ? (
+                          <p
+                            className={`mt-2 rounded-lg border px-2 py-2 text-[11px] leading-snug ${
+                              isDark ? "border-zinc-600 bg-zinc-950/50 text-zinc-300" : "border-zinc-200 bg-white/90 text-zinc-700"
+                            }`}
+                          >
+                            <span className="font-semibold">Dodatkowy opis z koszyka:</span>{" "}
+                            {getCustomSelectedItems(selectedItemsForMatch)
+                              .map((c) => c.name)
+                              .join(", ")}
+                          </p>
+                        ) : null}
                         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                           <Link
                             href={detailsHref}

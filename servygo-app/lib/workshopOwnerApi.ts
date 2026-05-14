@@ -46,6 +46,9 @@ export type WorkshopOwnerBookingRow = {
   notes?: string | null;
   problem_description?: string | null;
   service_category?: string | null;
+  selected_services?: unknown;
+  search_mode?: string | null;
+  booking_type?: string | null;
   client_name?: string | null;
   client_email?: string | null;
   client_phone?: string | null;
@@ -272,6 +275,9 @@ export async function listBookingsForWorkshopOwner(
         "vehicle_data",
         "notes",
         "problem_description",
+        "selected_services",
+        "search_mode",
+        "booking_type",
         "client_name",
         "client_email",
         "client_phone",

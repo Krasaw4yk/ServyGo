@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
 import type { MockWorkshop } from "@/lib/mockWorkshops";
+import { DROPOFF_CALENDAR_SLOT_MINUTES, type BookingSlotMode } from "@/lib/bookingVisitKind";
 import { parseOpeningSchedule } from "@/lib/workshopOwnerApi";
 
 function pad2(v: number) {
@@ -37,6 +38,8 @@ type SlotArgs = {
   serviceDurationMinutes: number;
   employeeId?: string | null;
   requiredRoles?: string[];
+  /** Domyślnie `exact_time` — sloty kończą się tak, by zmieścić czas usługi przed zamknięciem. */
+  slotMode?: BookingSlotMode;
 };
 
 /** Bloki zajętości z RPC (bez PII klienta). */
@@ -69,11 +72,12 @@ function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number) {
 export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
   if (!supabase) throw new Error("Supabase client not available.");
 
+  const slotMode: BookingSlotMode = args.slotMode ?? "exact_time";
   const rawDur = args.serviceDurationMinutes;
-  const duration = Math.max(
-    1,
-    Number.isFinite(rawDur) && rawDur != null ? Math.floor(Number(rawDur)) : 60,
-  );
+  const duration =
+    slotMode === "dropoff"
+      ? Math.max(1, DROPOFF_CALENDAR_SLOT_MINUTES)
+      : Math.max(1, Number.isFinite(rawDur) && rawDur != null ? Math.floor(Number(rawDur)) : 60);
 
   const [{ data: workshop, error: workshopError }, { data: exceptionRow, error: exceptionError }] =
     await Promise.all([
@@ -147,10 +151,18 @@ export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
   if (candidateEmployees.length === 0) {
     const globalBusy = blocks.map((b) => ({ start: b.start_mins, end: b.end_mins }));
     const slots: string[] = [];
-    for (let t = openMins; t + duration <= closeMins; t += 30) {
-      const end = t + duration;
-      const free = !globalBusy.some((it) => overlaps(t, end, it.start, it.end));
-      if (free) slots.push(hhmmFromMinutes(t));
+    if (slotMode === "dropoff") {
+      for (let t = openMins; t <= closeMins; t += 30) {
+        const end = t + duration;
+        const free = !globalBusy.some((it) => overlaps(t, end, it.start, it.end));
+        if (free) slots.push(hhmmFromMinutes(t));
+      }
+    } else {
+      for (let t = openMins; t + duration <= closeMins; t += 30) {
+        const end = t + duration;
+        const free = !globalBusy.some((it) => overlaps(t, end, it.start, it.end));
+        if (free) slots.push(hhmmFromMinutes(t));
+      }
     }
     return slots;
   }
@@ -172,13 +184,24 @@ export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
   }
 
   const slots: string[] = [];
-  for (let t = openMins; t + duration <= closeMins; t += 30) {
-    const end = t + duration;
-    const hasEmployee = candidateEmployees.some((employeeId) => {
-      const intervals = intervalsByEmployee.get(employeeId) ?? [];
-      return !intervals.some((it) => overlaps(t, end, it.start, it.end));
-    });
-    if (hasEmployee) slots.push(hhmmFromMinutes(t));
+  if (slotMode === "dropoff") {
+    for (let t = openMins; t <= closeMins; t += 30) {
+      const end = t + duration;
+      const hasEmployee = candidateEmployees.some((employeeId) => {
+        const intervals = intervalsByEmployee.get(employeeId) ?? [];
+        return !intervals.some((it) => overlaps(t, end, it.start, it.end));
+      });
+      if (hasEmployee) slots.push(hhmmFromMinutes(t));
+    }
+  } else {
+    for (let t = openMins; t + duration <= closeMins; t += 30) {
+      const end = t + duration;
+      const hasEmployee = candidateEmployees.some((employeeId) => {
+        const intervals = intervalsByEmployee.get(employeeId) ?? [];
+        return !intervals.some((it) => overlaps(t, end, it.start, it.end));
+      });
+      if (hasEmployee) slots.push(hhmmFromMinutes(t));
+    }
   }
   return slots;
 }

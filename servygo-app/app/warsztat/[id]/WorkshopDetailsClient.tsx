@@ -3,19 +3,31 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useIsClient } from "@/lib/useIsClient";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
-import type { MockWorkshop } from "@/lib/mockWorkshops";
+import type { MockWorkshop, WorkshopServiceOffer } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopByIdAsMock, matchWorkshopServicesForVehicle } from "@/lib/publicWorkshopsFromDb";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { sendSystemMessage } from "@/lib/messagesApi";
 import { createTranslator } from "@/lib/translations";
 import { useServyGoLanguage } from "@/lib/useServyGoLanguage";
+import { BOOKING_PHONE_SCOPE_NOTICE } from "@/lib/bookingComplianceCopy";
 import { getAvailableSlots, inferEndTime } from "@/lib/bookingAvailability";
+import { BOOKING_TYPE_DROPOFF, BOOKING_TYPE_EXACT_TIME, type BookingSlotMode } from "@/lib/bookingVisitKind";
 import { trackEvent } from "@/lib/analytics";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
+import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
+import {
+  buildServiceSummary,
+  collectWorkshopOffersMatchingAnySelected,
+  decodeSelectedServicesFromQuery,
+  getCatalogSelectedItems,
+  getCustomSelectedItems,
+  getSelectedServiceNames,
+  selectedItemsToSummary,
+} from "@/lib/selectedServices";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 import ServiceDifficultyBadge from "@/components/ServiceDifficultyBadge";
 import WorkshopFavoriteToggle from "@/components/WorkshopFavoriteToggle";
@@ -62,6 +74,29 @@ function normalizeServiceQuery(value: string) {
   return normalizeText(value).replace(/[-_]+/g, " ");
 }
 
+/** Stabilny klucz oferty warsztatu do multi-selectu (id z bazy albo skład z pól). */
+function workshopOfferStableKey(service: WorkshopServiceOffer): string {
+  if (service.id != null && String(service.id).trim() !== "") return `id:${String(service.id)}`;
+  return `rk:${service.service_name}|${service.brand}|${service.model}|${service.engine}|${service.year_from}|${service.year_to}`;
+}
+
+function offerMatchesCatalogName(offer: WorkshopServiceOffer, catalogOrLegacyName: string): boolean {
+  const needle = normalizeServiceQuery(catalogOrLegacyName);
+  if (!needle) return false;
+  const hay = normalizeServiceQuery(offer.service_name);
+  return hay === needle || hay.includes(needle) || needle.includes(hay);
+}
+
+function formatVisitDurationPl(totalMinutes: number): string {
+  const t = Math.max(0, Math.round(Number(totalMinutes) || 0));
+  if (t <= 0) return "około 60 min";
+  const h = Math.floor(t / 60);
+  const m = t % 60;
+  if (h === 0) return `około ${m} min`;
+  if (m === 0) return `około ${h} godz.`;
+  return `około ${h} godz. ${m} min`;
+}
+
 function formatPriceRange(priceFrom?: number | null, priceTo?: number | null, fallback?: number) {
   if (priceFrom != null && priceTo != null && priceTo >= priceFrom) return `${priceFrom}-${priceTo} zł`;
   if (priceFrom != null) return `od ${priceFrom} zł`;
@@ -84,7 +119,8 @@ function WorkshopDetailsPageContent() {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [selectedDateKey, setSelectedDateKey] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
-  const [selectedServiceKey, setSelectedServiceKey] = useState("");
+  const [visitKind, setVisitKind] = useState<BookingSlotMode>(BOOKING_TYPE_EXACT_TIME);
+  const [selectedWorkshopOfferKeys, setSelectedWorkshopOfferKeys] = useState<string[]>([]);
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -337,7 +373,6 @@ function WorkshopDetailsPageContent() {
   const t = useMemo(() => createTranslator(language), [language]);
   const isDark = mounted ? theme === "dark" : false;
 
-  const requestedService = normalizeServiceQuery(searchParams.get("service") ?? "");
   const backToOffersHref = useMemo(() => {
     const query = searchParams.toString();
     return query ? `/oferty?${query}` : "/oferty";
@@ -364,6 +399,50 @@ function WorkshopDetailsPageContent() {
   );
   const problemFromSearch = useMemo(() => (searchParams.get("problem") ?? "").trim(), [searchParams]);
 
+  const selectedServiceItems = useMemo(() => {
+    const vtRaw = (searchParams.get("vehicleType") ?? "car").trim();
+    const vtKey = (["car", "motorcycle", "van"].includes(vtRaw) ? vtRaw : "car") as VehicleTypeKey;
+    const catalog = getServiceCatalogByVehicleType(vtKey);
+    return decodeSelectedServicesFromQuery(new URLSearchParams(searchParams.toString()), catalog);
+  }, [searchParams]);
+
+  const requestedServiceNames = useMemo(() => {
+    const fromItems = getSelectedServiceNames(selectedServiceItems);
+    if (fromItems.length > 0) return fromItems;
+    const legacy = (searchParams.get("service") ?? "").trim();
+    return legacy ? [legacy] : [];
+  }, [searchParams, selectedServiceItems]);
+
+  const requestedCatalogServiceNames = useMemo(
+    () => getSelectedServiceNames(getCatalogSelectedItems(selectedServiceItems)),
+    [selectedServiceItems],
+  );
+
+  const vehicleMatchCriteria = useMemo(
+    () => ({
+      vehicleType: selectedVehicle.vehicleType,
+      brand: selectedVehicle.brand,
+      model: selectedVehicle.model,
+      year: Number.isFinite(selectedVehicle.year) ? selectedVehicle.year : null,
+      engine: selectedVehicle.engine,
+      fuel: selectedVehicle.fuel,
+    }),
+    [
+      selectedVehicle.brand,
+      selectedVehicle.engine,
+      selectedVehicle.fuel,
+      selectedVehicle.model,
+      selectedVehicle.vehicleType,
+      selectedVehicle.year,
+    ],
+  );
+
+  const serviceSummaryLabel = useMemo(() => {
+    if (selectedServiceItems.length > 0) return selectedItemsToSummary(selectedServiceItems);
+    const raw = (searchParams.get("service") ?? "").trim();
+    return raw || "";
+  }, [searchParams, selectedServiceItems]);
+
   const workshopDetailHref = useMemo(() => {
     const q = searchParams.toString();
     const id = workshop?.id ?? "";
@@ -373,8 +452,21 @@ function WorkshopDetailsPageContent() {
 
   const filteredServices = useMemo(() => {
     if (!workshop) return [];
+    if (requestedCatalogServiceNames.length > 0) {
+      return collectWorkshopOffersMatchingAnySelected(
+        workshop.services,
+        vehicleMatchCriteria,
+        requestedCatalogServiceNames,
+      );
+    }
+    if (getSelectedServiceNames(selectedServiceItems).length > 0) {
+      return matchWorkshopServicesForVehicle(workshop.services, {
+        ...vehicleMatchCriteria,
+        service: "",
+      });
+    }
     return matchWorkshopServicesForVehicle(workshop.services, {
-      service: requestedService,
+      service: normalizeServiceQuery(searchParams.get("service") ?? ""),
       vehicleType: selectedVehicle.vehicleType,
       brand: selectedVehicle.brand,
       model: selectedVehicle.model,
@@ -383,40 +475,121 @@ function WorkshopDetailsPageContent() {
       fuel: selectedVehicle.fuel,
     });
   }, [
-    requestedService,
+    requestedCatalogServiceNames,
+    selectedServiceItems,
+    searchParams,
     selectedVehicle.brand,
     selectedVehicle.engine,
     selectedVehicle.fuel,
     selectedVehicle.model,
     selectedVehicle.vehicleType,
     selectedVehicle.year,
+    vehicleMatchCriteria,
     workshop,
   ]);
 
-  const defaultService = useMemo(() => {
-    if (!workshop) return null;
-    if (!requestedService) return filteredServices[0] ?? null;
-    return (
-      filteredServices.find((service) =>
-        normalizeServiceQuery(service.service_name).includes(requestedService),
-      ) ??
-      filteredServices[0] ??
-      null
-    );
-  }, [filteredServices, requestedService, workshop]);
+  const urlSelectionPreset = useMemo((): string[] => {
+    if (!workshop) return [];
+    if (requestedCatalogServiceNames.length > 0) {
+      const out: string[] = [];
+      for (const s of filteredServices) {
+        if (requestedCatalogServiceNames.some((n) => offerMatchesCatalogName(s, n))) {
+          out.push(workshopOfferStableKey(s));
+        }
+      }
+      return [...new Set(out)];
+    }
+    const legacy = (searchParams.get("service") ?? "").trim();
+    if (legacy) {
+      const out: string[] = [];
+      for (const s of filteredServices) {
+        if (offerMatchesCatalogName(s, legacy)) out.push(workshopOfferStableKey(s));
+      }
+      return [...new Set(out)];
+    }
+    if (filteredServices.length > 0) return [workshopOfferStableKey(filteredServices[0]!)];
+    return [];
+  }, [filteredServices, requestedCatalogServiceNames, searchParams, workshop]);
 
-  const selectedService = useMemo(() => {
-    if (!workshop) return null;
-    if (!selectedServiceKey) return defaultService;
-    return (
-      filteredServices.find(
-        (service) =>
-          `${service.service_name}-${service.brand}-${service.model}-${service.engine}` ===
-          selectedServiceKey,
-      ) ??
-      defaultService
-    );
-  }, [defaultService, filteredServices, selectedServiceKey, workshop]);
+  const urlPresetSerialized = useMemo(() => urlSelectionPreset.slice().sort().join("\u0001"), [urlSelectionPreset]);
+
+  const urlSelectionAppliedRef = useRef("");
+  useEffect(() => {
+    const marker = `${workshop?.id ?? ""}|${searchParams.toString()}|${urlPresetSerialized}`;
+    if (urlSelectionAppliedRef.current === marker) return;
+    urlSelectionAppliedRef.current = marker;
+    setSelectedWorkshopOfferKeys([...urlSelectionPreset]);
+  }, [workshop?.id, searchParams, urlPresetSerialized, urlSelectionPreset]);
+
+  const selectedWorkshopOffers = useMemo(() => {
+    const wanted = new Set(selectedWorkshopOfferKeys);
+    return filteredServices.filter((s) => wanted.has(workshopOfferStableKey(s)));
+  }, [filteredServices, selectedWorkshopOfferKeys]);
+
+  const bookingBundle = useMemo(() => {
+    if (!workshop) {
+      return { durationMinutes: 60, requiredRoles: [] as string[], primaryServiceId: null as string | null };
+    }
+    if (selectedWorkshopOffers.length === 0) {
+      return { durationMinutes: 60, requiredRoles: [] as string[], primaryServiceId: null as string | null };
+    }
+    let total = 0;
+    const roles = new Set<string>();
+    let primaryServiceId: string | null = null;
+    for (const offer of selectedWorkshopOffers) {
+      const d = offer.duration_minutes;
+      total += Number.isFinite(d) && d > 0 ? d : 60;
+      if (!primaryServiceId && offer.id != null && String(offer.id).trim()) primaryServiceId = String(offer.id);
+      for (const r of offer.required_roles ?? []) roles.add(String(r));
+    }
+    return {
+      durationMinutes: Math.max(60, total),
+      requiredRoles: Array.from(roles),
+      primaryServiceId,
+    };
+  }, [workshop, selectedWorkshopOffers]);
+
+  const partialCoverage = useMemo(() => {
+    const y = requestedCatalogServiceNames.length;
+    if (y === 0) return null as { matched: number; total: number; missing: string[] } | null;
+    const missing: string[] = [];
+    let matched = 0;
+    for (const name of requestedCatalogServiceNames) {
+      if (filteredServices.some((s) => offerMatchesCatalogName(s, name))) matched += 1;
+      else missing.push(name);
+    }
+    return { matched, total: y, missing };
+  }, [filteredServices, requestedCatalogServiceNames]);
+
+  const bookingServicesSummaryLine = useMemo(() => {
+    const names = selectedWorkshopOffers.map((o) => o.service_name.trim()).filter(Boolean);
+    if (names.length > 0) return buildServiceSummary(names);
+    return serviceSummaryLabel.trim();
+  }, [selectedWorkshopOffers, serviceSummaryLabel]);
+
+  const bookingSelectedServicesPayload = useMemo(() => {
+    const fromWorkshop = selectedWorkshopOffers.map((o) => ({
+      id: o.id ? String(o.id) : "",
+      name: o.service_name.trim(),
+      source: "catalog" as const,
+    }));
+    return [...fromWorkshop, ...getCustomSelectedItems(selectedServiceItems)];
+  }, [selectedServiceItems, selectedWorkshopOffers]);
+
+  const visitDurationBreakdown = useMemo(() => {
+    if (selectedWorkshopOffers.length === 0) return "";
+    const parts = selectedWorkshopOffers.map((o) => {
+      const raw = o.duration_minutes;
+      const has = Number.isFinite(raw) && raw > 0;
+      const m = has ? raw : 60;
+      return has ? `${o.service_name} ${m} min` : `${o.service_name} (czas orientacyjny, ${m} min)`;
+    });
+    const sumRaw = selectedWorkshopOffers.reduce((acc, o) => {
+      const d = o.duration_minutes;
+      return acc + (Number.isFinite(d) && d > 0 ? d : 60);
+    }, 0);
+    return `${parts.join(" + ")} = ${sumRaw} min`;
+  }, [selectedWorkshopOffers]);
 
   const locale = language === "ua" ? "uk-UA" : language === "en" ? "en-US" : "pl-PL";
   const monthTitle = useMemo(
@@ -452,7 +625,7 @@ function WorkshopDetailsPageContent() {
   const [calendarDaySlots, setCalendarDaySlots] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    if (!workshop || !selectedService) {
+    if (!workshop || selectedWorkshopOffers.length === 0) {
       queueMicrotask(() => setCalendarDaySlots({}));
       return;
     }
@@ -469,9 +642,10 @@ function WorkshopDetailsPageContent() {
             const slots = await getAvailableSlots({
               workshopId: workshop.supabaseId,
               date: day.key,
-              serviceDurationMinutes: selectedService.duration_minutes ?? 60,
+              serviceDurationMinutes: bookingBundle.durationMinutes,
               employeeId: selectedEmployeeId === "any" ? null : selectedEmployeeId,
-              requiredRoles: selectedService.required_roles ?? [],
+              requiredRoles: bookingBundle.requiredRoles,
+              slotMode: visitKind,
             });
             return [day.key, slots] as const;
           } catch {
@@ -485,7 +659,16 @@ function WorkshopDetailsPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [calendarGrid, selectedEmployeeId, selectedService, todayStart, workshop]);
+  }, [
+    bookingBundle.durationMinutes,
+    bookingBundle.requiredRoles,
+    calendarGrid,
+    selectedEmployeeId,
+    selectedWorkshopOffers.length,
+    todayStart,
+    visitKind,
+    workshop,
+  ]);
 
   const firstAvailableDateKey = useMemo(() => {
     const firstAvailable = calendarGrid.find((day) => {
@@ -513,26 +696,25 @@ function WorkshopDetailsPageContent() {
   }, [calendarDaySlots, effectiveDateKey, selectedDayDate, todayStart]);
 
   const dynamicAvailableTimes = useMemo(() => {
-    if (!workshop || !selectedService || !effectiveDateKey || isSelectedDayClosed) return [];
+    if (!workshop || selectedWorkshopOffers.length === 0 || !effectiveDateKey || isSelectedDayClosed) return [];
     return calendarDaySlots[effectiveDateKey] ?? [];
-  }, [calendarDaySlots, effectiveDateKey, isSelectedDayClosed, selectedService, workshop]);
+  }, [calendarDaySlots, effectiveDateKey, isSelectedDayClosed, selectedWorkshopOffers.length, workshop]);
 
   const effectiveSelectedTime =
     selectedTime && dynamicAvailableTimes.includes(selectedTime) ? selectedTime : "";
 
   const arrivalTime = effectiveSelectedTime;
   const pickupTime =
-    selectedService && effectiveSelectedTime
-      ? inferEndTime(
-          effectiveSelectedTime,
-          (selectedService.duration_minutes ?? 60) + (workshop?.bufferMinutes ?? 0),
-        )
+    visitKind === BOOKING_TYPE_EXACT_TIME &&
+    selectedWorkshopOffers.length > 0 &&
+    effectiveSelectedTime
+      ? inferEndTime(effectiveSelectedTime, bookingBundle.durationMinutes + (workshop?.bufferMinutes ?? 0))
       : "";
 
   async function handleBookingConfirm() {
     if (!workshop) return;
     if (!isLoggedIn || !currentUserId || !supabase || !isSupabaseConfigured) return;
-    if (!effectiveDateKey || !effectiveSelectedTime || !selectedService) return;
+    if (!effectiveDateKey || !effectiveSelectedTime || selectedWorkshopOffers.length === 0) return;
     if (!hasAcceptedPricingAndLiabilityNotice && !pricingLiabilityNoticeAccepted) {
       setBookingError(t("legal.booking.requiredError"));
       return;
@@ -588,9 +770,10 @@ function WorkshopDetailsPageContent() {
       const slots = await getAvailableSlots({
         workshopId: workshop.supabaseId,
         date: effectiveDateKey,
-        serviceDurationMinutes: selectedService.duration_minutes ?? 60,
+        serviceDurationMinutes: bookingBundle.durationMinutes,
         employeeId: selectedEmployeeId === "any" ? null : selectedEmployeeId,
-        requiredRoles: selectedService.required_roles ?? [],
+        requiredRoles: bookingBundle.requiredRoles,
+        slotMode: visitKind,
       });
       if (!slots.includes(effectiveSelectedTime)) {
         throw new Error("SLOT_TAKEN");
@@ -600,13 +783,32 @@ function WorkshopDetailsPageContent() {
         (vtKey && vehicleTypeOptions.some((x) => x.key === vtKey)
           ? vehicleTypeOptions.find((x) => x.key === vtKey)?.label
           : null) ?? (selectedVehicle.vehicleType ? selectedVehicle.vehicleType : null);
-      const categoryGuess = classifyServiceCategory(selectedService.service_name).category?.trim() ?? "";
+      const serviceLineForRpc =
+        bookingServicesSummaryLine.trim() ||
+        selectedWorkshopOffers[0]?.service_name?.trim() ||
+        serviceSummaryLabel.trim() ||
+        "Wizyta";
+      const categorySource =
+        selectedWorkshopOffers[0]?.service_name?.trim() ?? requestedServiceNames[0] ?? serviceLineForRpc;
+      const categoryGuess = classifyServiceCategory(categorySource).category?.trim() ?? "";
+      const scopeDescription =
+        selectedWorkshopOffers.length > 1
+          ? `Zakres wizyty: ${bookingServicesSummaryLine}`
+          : selectedWorkshopOffers.length === 1
+            ? `Usługa: ${selectedWorkshopOffers[0]!.service_name}`
+            : `Zakres wizyty: ${serviceLineForRpc}`;
+      const visitKindLine =
+        visitKind === BOOKING_TYPE_DROPOFF
+          ? "Typ wizyty: zostaw auto (godzina = dostarczenie pojazdu)."
+          : "Typ wizyty: rezerwacja godzinowa.";
 
       const { data: bookingId, error } = await supabase.rpc("create_booking_safe", {
         p_workshop_id: workshop.supabaseId,
         p_user_id: currentUserId,
-        p_service_id: selectedService.id ?? null,
-        p_service_name: selectedService.service_name,
+        p_service_id:
+          (bookingBundle.primaryServiceId as string | null) ??
+          (selectedWorkshopOffers[0]?.id ? String(selectedWorkshopOffers[0].id) : null),
+        p_service_name: serviceLineForRpc,
         p_vehicle_data: {
           vehicle_type: selectedVehicle.vehicleType || null,
           vehicle_type_label: vehicleTypeLabel,
@@ -621,7 +823,7 @@ function WorkshopDetailsPageContent() {
         },
         p_booking_date: effectiveDateKey,
         p_start_time: effectiveSelectedTime,
-        p_duration_minutes: selectedService.duration_minutes ?? 60,
+        p_duration_minutes: bookingBundle.durationMinutes,
         p_client_name: [selectedClient.firstName, selectedClient.lastName].filter(Boolean).join(" ").trim(),
         p_client_email: "",
         p_client_phone: "",
@@ -629,6 +831,7 @@ function WorkshopDetailsPageContent() {
         p_problem_description: problemFromSearch || null,
         p_service_category: categoryGuess || null,
         p_employee_id: selectedEmployeeId === "any" ? null : selectedEmployeeId,
+        p_booking_type: visitKind,
       });
       if (error) throw error;
       const { data: ownerRow } = await supabase
@@ -638,15 +841,44 @@ function WorkshopDetailsPageContent() {
         .maybeSingle();
       const ownerUserId = ((ownerRow as { owner_id?: string | null } | null)?.owner_id ?? null) as string | null;
       const bookingIdValue = typeof bookingId === "string" ? bookingId : null;
+      if (bookingIdValue) {
+        const sm = searchParams.get("searchMode") === "separate" ? "separate" : "best_match";
+        const payload =
+          bookingSelectedServicesPayload.length > 0
+            ? bookingSelectedServicesPayload
+            : [{ id: "", name: serviceLineForRpc }];
+        /*
+         * TODO: Rozszerzyć RPC `create_booking_safe` o `p_selected_services` / `p_search_mode` (jedna transakcja),
+         * albo potwierdzić politykę RLS `bookings` dla klienta — ten `update` po utworzeniu może się nie powieść
+         * bez jawnego błędu w UI.
+         */
+        void supabase
+          .from("bookings")
+          .update({ selected_services: payload as unknown[], search_mode: sm })
+          .eq("id", bookingIdValue)
+          .then(({ error: updErr }) => {
+            if (updErr) console.warn("[booking] Aktualizacja selected_services/search_mode nie powiodła się:", updErr.message);
+          });
+      }
+      const dropoffNote =
+        visitKind === BOOKING_TYPE_DROPOFF
+          ? [
+              "Przewidywany czas realizacji: 1–2 dni robocze (orientacyjnie).",
+              "Warsztat poinformuje Cię, gdy auto będzie gotowe.",
+            ]
+          : [];
       const notificationTasks = [
         sendSystemMessage({
           recipientId: ownerUserId,
           recipientRole: "workshop",
-          subject: `Nowa rezerwacja: ${selectedService.service_name}`,
+          subject: `Nowa rezerwacja: ${serviceLineForRpc}`,
           body: [
             `Warsztat: ${workshop.name}`,
-            `Usługa: ${selectedService.service_name}`,
+            visitKindLine,
+            scopeDescription,
+            `Czas orientacyjny: ok. ${bookingBundle.durationMinutes} min`,
             `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
+            ...dropoffNote,
             "Status: Oczekuje na wycenę",
           ].join("\n"),
           relatedBookingId: bookingIdValue,
@@ -655,11 +887,13 @@ function WorkshopDetailsPageContent() {
         sendSystemMessage({
           recipientId: currentUserId,
           recipientRole: "client",
-          subject: `Potwierdzenie utworzenia rezerwacji: ${selectedService.service_name}`,
+          subject: `Potwierdzenie utworzenia rezerwacji: ${serviceLineForRpc}`,
           body: [
             `Warsztat: ${workshop.name}`,
-            `Usługa: ${selectedService.service_name}`,
+            visitKindLine,
+            scopeDescription,
             `Termin: ${effectiveDateKey} ${effectiveSelectedTime}`,
+            ...dropoffNote,
             "Status: Oczekuje na wycenę",
             "Warsztat prześle ostateczną wycenę w osobnej wiadomości.",
           ].join("\n"),
@@ -671,7 +905,8 @@ function WorkshopDetailsPageContent() {
       void trackEvent("booking_confirm", {
         workshopId: workshop.supabaseId,
         workshopName: workshop.name,
-        service: selectedService.service_name,
+        service: serviceLineForRpc,
+        bookingType: visitKind,
       });
       setBookingSuccess(t("workshopDetails.bookingSaved"));
       setSelectedTime("");
@@ -909,44 +1144,6 @@ function WorkshopDetailsPageContent() {
                 </div>
               )}
 
-              <div className="mt-6 rounded-2xl border border-blue-400/25 bg-blue-500/5 p-4 sm:p-5">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div>
-                    <h2 className={`text-lg font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Opinie ServyGo</h2>
-                    <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                      Odrębne od ocen Google — widoczne podpis zgodnie z ustawieniami (bez e-maila i telefonu).
-                    </p>
-                  </div>
-                  <div className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 text-zinc-200" : "border-blue-200 text-zinc-800"}`}>
-                    Średnia:{" "}
-                    <strong>{servygoReviews.length ? averageRating(servygoReviews).toFixed(1) : "—"}</strong> · Liczba:{" "}
-                    <strong>{servygoReviews.length}</strong>
-                  </div>
-                </div>
-                <ul className={`mt-4 space-y-3 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                  {servygoReviews.length === 0 ? (
-                    <li className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-700 text-zinc-400" : "border-blue-100 text-zinc-600"}`}>
-                      Jeszcze brak opinii ServyGo dla tego warsztatu.
-                    </li>
-                  ) : (
-                    servygoReviews.map((r) => (
-                      <li
-                        key={r.id}
-                        className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-700 bg-zinc-900/40" : "border-blue-100 bg-white/70"}`}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-semibold">{r.display_name_snapshot}</span>
-                          <span className="text-xs opacity-80">{new Date(r.created_at).toLocaleDateString("pl-PL")}</span>
-                        </div>
-                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">★ {r.rating}/5</p>
-                        {r.service_name ? <p className="mt-1 text-xs opacity-80">Usługa: {r.service_name}</p> : null}
-                        <p className="mt-2 whitespace-pre-wrap">{r.comment}</p>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              </div>
-
               <div className="mt-6">
                 <button
                   type="button"
@@ -962,19 +1159,40 @@ function WorkshopDetailsPageContent() {
                   <h2 className="text-lg font-semibold">{t("workshopDetails.servicesAndPrices")}</h2>
                   <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{t("workshopDetails.chooseService")}</p>
                 </div>
+                {partialCoverage && partialCoverage.total > 0 && partialCoverage.matched < partialCoverage.total ? (
+                  <p
+                    className={`mt-2 rounded-xl border px-3 py-2 text-sm ${
+                      isDark ? "border-blue-500/35 bg-blue-950/50 text-blue-100" : "border-blue-200 bg-blue-50 text-blue-900"
+                    }`}
+                  >
+                    Ten warsztat obsługuje {partialCoverage.matched} z {partialCoverage.total} wybranych usług.
+                  </p>
+                ) : null}
+                {partialCoverage && partialCoverage.missing.length > 0 ? (
+                  <p
+                    className={`mt-2 rounded-xl border px-3 py-2 text-sm ${
+                      isDark ? "border-amber-500/35 bg-amber-950/40 text-amber-100" : "border-amber-200 bg-amber-50 text-amber-900"
+                    }`}
+                  >
+                    Ten warsztat nie obsługuje: {partialCoverage.missing.join(", ")}
+                  </p>
+                ) : null}
                 <div className="mt-3 space-y-2">
                   {filteredServices.map((service) => {
-                    const serviceKey = `${service.service_name}-${service.brand}-${service.model}-${service.engine}`;
-                    const highlighted = selectedService?.service_name === service.service_name
-                      && selectedService.brand === service.brand
-                      && selectedService.model === service.model
-                      && selectedService.engine === service.engine;
+                    const stableKey = workshopOfferStableKey(service);
+                    const highlighted = selectedWorkshopOfferKeys.includes(stableKey);
+                    const vehicleClientHint =
+                      selectedVehicle.brand && selectedVehicle.model
+                        ? `${selectedVehicle.brand} ${selectedVehicle.model}${Number.isFinite(selectedVehicle.year) ? ` (${selectedVehicle.year})` : ""}`
+                        : `${service.brand} ${service.model}`;
                     return (
                       <button
                         type="button"
-                        key={`${workshop.id}-${service.service_name}-${service.brand}-${service.model}`}
+                        key={`${workshop.id}-${stableKey}`}
                         onClick={() => {
-                          setSelectedServiceKey(serviceKey);
+                          setSelectedWorkshopOfferKeys((prev) =>
+                            prev.includes(stableKey) ? prev.filter((x) => x !== stableKey) : [...prev, stableKey],
+                          );
                           setSelectedTime("");
                         }}
                         className={`rounded-2xl border p-3 text-left transition ${
@@ -1012,10 +1230,13 @@ function WorkshopDetailsPageContent() {
                           </div>
                         </div>
                         <p className={`mt-1 text-xs sm:text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                          {selectedVehicle.brand ? `${service.brand} ${service.model}` : `${service.brand} ${service.model}`} • {service.engine} • {service.year_from}-{service.year_to} • {service.fuelType ?? "—"}
+                          {vehicleClientHint} • {service.engine} • {service.year_from}-{service.year_to} • {service.fuelType ?? "—"}
                         </p>
                         <p className={`mt-1 text-xs sm:text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                          ⏱ {t("workshopDetails.serviceDuration")}: {service.duration_minutes} min
+                          ⏱ {t("workshopDetails.serviceDuration")}:{" "}
+                          {Number.isFinite(service.duration_minutes) && service.duration_minutes > 0
+                            ? `${service.duration_minutes} min`
+                            : "czas orientacyjny (~60 min)"}
                         </p>
                         <p className={`mt-1 text-xs sm:text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                           {t("workshopDetails.supportedVehicle")}: {service.vehicle_type}
@@ -1036,6 +1257,44 @@ function WorkshopDetailsPageContent() {
                   ) : null}
                 </div>
               </div>
+
+              <div className="mt-6 rounded-2xl border border-blue-400/25 bg-blue-500/5 p-4 sm:p-5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className={`text-lg font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Opinie ServyGo</h2>
+                    <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Odrębne od ocen Google — widoczne podpis zgodnie z ustawieniami (bez e-maila i telefonu).
+                    </p>
+                  </div>
+                  <div className={`rounded-xl border px-3 py-2 text-sm ${isDark ? "border-zinc-600 text-zinc-200" : "border-blue-200 text-zinc-800"}`}>
+                    Średnia:{" "}
+                    <strong>{servygoReviews.length ? averageRating(servygoReviews).toFixed(1) : "—"}</strong> · Liczba:{" "}
+                    <strong>{servygoReviews.length}</strong>
+                  </div>
+                </div>
+                <ul className={`mt-4 space-y-3 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  {servygoReviews.length === 0 ? (
+                    <li className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-700 text-zinc-400" : "border-blue-100 text-zinc-600"}`}>
+                      Jeszcze brak opinii ServyGo dla tego warsztatu.
+                    </li>
+                  ) : (
+                    servygoReviews.map((r) => (
+                      <li
+                        key={r.id}
+                        className={`rounded-xl border px-3 py-2 ${isDark ? "border-zinc-700 bg-zinc-900/40" : "border-blue-100 bg-white/70"}`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold">{r.display_name_snapshot}</span>
+                          <span className="text-xs opacity-80">{new Date(r.created_at).toLocaleDateString("pl-PL")}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">★ {r.rating}/5</p>
+                        {r.service_name ? <p className="mt-1 text-xs opacity-80">Usługa: {r.service_name}</p> : null}
+                        <p className="mt-2 whitespace-pre-wrap">{r.comment}</p>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
             </section>
 
             <aside className="space-y-4">
@@ -1048,6 +1307,52 @@ function WorkshopDetailsPageContent() {
                 <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                   {t("workshopDetails.openingHours")}: {workshop.availability.openingHours.start}-{workshop.availability.openingHours.end}
                 </p>
+
+                <div className="mt-4 min-w-0">
+                  <p className={`text-xs font-semibold uppercase tracking-wide ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                    Typ wizyty
+                  </p>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVisitKind(BOOKING_TYPE_EXACT_TIME);
+                        setSelectedTime("");
+                      }}
+                      className={`min-w-0 rounded-2xl border px-3 py-3 text-left text-sm transition ${
+                        visitKind === BOOKING_TYPE_EXACT_TIME
+                          ? "border-orange-300 bg-orange-500/15 shadow-[0_0_0_1px_rgba(249,115,22,0.35)]"
+                          : isDark
+                            ? "border-zinc-700 bg-zinc-900/60 hover:border-blue-400/50"
+                            : "border-blue-200 bg-white/80 hover:border-blue-300"
+                      }`}
+                    >
+                      <p className="font-semibold">Rezerwacja godzinowa</p>
+                      <p className={`mt-1 text-xs leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        Auto naprawiane o wybranej godzinie.
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVisitKind(BOOKING_TYPE_DROPOFF);
+                        setSelectedTime("");
+                      }}
+                      className={`min-w-0 rounded-2xl border px-3 py-3 text-left text-sm transition ${
+                        visitKind === BOOKING_TYPE_DROPOFF
+                          ? "border-orange-300 bg-orange-500/15 shadow-[0_0_0_1px_rgba(249,115,22,0.35)]"
+                          : isDark
+                            ? "border-zinc-700 bg-zinc-900/60 hover:border-blue-400/50"
+                            : "border-blue-200 bg-white/80 hover:border-blue-300"
+                      }`}
+                    >
+                      <p className="font-semibold">Zostaw auto</p>
+                      <p className={`mt-1 text-xs leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                        Zostaw auto w warsztacie. Warsztat poinformuje Cię, gdy auto będzie gotowe.
+                      </p>
+                    </button>
+                  </div>
+                </div>
 
                 <div className={`mt-3 rounded-2xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-900/50" : "border-blue-200 bg-white/75"}`}>
                   <div className="mb-3 flex items-center justify-between">
@@ -1218,16 +1523,60 @@ function WorkshopDetailsPageContent() {
                     {dynamicAvailableTimes.length === 0 ? (
                       <p className="mt-3 text-sm">{t("workshopDetails.noHoursAvailable")}</p>
                     ) : null}
+                    {visitKind === BOOKING_TYPE_DROPOFF ? (
+                      <div
+                        className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-relaxed sm:text-sm ${
+                          isDark ? "border-sky-500/35 bg-sky-950/40 text-sky-100" : "border-sky-200 bg-sky-50 text-sky-950"
+                        }`}
+                      >
+                        <p className="font-semibold">Przewidywany czas realizacji: 1–2 dni robocze.</p>
+                        <p className="mt-1">Warsztat poinformuje Cię, gdy auto będzie gotowe.</p>
+                      </div>
+                    ) : null}
                   </>
                 )}
 
-                {arrivalTime && pickupTime ? (
+                {selectedWorkshopOffers.length > 0 ? (
+                  <div
+                    className={`mt-4 space-y-1 rounded-xl border px-3 py-2 text-xs sm:text-sm ${
+                      isDark ? "border-zinc-600 bg-zinc-900/70 text-zinc-100" : "border-blue-200 bg-white text-zinc-900"
+                    }`}
+                  >
+                    <p>
+                      <span className="font-semibold">Wybrane usługi:</span> {selectedWorkshopOffers.length}
+                    </p>
+                    {bookingServicesSummaryLine ? (
+                      <p className={isDark ? "text-zinc-300" : "text-zinc-700"}>{bookingServicesSummaryLine}</p>
+                    ) : null}
+                    {visitDurationBreakdown ? (
+                      <p className={isDark ? "text-zinc-400" : "text-zinc-600"}>{visitDurationBreakdown}</p>
+                    ) : null}
+                    <p className={`font-semibold ${isDark ? "text-zinc-50" : "text-zinc-950"}`}>
+                      Łączny czas wizyty: {formatVisitDurationPl(bookingBundle.durationMinutes)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className={`mt-4 text-xs ${isDark ? "text-zinc-500" : "text-zinc-600"}`}>
+                    Wybierz co najmniej jedną usługę w sekcji „Usługi i ceny”, aby sprawdzić dostępne terminy i umówić wizytę.
+                  </p>
+                )}
+
+                {visitKind === BOOKING_TYPE_EXACT_TIME && arrivalTime && pickupTime ? (
                   <div className="mt-4 space-y-1 rounded-xl border border-blue-300/40 bg-blue-500/10 px-3 py-2 text-sm">
                     <p>
                       {t("workshopDetails.arrivalTime")}: {arrivalTime}
                     </p>
                     <p>
                       {t("workshopDetails.pickupTime")}: {pickupTime}
+                    </p>
+                  </div>
+                ) : visitKind === BOOKING_TYPE_DROPOFF && arrivalTime ? (
+                  <div className="mt-4 space-y-1 rounded-xl border border-blue-300/40 bg-blue-500/10 px-3 py-2 text-sm">
+                    <p>
+                      <span className="font-semibold">Godzina dostarczenia auta:</span> {arrivalTime}
+                    </p>
+                    <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Odbiór — warsztat poinformuje Cię w ServyGo, gdy auto będzie gotowe.
                     </p>
                   </div>
                 ) : null}
@@ -1240,11 +1589,12 @@ function WorkshopDetailsPageContent() {
                     void trackEvent("booking_start", {
                       workshopId: workshop.supabaseId,
                       workshopName: workshop.name,
-                      service: selectedService?.service_name ?? null,
+                      service: bookingServicesSummaryLine || null,
                     });
                     setIsBookingModalOpen(true);
                   }}
-                  className="mt-6 w-full rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-3 text-sm font-semibold text-white"
+                  disabled={selectedWorkshopOffers.length === 0}
+                  className="mt-6 w-full rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {t("workshopDetails.bookAppointment")}
                 </button>
@@ -1303,18 +1653,73 @@ function WorkshopDetailsPageContent() {
               </div>
 
               <div className="mt-4 space-y-2 text-sm">
-                <p><strong>{workshop.name}</strong></p>
-                <p>{selectedService?.service_name ?? "-"}</p>
-                <p>{t("workshopDetails.price")}: {formatPriceRange(selectedService?.price_from, selectedService?.price_to, selectedService?.price)}</p>
-                <p>{t("workshopDetails.serviceDuration")}: {selectedService?.duration_minutes ?? "-"} min</p>
+                <p>
+                  <strong>{workshop.name}</strong>
+                </p>
+                <p>
+                  <span className="font-semibold">Typ wizyty: </span>
+                  {visitKind === BOOKING_TYPE_DROPOFF ? "Zostaw auto (dostarczenie)" : "Rezerwacja godzinowa"}
+                </p>
+                <div>
+                  <p className="font-semibold">Zakres wizyty</p>
+                  {selectedWorkshopOffers.length > 0 ? (
+                    <ul className="mt-1 list-inside list-disc space-y-0.5">
+                      {selectedWorkshopOffers.map((o) => (
+                        <li key={workshopOfferStableKey(o)}>{o.service_name}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-1">{serviceSummaryLabel || "—"}</p>
+                  )}
+                  {getCustomSelectedItems(selectedServiceItems).length > 0 ? (
+                    <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Dodatkowo (opis): {getCustomSelectedItems(selectedServiceItems)
+                        .map((c) => c.name)
+                        .join(", ")}
+                    </p>
+                  ) : null}
+                  {selectedWorkshopOffers.length > 1 ? (
+                    <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      Wycena może obejmować cały zakres wybranych usług.
+                    </p>
+                  ) : null}
+                </div>
+                <p>
+                  {t("workshopDetails.price")}:{" "}
+                  {selectedWorkshopOffers.length > 0
+                    ? selectedWorkshopOffers
+                        .map((o) => formatPriceRange(o.price_from, o.price_to, o.price))
+                        .join(" · ")
+                    : "—"}
+                </p>
+                <p>
+                  Czas orientacyjny: ok. {bookingBundle.durationMinutes} min
+                  {visitDurationBreakdown ? (
+                    <span className={`mt-1 block text-xs ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                      {visitDurationBreakdown}
+                    </span>
+                  ) : null}
+                </p>
                 <p>
                   {t("workshopDetails.selectSlot")}:{" "}
                   {effectiveDateKey && effectiveSelectedTime
                     ? `${effectiveDateKey} ${effectiveSelectedTime}`
                     : "-"}
                 </p>
-                <p>{t("workshopDetails.pickupTime")}: {pickupTime || "-"}</p>
+                {visitKind === BOOKING_TYPE_EXACT_TIME ? (
+                  <p>
+                    {t("workshopDetails.pickupTime")}: {pickupTime || "-"}
+                  </p>
+                ) : (
+                  <p className={isDark ? "text-zinc-400" : "text-zinc-600"}>
+                    Odbiór pojazdu — warsztat ustali z Tobą termin w ServyGo po zakończeniu prac.
+                  </p>
+                )}
               </div>
+
+              <p className={`mt-3 text-xs leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                {BOOKING_PHONE_SCOPE_NOTICE}
+              </p>
 
               {!isLoggedIn ? (
                 <div className="mt-5 rounded-2xl border border-orange-300/50 bg-orange-500/10 p-4 text-sm">
@@ -1363,7 +1768,12 @@ function WorkshopDetailsPageContent() {
                   <button
                     type="button"
                     onClick={handleBookingConfirm}
-                    disabled={!effectiveDateKey || !effectiveSelectedTime || bookingLoading}
+                    disabled={
+                      selectedWorkshopOffers.length === 0 ||
+                      !effectiveDateKey ||
+                      !effectiveSelectedTime ||
+                      bookingLoading
+                    }
                     className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {bookingLoading ? t("workshopDetails.savingBooking") : t("workshopDetails.confirmBooking")}

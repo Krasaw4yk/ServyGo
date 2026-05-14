@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ServiceCategory } from "@/lib/serviceCatalog";
 import { normalizeServiceTextForMatch } from "@/lib/serviceCategoryClassifier";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
+import type { SelectedServiceItem } from "@/lib/selectedServices";
+import { buildSelectedServiceItem, isSelectedServiceItem } from "@/lib/selectedServices";
 
 type FinalServiceAvailability = {
   available: boolean;
@@ -25,6 +27,10 @@ type ServiceCategoryPickerProps = {
   hideManualServiceEntry?: boolean;
   rootClassName?: string;
   toggleButtonClassName?: string;
+  /** Wielokrotny wybór: klik w usługę dodaje/usuwa z koszyka zamiast nadpisywać jedno pole. */
+  multiSelect?: boolean;
+  selectedItems?: SelectedServiceItem[];
+  onToggleItem?: (item: SelectedServiceItem) => void;
 };
 
 type SearchResult = {
@@ -68,11 +74,14 @@ export default function ServiceCategoryPicker({
   isDark = false,
   inputClassName = "",
   placeholder = "Wybierz kategorię",
-  noResultsText = "Brak wyników",
+  noResultsText = "Nie znaleziono usługi w katalogu.",
   getFinalServiceAvailability,
   hideManualServiceEntry = false,
   rootClassName = "",
   toggleButtonClassName = "",
+  multiSelect = false,
+  selectedItems = [],
+  onToggleItem,
 }: ServiceCategoryPickerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -115,9 +124,39 @@ export default function ServiceCategoryPicker({
     return getFinalServiceAvailability?.(name) ?? null;
   }
 
-  function handleFinalServiceSelection(serviceName: string) {
+  const displayValue = multiSelect ? (isOpen ? query : "") : isOpen ? query : value;
+  const sortedCategories = useMemo(
+    () =>
+      sortByLabel(categories).map((category) => ({
+        ...category,
+        subcategories: sortByLabel(category.subcategories).map((subcategory) => ({
+          ...subcategory,
+          services: sortByLabel(subcategory.services),
+        })),
+      })),
+    [categories],
+  );
+
+  function handleFinalServiceSelection(
+    serviceName: string,
+    meta?: { categoryName: string; subcategoryName: string },
+  ) {
     const av = finalAvailability(serviceName);
     if (av && !av.available) return;
+    if (multiSelect && onToggleItem) {
+      const cat = meta?.categoryName ?? activeCategory ?? "";
+      const sub = meta?.subcategoryName ?? activeSubcategory ?? "";
+      if (!cat.trim() || !sub.trim()) return;
+      onToggleItem(
+        buildSelectedServiceItem({
+          categoryName: cat,
+          subcategoryName: sub,
+          name: serviceName,
+          source: "catalog",
+        }),
+      );
+      return;
+    }
     onChange(serviceName);
     closePicker(true);
   }
@@ -132,19 +171,6 @@ export default function ServiceCategoryPicker({
     setActiveSubcategory(subcategoryName);
     keepPickerOpen();
   }
-
-  const displayValue = isOpen ? query : value;
-  const sortedCategories = useMemo(
-    () =>
-      sortByLabel(categories).map((category) => ({
-        ...category,
-        subcategories: sortByLabel(category.subcategories).map((subcategory) => ({
-          ...subcategory,
-          services: sortByLabel(subcategory.services),
-        })),
-      })),
-    [categories],
-  );
 
   useEffect(() => {
     function updateViewportMode() {
@@ -263,7 +289,10 @@ export default function ServiceCategoryPicker({
     const name = result.serviceName ?? "";
     const av = finalAvailability(name);
     if (av && !av.available) return;
-    handleFinalServiceSelection(name);
+    handleFinalServiceSelection(name, {
+      categoryName: result.categoryName,
+      subcategoryName: result.subcategoryName ?? "",
+    });
   }
 
   const browseRows = useMemo((): BrowseRow[] => {
@@ -318,7 +347,10 @@ export default function ServiceCategoryPicker({
         handleSubcategoryDrill(row.subcategoryName);
         return;
       case "service":
-        handleFinalServiceSelection(row.serviceName);
+        handleFinalServiceSelection(row.serviceName, {
+          categoryName: selectedCategory?.name ?? "",
+          subcategoryName: selectedSubcategory?.name ?? "",
+        });
         return;
       case "search":
         applySearchResult(row.result);
@@ -365,7 +397,9 @@ export default function ServiceCategoryPicker({
           if (isMobile) return;
           const nextValue = event.target.value;
           setQuery(nextValue);
-          onChange(nextValue);
+          if (!multiSelect) {
+            onChange(nextValue);
+          }
           setActiveCategory(null);
           setActiveSubcategory(null);
           setIsOpen(true);
@@ -505,8 +539,12 @@ export default function ServiceCategoryPicker({
                   onClick={() => {
                     const next = customServiceDraft.trim();
                     if (!next) return;
-                    onChange(next);
-                    closePicker(true);
+                    if (multiSelect && onToggleItem) {
+                      handleFinalServiceSelection(next, { categoryName: "", subcategoryName: "" });
+                    } else {
+                      onChange(next);
+                      closePicker(true);
+                    }
                     setMobileCustomOpen(false);
                     setCustomServiceDraft("");
                   }}
@@ -519,7 +557,7 @@ export default function ServiceCategoryPicker({
               </div>
             ) : (
               <>
-                {value ? (
+                {value || (multiSelect && selectedItems.length > 0) ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -532,10 +570,10 @@ export default function ServiceCategoryPicker({
                       isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-700"
                     }`}
                   >
-                    Wyczyść
+                    Wyczyść wybór
                   </button>
                 ) : null}
-                {!hideManualServiceEntry && !normalizeSearchText(query) ? (
+                {!hideManualServiceEntry && !multiSelect && !normalizeSearchText(query) ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -565,6 +603,49 @@ export default function ServiceCategoryPicker({
                         const svcName = result.type === "service" ? (result.serviceName ?? result.label) : "";
                         const av = result.type === "service" ? finalAvailability(svcName) : null;
                         const blocked = Boolean(result.type === "service" && av && !av.available);
+                        if (result.type === "service" && multiSelect && onToggleItem) {
+                          const rowItem = buildSelectedServiceItem({
+                            categoryName: result.categoryName,
+                            subcategoryName: result.subcategoryName ?? "",
+                            name: svcName,
+                            source: "catalog",
+                          });
+                          const rowSelected = isSelectedServiceItem(rowItem, selectedItems);
+                          return (
+                            <button
+                              key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
+                              type="button"
+                              disabled={blocked}
+                              onClick={() => {
+                                if (blocked) return;
+                                applySearchResult(result);
+                              }}
+                              className={`flex min-h-[48px] w-full flex-col items-stretch gap-0.5 rounded-xl px-3 py-3 text-left text-base ${
+                                blocked
+                                  ? isDark
+                                    ? "cursor-not-allowed text-zinc-500 opacity-60"
+                                    : "cursor-not-allowed text-zinc-500 opacity-65"
+                                  : isDark
+                                    ? "text-zinc-200 hover:bg-zinc-800/90"
+                                    : "text-zinc-700 hover:bg-blue-50"
+                              }`}
+                            >
+                              <span className="flex items-center justify-between gap-2">
+                                <span>{result.label}</span>
+                                <span className="text-xs font-semibold">
+                                  {rowSelected ? "✓ W koszyku" : "+ Dodaj"}
+                                </span>
+                              </span>
+                              {blocked ? (
+                                <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                                  Niedostępne w tym warsztacie
+                                </span>
+                              ) : av?.priceHint ? (
+                                <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{av.priceHint}</span>
+                              ) : null}
+                            </button>
+                          );
+                        }
                         return (
                           <button
                             key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
@@ -615,7 +696,10 @@ export default function ServiceCategoryPicker({
                             disabled={blocked}
                             onClick={() => {
                               if (blocked) return;
-                              handleFinalServiceSelection(service.name);
+                              handleFinalServiceSelection(service.name, {
+                                categoryName: selectedCategory?.name ?? "",
+                                subcategoryName: selectedSubcategory?.name ?? "",
+                              });
                             }}
                             className={`flex min-h-[48px] w-full flex-col items-stretch gap-0.5 rounded-xl px-3 py-3 text-left text-base ${
                               blocked
@@ -629,7 +713,23 @@ export default function ServiceCategoryPicker({
                           >
                             <span className="flex items-center justify-between gap-2">
                               <span>{service.name}</span>
-                              {value === service.name ? <span>✓</span> : null}
+                              {multiSelect ? (
+                                <span className="text-xs font-semibold">
+                                  {isSelectedServiceItem(
+                                    buildSelectedServiceItem({
+                                      categoryName: selectedCategory?.name ?? "",
+                                      subcategoryName: selectedSubcategory?.name ?? "",
+                                      name: service.name,
+                                      source: "catalog",
+                                    }),
+                                    selectedItems,
+                                  )
+                                    ? "✓ W koszyku"
+                                    : "+ Dodaj"}
+                                </span>
+                              ) : value === service.name ? (
+                                <span>✓</span>
+                              ) : null}
                             </span>
                             {blocked ? (
                               <span className="text-xs font-medium text-red-600 dark:text-red-400">
@@ -709,6 +809,54 @@ export default function ServiceCategoryPicker({
 
               if (row.kind === "search") {
                 const result = row.result;
+                if (result.type === "service" && multiSelect && onToggleItem) {
+                  const svcName = result.serviceName ?? result.label;
+                  const av = finalAvailability(svcName);
+                  const blocked = Boolean(av && !av.available);
+                  const rowItem = buildSelectedServiceItem({
+                    categoryName: result.categoryName,
+                    subcategoryName: result.subcategoryName ?? "",
+                    name: svcName,
+                    source: "catalog",
+                  });
+                  const rowSelected = isSelectedServiceItem(rowItem, selectedItems);
+                  return (
+                    <button
+                      key={`${result.type}-${result.categoryName}-${result.subcategoryName ?? ""}-${result.label}`}
+                      type="button"
+                      data-browse-row-index={idx}
+                      disabled={blocked}
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        if (blocked) return;
+                        activateBrowseRow(row);
+                      }}
+                      className={`flex w-full flex-col items-stretch gap-0.5 rounded-lg px-3 py-2 text-left text-sm transition ${
+                        blocked
+                          ? isDark
+                            ? "cursor-not-allowed text-zinc-500 opacity-60"
+                            : "cursor-not-allowed text-zinc-500 opacity-65"
+                          : isDark
+                            ? "text-zinc-200 hover:bg-zinc-800/90"
+                            : "text-zinc-700 hover:bg-blue-50"
+                      } ${hiCls}`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span>{result.label}</span>
+                        <span className={`text-[11px] font-semibold ${isDark ? "text-blue-300" : "text-blue-600"}`}>
+                          {rowSelected ? "✓ W koszyku" : "+ Dodaj"}
+                        </span>
+                      </span>
+                      {blocked ? (
+                        <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                          Niedostępne w tym warsztacie
+                        </span>
+                      ) : av?.priceHint ? (
+                        <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{av.priceHint}</span>
+                      ) : null}
+                    </button>
+                  );
+                }
                 const svcName = result.type === "service" ? (result.serviceName ?? result.label) : "";
                 const av = result.type === "service" ? finalAvailability(svcName) : null;
                 const blocked = Boolean(result.type === "service" && av && !av.available);
@@ -776,6 +924,13 @@ export default function ServiceCategoryPicker({
               if (row.kind === "service") {
                 const av = finalAvailability(row.serviceName);
                 const blocked = Boolean(av && !av.available);
+                const rowItem = buildSelectedServiceItem({
+                  categoryName: selectedCategory?.name ?? "",
+                  subcategoryName: selectedSubcategory?.name ?? "",
+                  name: row.serviceName,
+                  source: "catalog",
+                });
+                const rowSelected = multiSelect && isSelectedServiceItem(rowItem, selectedItems);
                 return (
                   <button
                     key={`${selectedSubcategory?.name ?? "sub"}-${row.serviceName}-${idx}`}
@@ -799,7 +954,11 @@ export default function ServiceCategoryPicker({
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span>{row.serviceName}</span>
-                      {value === row.serviceName ? (
+                      {multiSelect ? (
+                        <span className={`text-[11px] font-semibold ${isDark ? "text-blue-300" : "text-blue-600"}`}>
+                          {rowSelected ? "✓ W koszyku" : "+ Dodaj"}
+                        </span>
+                      ) : value === row.serviceName ? (
                         <svg
                           viewBox="0 0 20 20"
                           className={`h-4 w-4 shrink-0 ${isDark ? "text-blue-300" : "text-blue-600"}`}

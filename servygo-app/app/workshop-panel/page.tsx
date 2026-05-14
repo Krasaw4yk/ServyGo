@@ -18,6 +18,8 @@ import { getWorkshopDetailForAdmin } from "@/lib/adminApi";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import { useBookingsRealtimeSync, useWorkshopLeadSettlementRealtime } from "@/lib/useServyGoRealtime";
 import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
+import { BOOKING_PHONE_SCOPE_NOTICE } from "@/lib/bookingComplianceCopy";
+import { normalizeSelectedServices } from "@/lib/selectedServices";
 import { runExpirePendingBookingsWorkshopTimeout } from "@/lib/bookingWorkshopResponseExpiry";
 import { notifyClientBookingQuoteSent, quoteDecisionLabel } from "@/lib/bookingQuoteNotifications";
 import { resolveMessageViewerContext, sendSystemMessage, workshopRespondClientReschedule } from "@/lib/messagesApi";
@@ -317,6 +319,10 @@ function formatBookingStatus(status: string) {
   if (x === "awaiting_new_quote") return "Oczekuje na nową wycenę";
   if (x === "awaiting_reschedule") return "Propozycja zmiany terminu";
   if (x === "pending" || x === "new") return "Oczekuje";
+  if (x === "car_delivered") return "Auto dostarczone";
+  if (x === "in_progress") return "W realizacji";
+  if (x === "waiting_customer_approval") return "Oczekuje na akceptację klienta";
+  if (x === "ready_for_pickup") return "Gotowe do odbioru";
   if (x === "confirmed") return "Potwierdzona";
   if (x === "cancelled" || x === "cancelled_by_client" || x === "cancelled_by_workshop" || x === "cancelled_by_system") return "Anulowana";
   if (x === "completed" || x === "done") return "Zakończona";
@@ -331,6 +337,9 @@ function statusPillClass(status: string, isDark: boolean) {
   if (x === "quote_sent") return isDark ? "bg-yellow-500/20 text-yellow-200" : "bg-yellow-100 text-yellow-800";
   if (x === "awaiting_reschedule") return isDark ? "bg-purple-500/20 text-purple-200" : "bg-purple-100 text-purple-700";
   if (x === "confirmed" || x === "quote_accepted") return isDark ? "bg-emerald-500/20 text-emerald-200" : "bg-emerald-100 text-emerald-700";
+  if (x === "car_delivered" || x === "in_progress" || x === "waiting_customer_approval")
+    return isDark ? "bg-cyan-500/20 text-cyan-100" : "bg-cyan-100 text-cyan-900";
+  if (x === "ready_for_pickup") return isDark ? "bg-indigo-500/20 text-indigo-100" : "bg-indigo-100 text-indigo-900";
   if (x === "completed" || x === "done") return isDark ? "bg-blue-500/20 text-blue-200" : "bg-blue-100 text-blue-700";
   if (x === "no_show") return isDark ? "bg-slate-500/25 text-slate-200" : "bg-slate-200 text-slate-800";
   if (
@@ -344,6 +353,20 @@ function statusPillClass(status: string, isDark: boolean) {
   )
     return isDark ? "bg-rose-500/20 text-rose-200" : "bg-rose-100 text-rose-700";
   return isDark ? "bg-amber-500/20 text-amber-200" : "bg-amber-100 text-amber-700";
+}
+
+/** Statusy, w których warsztat może przygotować / wysłać wycenę (zgodnie z poprzednim przyciskiem „Wyślij wycenę”). */
+function canPrepareBookingQuote(status: string): boolean {
+  const st = status.toLowerCase();
+  return (
+    st === "awaiting_quote" ||
+    st === "pending_quote" ||
+    st === "quote_sent" ||
+    st === "quote_rejected" ||
+    st === "awaiting_new_quote" ||
+    st === "new" ||
+    st === "pending"
+  );
 }
 
 function isBookingCancelledStatus(status: string) {
@@ -698,7 +721,7 @@ function WorkshopPanelPageContent() {
     loadLeadSettlementSectionRef.current = loadLeadSettlementSection;
   }, [loadLeadSettlementSection]);
 
-  const loadAll = useCallback(async (ws: Workshop) => {
+  const loadAll = useCallback(async (ws: Workshop): Promise<WorkshopOwnerBookingRow[]> => {
     setError("");
     try {
       await runExpirePendingBookingsWorkshopTimeout();
@@ -785,6 +808,7 @@ function WorkshopPanelPageContent() {
     if (activeSectionRef.current === "Leady i rozliczenia") {
       void loadLeadSettlementSectionRef.current(ws.id);
     }
+    return b;
   }, [isAdminPreview]);
 
   const loadAllRef = useRef(loadAll);
@@ -1572,14 +1596,23 @@ function WorkshopPanelPageContent() {
     if (row) setSelectedBooking(row);
   }
 
+  function openBookingQuoteDetails(booking: WorkshopOwnerBookingRow) {
+    setError("");
+    setSelectedBooking(booking);
+  }
+
   async function sendQuoteForBooking(id: string) {
     if (readOnly || !workshop) return;
     const booking = bookings.find((item) => item.id === id);
     if (!booking) return;
     const raw = (quoteDraftByBookingId[id] ?? "").trim().replace(",", ".");
+    if (raw === "") {
+      setError("Uzupełnij kwotę wyceny przed wysłaniem do klienta.");
+      return;
+    }
     const finalPrice = Number(raw);
-    if (!Number.isFinite(finalPrice) || finalPrice < 0) {
-      setError("Podaj prawidłową cenę końcową.");
+    if (!Number.isFinite(finalPrice) || finalPrice <= 0) {
+      setError("Uzupełnij kwotę wyceny przed wysłaniem do klienta.");
       return;
     }
     setBookingActionId(id);
@@ -1587,7 +1620,9 @@ function WorkshopPanelPageContent() {
     try {
       const noteText = (quoteNoteByBookingId[id] ?? booking.quote_note ?? "").trim();
       await sendBookingQuoteAsWorkshopOwner(id, finalPrice, noteText || null);
-      await loadAll(workshop);
+      const rows = await loadAll(workshop);
+      const fresh = rows.find((x) => x.id === id) ?? null;
+      setSelectedBooking((prev) => (prev && prev.id === id && fresh ? fresh : prev));
       await notifyClientBookingQuoteSent({
         clientUserId: booking.user_id,
         bookingId: booking.id,
@@ -2309,9 +2344,15 @@ function WorkshopPanelPageContent() {
                                     <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusPillClass(b.status, isDark)}`}>{formatBookingStatus(b.status)}</span></td>
                                     <td className="px-3 py-2">
                                       <div className="flex flex-wrap gap-1">
-                                        <button type="button" disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "awaiting_new_quote" && st !== "new" && st !== "pending")} onClick={() => void sendQuoteForBooking(b.id)} className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Wyślij wycenę</button>
+                                        <button
+                                          type="button"
+                                          disabled={readOnly || busy}
+                                          onClick={() => openBookingQuoteDetails(b)}
+                                          className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
+                                        >
+                                          Przejdź do wyceny
+                                        </button>
                                         <button type="button" disabled={readOnly || busy || st === "completed" || cancelled} onClick={() => openCancelBookingModal(b)} className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40">Anuluj</button>
-                                        <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Szczegóły</button>
                                       </div>
                                     </td>
                                   </tr>
@@ -2428,8 +2469,8 @@ function WorkshopPanelPageContent() {
                                   <td className="px-3 py-2">
                                     <div>{b.clientLabel}</div>
                                     {!isAdminPreview ? (
-                                      <p className={`mt-1 max-w-[240px] text-[11px] leading-snug ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
-                                        Kontakt wyłącznie przez wiadomości ServyGo — bez telefonu i e-mailu kierowcy.
+                                      <p className={`mt-1 max-w-[min(100%,280px)] text-[11px] leading-snug ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                                        {BOOKING_PHONE_SCOPE_NOTICE} Ustalenia organizacyjne — przez wiadomości ServyGo.
                                       </p>
                                     ) : null}
                                   </td>
@@ -2471,31 +2512,21 @@ function WorkshopPanelPageContent() {
                                   </td>
                                   <td className="px-3 py-2 align-top">
                                     <div className="flex min-w-[200px] max-w-[220px] flex-col gap-1">
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        step="0.01"
-                                        value={quoteDraftByBookingId[b.id] ?? (typeof b.final_price === "number" ? String(b.final_price) : "")}
-                                        onChange={(e) => setQuoteDraftByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
-                                        placeholder="Cena"
-                                        className="w-full rounded-lg border px-2 py-1 text-xs text-black"
-                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || st === "no_show" || cancelled}
-                                      />
-                                      <textarea
-                                        rows={2}
-                                        value={quoteNoteByBookingId[b.id] ?? b.quote_note ?? ""}
-                                        onChange={(e) => setQuoteNoteByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
-                                        placeholder="Notatka do wyceny (opcjonalnie)"
-                                        className="w-full resize-y rounded-lg border px-2 py-1 text-xs text-black"
-                                        disabled={readOnly || busy || st === "confirmed" || st === "completed" || st === "no_show" || cancelled}
-                                      />
                                       <button
                                         type="button"
-                                        disabled={readOnly || busy || (st !== "awaiting_quote" && st !== "pending_quote" && st !== "quote_sent" && st !== "quote_rejected" && st !== "awaiting_new_quote" && st !== "new" && st !== "pending")}
-                                        onClick={() => void sendQuoteForBooking(b.id)}
+                                        disabled={readOnly || busy}
+                                        onClick={() => openBookingQuoteDetails(b)}
                                         className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
                                       >
-                                        Wyślij wycenę
+                                        Przejdź do wyceny
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled
+                                        title="Formularz dodatkowych usług — wkrótce w panelu"
+                                        className="rounded-lg border border-dashed border-zinc-500/50 px-2 py-1 text-xs font-semibold opacity-50"
+                                      >
+                                        Dodaj propozycję dodatkowych usług
                                       </button>
                                       <button
                                         type="button"
@@ -2559,7 +2590,6 @@ function WorkshopPanelPageContent() {
                                       >
                                         Klient nie przyjechał
                                       </button>
-                                      <button type="button" onClick={() => setSelectedBooking(b)} className="rounded-lg border border-zinc-400/50 px-2 py-1 text-xs font-semibold">Zobacz</button>
                                       {!readOnly ? (
                                         <ClientInternalNotesTriggerButton
                                           density="compact"
@@ -3549,10 +3579,51 @@ function WorkshopPanelPageContent() {
                     <section className={`mt-4 space-y-3 rounded-xl border p-4 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-blue-100 bg-blue-50/40"}`}>
                       {secTitle("Usługa")}
                       <dl className="space-y-2">
-                        {row("Wybrana usługa", dash(b.service_name))}
-                        {row("Kategoria", dash(b.service_category))}
-                        {row("Czas wykonania", `${b.duration_minutes ?? "—"} min`)}
-                        {row("Cena wstępna / widełki", guidePrice)}
+                        {(() => {
+                          const svcList = normalizeSelectedServices(b.selected_services ?? []);
+                          const primary = dash(b.service_name);
+                          if (svcList.length > 1) {
+                            return (
+                              <>
+                                <div className="grid gap-1 sm:grid-cols-[160px_1fr] sm:items-start">
+                                  <dt className={`text-xs font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                                    Zakres wizyty
+                                  </dt>
+                                  <dd className={`text-sm ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+                                    <span className="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold">
+                                      {svcList.length} usługi
+                                    </span>
+                                    <ul className="mt-2 list-inside list-disc space-y-1">
+                                      {svcList.map((s) => (
+                                        <li key={s.id} className="flex flex-wrap items-baseline gap-2">
+                                          <span>{s.name}</span>
+                                          {s.source === "custom" ? (
+                                            <span className="rounded-full border border-blue-300/60 px-2 py-0.5 text-[10px] font-semibold text-blue-800 dark:border-blue-500/40 dark:text-blue-200">
+                                              Własny opis
+                                            </span>
+                                          ) : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </dd>
+                                </div>
+                                {row("Kategoria", dash(b.service_category))}
+                                {row("Czas wykonania", `${b.duration_minutes ?? "—"} min`)}
+                                {row("Cena za cały zakres (wstępnie)", guidePrice)}
+                              </>
+                            );
+                          }
+                          const line =
+                            svcList.length === 1 ? svcList[0]?.name ?? primary : primary;
+                          return (
+                            <>
+                              {row("Wybrane przez klienta usługi", line)}
+                              {row("Kategoria", dash(b.service_category))}
+                              {row("Czas wykonania", `${b.duration_minutes ?? "—"} min`)}
+                              {row("Cena za cały zakres (wstępnie)", guidePrice)}
+                            </>
+                          );
+                        })()}
                       </dl>
                     </section>
 
@@ -3611,6 +3682,63 @@ function WorkshopPanelPageContent() {
                         {row("Decyzja klienta", quoteDecisionLabel(b.quote_status, b.status))}
                       </dl>
                     </section>
+
+                    {canPrepareBookingQuote(b.status) && !readOnly ? (
+                      <section
+                        id="booking-quote-prepare"
+                        className={`mt-4 space-y-3 rounded-xl border p-4 ${isDark ? "border-emerald-500/30 bg-emerald-950/20" : "border-emerald-200 bg-emerald-50/50"}`}
+                      >
+                        {secTitle("Przygotowanie wyceny")}
+                        <p className={`text-xs leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                          Uzupełnij kwotę i opcjonalnie opis wyceny. Łączna kwota to kwota wysyłana do klienta w ServyGo.
+                        </p>
+                        <label className={`block text-sm font-medium ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                          Kwota wyceny (zł)
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            inputMode="decimal"
+                            value={quoteDraftByBookingId[b.id] ?? (typeof b.final_price === "number" ? String(b.final_price) : "")}
+                            onChange={(e) => setQuoteDraftByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
+                            placeholder="np. 450"
+                            className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm text-black ${
+                              isDark ? "border-zinc-600 bg-white" : "border-zinc-300"
+                            }`}
+                            disabled={bookingActionId === b.id}
+                          />
+                        </label>
+                        <label className={`block text-sm font-medium ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                          Opis / notatka do wyceny (opcjonalnie)
+                          <textarea
+                            rows={3}
+                            value={quoteNoteByBookingId[b.id] ?? b.quote_note ?? ""}
+                            onChange={(e) => setQuoteNoteByBookingId((prev) => ({ ...prev, [b.id]: e.target.value }))}
+                            placeholder="Np. zakres, części, warunki…"
+                            className={`mt-1 w-full resize-y rounded-lg border px-3 py-2 text-sm text-black ${
+                              isDark ? "border-zinc-600 bg-white" : "border-zinc-300"
+                            }`}
+                            disabled={bookingActionId === b.id}
+                          />
+                        </label>
+                        {(() => {
+                          const raw = (quoteDraftByBookingId[b.id] ?? "").trim().replace(",", ".");
+                          const n = raw === "" ? NaN : Number(raw);
+                          const priceOk = Number.isFinite(n) && n > 0;
+                          const busySend = bookingActionId === b.id;
+                          return (
+                            <button
+                              type="button"
+                              disabled={busySend || !priceOk}
+                              onClick={() => void sendQuoteForBooking(b.id)}
+                              className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              {busySend ? "Wysyłanie…" : "Wyślij wycenę do klienta"}
+                            </button>
+                          );
+                        })()}
+                      </section>
+                    ) : null}
                   </>
                 );
               })()}

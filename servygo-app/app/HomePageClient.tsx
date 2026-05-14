@@ -56,6 +56,14 @@ import {
 import type { WorkshopServiceOffer } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopByIdAsMock } from "@/lib/publicWorkshopsFromDb";
 import {
+  encodeSelectedServicesToQuery,
+  getSelectedServiceNames,
+  persistSelectedServicesToSession,
+  selectedItemsToSummary,
+  toggleSelectedServiceItem,
+  type SelectedServiceItem,
+} from "@/lib/selectedServices";
+import {
   deleteUserCarRow,
   fetchUserCars,
   insertUserCar,
@@ -135,7 +143,7 @@ function HomePageContent() {
   const [model, setModel] = useState("");
   const [year, setYear] = useState("");
   const [fuel, setFuel] = useState("");
-  const [service, setService] = useState("");
+  const [selectedServiceItems, setSelectedServiceItems] = useState<SelectedServiceItem[]>([]);
   const [searchCity, setSearchCity] = useState("");
   const [searchVin, setSearchVin] = useState("");
   const [searchFieldErrors, setSearchFieldErrors] = useState<Partial<Record<SearchFieldKey, string>>>({});
@@ -626,13 +634,17 @@ function HomePageContent() {
     [selectedFavoriteWorkshopId, favoriteWorkshopOffers, favoriteMatchCriteria],
   );
   const favoriteServiceBlocked = useMemo(() => {
-    if (!selectedFavoriteWorkshopId || !favoriteWorkshopOffers?.length || !service.trim()) return false;
-    return !isCatalogServiceAvailableInWorkshopOffers(
-      favoriteWorkshopOffers,
-      favoriteMatchCriteria,
-      service,
-    );
-  }, [selectedFavoriteWorkshopId, favoriteWorkshopOffers, service, favoriteMatchCriteria]);
+    if (!selectedFavoriteWorkshopId || !favoriteWorkshopOffers?.length || selectedServiceItems.length === 0)
+      return false;
+    return selectedServiceItems.some((item) => {
+      if (item.source === "custom") return false;
+      return !isCatalogServiceAvailableInWorkshopOffers(
+        favoriteWorkshopOffers,
+        favoriteMatchCriteria,
+        item.name,
+      );
+    });
+  }, [selectedFavoriteWorkshopId, favoriteWorkshopOffers, selectedServiceItems, favoriteMatchCriteria]);
   const fuelLabel = currentVehicleConfig?.fuelLabel ?? "Silnik / paliwo";
   const serviceLabel = currentVehicleConfig?.serviceLabel ?? "Czego potrzebujesz?";
   const t = useMemo(() => createTranslator(language), [language]);
@@ -777,7 +789,7 @@ function HomePageContent() {
     const resolvedModel = String(formData.get("model") ?? "").trim();
     const resolvedYear = String(formData.get("year") ?? "").trim();
     const resolvedFuel = String(formData.get("fuel") ?? "").trim();
-    const selectedService = String(formData.get("service") ?? "").trim();
+    const serviceNames = getSelectedServiceNames(selectedServiceItems);
 
     const errs: Partial<Record<SearchFieldKey, string>> = {};
     if (!vehicleType) errs.vehicleType = "Wybierz typ auta.";
@@ -785,7 +797,7 @@ function HomePageContent() {
     if (!resolvedModel) errs.model = "Wybierz model.";
     if (!resolvedYear) errs.year = "Wybierz rocznik.";
     if (!resolvedFuel) errs.fuel = "Wybierz paliwo.";
-    if (!selectedService) errs.service = "Wybierz, czego potrzebujesz.";
+    if (selectedServiceItems.length === 0) errs.service = "Wybierz co najmniej jedną usługę.";
     if (!searchCity.trim()) errs.city = "Podaj miasto.";
     const critForFavorite = buildFavoriteMatchCriteria(
       vehicleType,
@@ -798,10 +810,12 @@ function HomePageContent() {
       selectedFavoriteWorkshopId &&
       Array.isArray(favoriteWorkshopOffers) &&
       favoriteWorkshopOffers.length > 0 &&
-      !isCatalogServiceAvailableInWorkshopOffers(favoriteWorkshopOffers, critForFavorite, selectedService)
+      serviceNames.some(
+        (name) => !isCatalogServiceAvailableInWorkshopOffers(favoriteWorkshopOffers, critForFavorite, name),
+      )
     ) {
       errs.service =
-        "Ta usługa nie jest dostępna w wybranym warsztacie. Wybierz inną usługę albo usuń filtr ulubionego warsztatu.";
+        "Co najmniej jedna wybrana usługa nie jest dostępna w wybranym warsztacie. Zmień wybór albo usuń filtr ulubionego warsztatu.";
     }
     if (Object.keys(errs).length > 0) {
       setSearchFieldErrors(errs);
@@ -824,7 +838,7 @@ function HomePageContent() {
       model: resolvedModel,
       year: resolvedYear,
       fuel: resolvedFuel,
-      service: formData.get("service"),
+      service: selectedItemsToSummary(selectedServiceItems),
       problem: formData.get("problem"),
       city: formData.get("city"),
       vin: vinInput,
@@ -850,7 +864,7 @@ function HomePageContent() {
       year: payload.year,
       fuel: payload.fuel,
       city: String(payload.city ?? ""),
-      service: String(payload.service ?? ""),
+      service: serviceNames.join(" | "),
     });
 
     if (selectedFavoriteWorkshopId && favoriteWorkshopOffers === null) {
@@ -862,7 +876,9 @@ function HomePageContent() {
     setIsSubmitting(true);
     const query = new URLSearchParams();
     query.set("vehicleType", String(payload.vehicleType ?? ""));
-    query.set("service", String(payload.service ?? ""));
+    query.set("service", selectedItemsToSummary(selectedServiceItems));
+    const svcEnc = encodeSelectedServicesToQuery(selectedServiceItems);
+    if (svcEnc) query.set("services", svcEnc);
     query.set("city", String(payload.city ?? ""));
     query.set("brand", String(payload.brand ?? ""));
     query.set("model", String(payload.model ?? ""));
@@ -877,15 +893,15 @@ function HomePageContent() {
     if (problemText) {
       query.set("problem", problemText);
     }
+    persistSelectedServicesToSession(selectedServiceItems);
     setIsSubmitting(false);
     if (
       selectedFavoriteWorkshopId &&
       favoriteWorkshopOffers &&
       favoriteWorkshopOffers.length > 0 &&
-      isCatalogServiceAvailableInWorkshopOffers(
-        favoriteWorkshopOffers,
-        critForFavorite,
-        selectedService,
+      serviceNames.length > 0 &&
+      serviceNames.every((name) =>
+        isCatalogServiceAvailableInWorkshopOffers(favoriteWorkshopOffers, critForFavorite, name),
       )
     ) {
       router.push(`/warsztat/${selectedFavoriteWorkshopId}?${query.toString()}`);
@@ -2373,7 +2389,7 @@ function HomePageContent() {
                             setModel("");
                             setYear("");
                             setFuel("");
-                            setService("");
+                            setSelectedServiceItems([]);
                             setSearchCity("");
                             setSearchVin("");
                           }}
@@ -2466,7 +2482,7 @@ function HomePageContent() {
                       setModel("");
                       setYear("");
                       setFuel("");
-                      setService("");
+                      setSelectedServiceItems([]);
                     }}
                     className={`rounded-xl border px-3 py-2 text-sm font-semibold transition max-md:px-2.5 max-md:py-1.5 max-md:text-xs ${
                       active
@@ -2505,7 +2521,7 @@ function HomePageContent() {
                     setBrand("");
                     setModel("");
                     setYear("");
-                    setService("");
+                    setSelectedServiceItems([]);
                     setFuel("");
                   }}
                   options={vehicleTypeOptions.map((type) => ({
@@ -2653,27 +2669,105 @@ function HomePageContent() {
                   ) : null
                 }
               >
+                <p className={`mb-2 text-xs leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                  {language === "pl"
+                    ? "Możesz wybrać usługę z listy albo zacząć pisać, aby szybciej ją znaleźć."
+                    : "Pick a service from the list or start typing to find it faster."}
+                </p>
                 <ServiceCategoryPicker
-                  value={service}
+                  value=""
                   onChange={(next) => {
+                    if (next === "") setSelectedServiceItems([]);
+                  }}
+                  multiSelect
+                  selectedItems={selectedServiceItems}
+                  onToggleItem={(item) => {
                     clearSearchFieldError("service");
-                    setService(next);
+                    setSelectedServiceItems((prev) => toggleSelectedServiceItem(item, prev));
                   }}
                   categories={serviceCatalogForVehicleType}
                   disabled={serviceCatalogForVehicleType.length === 0}
                   isDark={isDark}
                   toggleButtonClassName={searchFormChevronToggleHide}
                   inputClassName={`${currentFieldClassName}${searchFieldErrors.service ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  placeholder={t("form.selects.serviceCategory")}
-                  noResultsText={t("account.placeholders.noResults")}
+                  placeholder="Wybierz z listy albo wpisz fragment nazwy…"
+                  noResultsText="Nie znaleziono usługi w katalogu."
                   getFinalServiceAvailability={getFinalServiceAvailabilityFromFavorite}
                 />
-                <input type="hidden" name="service" value={service} />
+                <input type="hidden" name="service" value={selectedItemsToSummary(selectedServiceItems)} />
+                {selectedServiceItems.length > 0 ? (
+                  <div
+                    className={`mt-3 rounded-xl border px-3 py-2.5 ${
+                      isDark
+                        ? "border-zinc-600 bg-zinc-950/90 text-zinc-50"
+                        : "border-slate-300/90 bg-white text-zinc-950 shadow-sm shadow-slate-200/40"
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className={`text-sm font-semibold ${isDark ? "text-zinc-50" : "text-zinc-950"}`}>
+                        Wybrane usługi
+                        <span className={`ml-2 font-normal ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                          ({selectedServiceItems.length})
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedServiceItems([]);
+                          clearSearchFieldError("service");
+                        }}
+                        className={`shrink-0 text-xs font-semibold underline ${isDark ? "text-blue-300" : "text-blue-800"}`}
+                      >
+                        Wyczyść wybór
+                      </button>
+                    </div>
+                    <ul className="max-h-40 space-y-1.5 overflow-y-auto [-webkit-overflow-scrolling:touch]">
+                      {selectedServiceItems.map((item) => (
+                        <li
+                          key={item.id}
+                          className={`flex items-start justify-between gap-2 rounded-lg px-2.5 py-2 text-sm ${
+                            isDark ? "bg-zinc-900/90 ring-1 ring-zinc-700/80" : "bg-slate-100 ring-1 ring-slate-200/90"
+                          }`}
+                        >
+                          <span className={`min-w-0 flex-1 break-words ${isDark ? "text-zinc-50" : "text-zinc-950"}`}>
+                            <span className={`font-semibold ${isDark ? "text-zinc-50" : "text-zinc-950"}`}>{item.name}</span>
+                            {item.source === "custom" ? (
+                              <span
+                                className={`ml-2 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                  isDark ? "border-zinc-500 text-zinc-300" : "border-zinc-400 text-zinc-700"
+                                }`}
+                              >
+                                Własny opis
+                              </span>
+                            ) : null}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedServiceItems((prev) => prev.filter((x) => x.id !== item.id))
+                            }
+                            className={`shrink-0 text-xs font-semibold underline decoration-orange-700/50 underline-offset-2 hover:decoration-orange-800 ${
+                              isDark ? "text-orange-300" : "text-orange-800"
+                            }`}
+                          >
+                            Usuń
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 {selectedFavoriteWorkshopId && favoriteServiceBlocked ? (
-                  <div className="mt-2 space-y-2 rounded-xl border border-red-300/50 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-200">
+                  <div
+                    className={`mt-2 space-y-2 rounded-xl border px-3 py-2 text-sm ${
+                      isDark
+                        ? "border-red-500/40 bg-red-950/30 text-red-200"
+                        : "border-red-300/50 bg-red-500/5 text-red-700"
+                    }`}
+                  >
                     <p>
-                      Ta usługa nie jest dostępna w wybranym warsztacie. Wybierz inną usługę albo usuń filtr ulubionego
-                      warsztatu.
+                      Co najmniej jedna wybrana usługa nie jest dostępna w wybranym warsztacie. Zmień wybór albo usuń
+                      filtr ulubionego warsztatu.
                     </p>
                     <button
                       type="button"
@@ -2750,7 +2844,7 @@ function HomePageContent() {
                           setModel("");
                           setYear("");
                           setFuel("");
-                          setService("");
+                          setSelectedServiceItems([]);
                           setSearchCity("");
                           setSearchVin("");
                         }}
@@ -2780,7 +2874,7 @@ function HomePageContent() {
                     setModel("");
                     setYear("");
                     setFuel("");
-                    setService("");
+                    setSelectedServiceItems([]);
                     setSearchCity("");
                     setSearchVin("");
                     setSearchFieldErrors({});
@@ -2800,7 +2894,13 @@ function HomePageContent() {
                   disabled={isSubmitting}
                   className="inline-flex h-10 w-full max-h-12 items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(59,130,246,0.28),0_8px_22px_rgba(249,115,22,0.24)] transition-all duration-300 hover:scale-[1.01] hover:from-blue-500 hover:to-orange-400 hover:shadow-[0_14px_36px_rgba(59,130,246,0.35),0_10px_28px_rgba(249,115,22,0.3)] max-md:h-10 max-md:max-h-[48px] md:h-12 md:px-6 md:py-3 md:text-base"
                 >
-                  {isSubmitting ? t("form.buttons.submitting") : t("form.buttons.submit")}
+                  {isSubmitting
+                    ? t("form.buttons.submitting")
+                    : language === "pl"
+                      ? selectedServiceItems.length > 1
+                        ? `Szukaj ofert (${selectedServiceItems.length} usług)`
+                        : "Szukaj ofert"
+                      : t("form.buttons.submit")}
                 </button>
               </div>
 
