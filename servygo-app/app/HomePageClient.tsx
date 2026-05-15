@@ -7,15 +7,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AutocompleteSelect from "@/components/AutocompleteSelect";
-import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
 import UserCenterCards from "@/components/home/UserCenterCards";
-import { MobileCompactSearchField, searchFormFieldIconMap } from "@/components/home/MobileCompactSearchField";
+import SearchWizard, { type SearchFieldKey } from "@/components/home/SearchWizard";
+import MobileBottomNav from "@/components/home/MobileBottomNav";
 import { VinOptionalHint } from "@/components/VinOptionalHint";
 import UserDetailsSection from "@/components/home/UserDetailsSection";
 import ClientNotificationBell from "@/components/home/ClientNotificationBell";
-import { pickDashboardUpcomingBooking, resolveClientBookingBadge } from "@/lib/bookingStatusUi";
 import RecommendedWorkshopsSection from "@/components/home/RecommendedWorkshopsSection";
 import LandingCtaFooter from "@/components/home/LandingCtaFooter";
 import LandingInfoDialogs from "@/components/home/LandingInfoDialogs";
@@ -60,7 +59,6 @@ import {
   getSelectedServiceNames,
   persistSelectedServicesToSession,
   selectedItemsToSummary,
-  toggleSelectedServiceItem,
   type SelectedServiceItem,
 } from "@/lib/selectedServices";
 import {
@@ -119,16 +117,7 @@ const fieldClassName =
 const lightFieldClassName =
   "rounded-xl border border-blue-200/80 bg-slate-100/85 px-4 py-3 text-base text-zinc-900 placeholder:text-zinc-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300/60 focus:shadow-[0_0_0_1px_rgba(249,115,22,0.35),0_0_20px_rgba(37,99,235,0.2)]";
 
-const searchFieldErrorRingClass =
-  "!border-[#ef4444] shadow-[0_0_0_2px_rgba(239,68,68,0.15)] focus:!border-[#ef4444] focus:shadow-[0_0_0_2px_rgba(239,68,68,0.2)]";
-const searchFieldErrorHintClass = "text-xs font-medium text-[#dc2626]";
-
-type SearchFieldKey = "vehicleType" | "brand" | "model" | "year" | "fuel" | "service" | "city";
-
 const LOCAL_CLEANUP_VERSION_KEY = "servygo_local_cleanup_v1";
-
-/** Gdy false — ukrywa przycisk „Nie znalazłeś auta?” i kartę zgłoszenia brakującego auta (kod zostaje w projekcie). */
-const SHOW_MANUAL_MISSING_VEHICLE_UI = false;
 
 function HomePageContent() {
   const router = useRouter();
@@ -218,16 +207,6 @@ function HomePageContent() {
   const [selectedFavoriteWorkshopId, setSelectedFavoriteWorkshopId] = useState<string | null>(null);
   const [favoriteWorkshopOffers, setFavoriteWorkshopOffers] = useState<WorkshopServiceOffer[] | null>(null);
   const [favoriteWorkshopBanner, setFavoriteWorkshopBanner] = useState("");
-  const [dashboardUpcomingBooking, setDashboardUpcomingBooking] = useState<{
-    id: string;
-    workshop: string;
-    service: string;
-    date: string;
-    time: string;
-    address: string;
-    badgeLabel: string;
-    badgeClassName: string;
-  } | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -239,6 +218,8 @@ function HomePageContent() {
   const [registerPasswordRepeat, setRegisterPasswordRepeat] = useState("");
   const [registerLegalAccepted, setRegisterLegalAccepted] = useState(false);
   const [registerMarketingConsent, setRegisterMarketingConsent] = useState(false);
+  const [registerStep, setRegisterStep] = useState<1 | 2 | 3>(1);
+  const [mobileAccountMenuOpen, setMobileAccountMenuOpen] = useState(false);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const carPickerRef = useRef<HTMLDivElement | null>(null);
 
@@ -410,7 +391,6 @@ function HomePageContent() {
     if (!supabase || !currentUser) {
       queueMicrotask(() => {
         setDashboardBookingsCount(0);
-        setDashboardUpcomingBooking(null);
       });
       return;
     }
@@ -428,7 +408,6 @@ function HomePageContent() {
       if (cancelled) return;
       if (error) {
         setDashboardBookingsCount(0);
-        setDashboardUpcomingBooking(null);
         return;
       }
       const rows =
@@ -446,36 +425,11 @@ function HomePageContent() {
           proposed_by: string | null;
         }[] | null) ?? [];
       setDashboardBookingsCount(rows.length);
-      const upcoming = pickDashboardUpcomingBooking(rows);
-      const dark = theme === "dark";
-      const tBadge = createTranslator(language);
-      if (!upcoming) {
-        setDashboardUpcomingBooking(null);
-      } else {
-        const badge = resolveClientBookingBadge({
-          status: upcoming.status,
-          quoteStatus: upcoming.quote_status,
-          rescheduleStatus: upcoming.reschedule_status,
-          proposedBy: upcoming.proposed_by,
-          isDark: dark,
-          t: tBadge,
-        });
-        setDashboardUpcomingBooking({
-          id: upcoming.id,
-          workshop: upcoming.workshop_name ?? "Warsztat ServyGo",
-          service: upcoming.service_name ?? "Usługa serwisowa",
-          date: upcoming.booking_date ?? "—",
-          time: (upcoming.start_time ?? "").slice(0, 5) || "—",
-          address: "Adres warsztatu dostępny po otwarciu szczegółów",
-          badgeLabel: badge.label,
-          badgeClassName: badge.className,
-        });
-      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [currentUser, theme, language]);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -731,14 +685,14 @@ function HomePageContent() {
     ? "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-x-hidden border-b border-blue-500/20 bg-zinc-950/78 px-2 py-2 max-sm:overflow-hidden max-md:py-1.5 backdrop-blur-xl sm:overflow-visible sm:px-3 sm:py-2.5 md:mb-7 md:px-4"
     : "sticky top-0 z-[1000] isolate mb-4 box-border w-full max-w-full overflow-x-hidden border-b border-blue-100/90 bg-white/92 px-2 py-2 max-sm:overflow-hidden max-md:py-1.5 backdrop-blur-xl sm:overflow-visible sm:px-3 sm:py-2.5 md:mb-7 md:px-4";
   const triggerButtonClass = isDark
-    ? "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-1.5 text-[11px] font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
-    : "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-1.5 text-[11px] font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
+    ? "inline-flex h-11 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2.5 text-xs font-medium text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-11 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-2.5 text-xs font-medium text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const userTriggerButtonClass = isDark
-    ? "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-1.5 text-[11px] text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base"
-    : "inline-flex h-8 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-1.5 text-[11px] text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base";
+    ? "inline-flex h-11 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-zinc-700/80 bg-zinc-900/78 px-2.5 text-xs text-zinc-100 shadow-[0_0_24px_rgba(15,23,42,0.5)] transition-all duration-300 hover:border-blue-400/60 hover:text-blue-300 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base"
+    : "inline-flex h-11 max-w-full min-w-0 shrink items-center gap-1 whitespace-nowrap rounded-xl border border-blue-200/75 bg-white/82 px-2.5 text-xs text-slate-700 shadow-[0_0_24px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-orange-300/80 hover:text-blue-700 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-4 md:text-base";
   const ctaButtonClass = isDark
-    ? "inline-flex h-8 max-w-full min-w-0 shrink items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-1.5 text-[11px] font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
-    : "inline-flex h-8 max-w-full min-w-0 shrink items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-1.5 text-[11px] font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
+    ? "inline-flex h-11 max-w-full min-w-0 shrink items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-400/40 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.28)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base"
+    : "inline-flex h-11 max-w-full min-w-0 shrink items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-blue-300/80 bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-2.5 text-xs font-semibold text-white shadow-[0_0_28px_rgba(59,130,246,0.22)] transition-all duration-300 hover:brightness-110 sm:h-12 sm:shrink-0 sm:gap-2 sm:rounded-2xl sm:px-3 sm:text-sm md:h-14 md:px-5 md:text-base";
   const dropdownPanelClass = isDark
     ? "isolate rounded-2xl border border-blue-500/25 bg-zinc-900/98 p-2 shadow-[0_26px_60px_rgba(2,6,23,0.78)] backdrop-blur-xl"
     : "isolate rounded-2xl border border-blue-200/85 bg-white p-2 shadow-[0_26px_60px_rgba(15,23,42,0.24)] ring-1 ring-orange-200/45 backdrop-blur-xl";
@@ -923,6 +877,7 @@ function HomePageContent() {
   function openLoginModal() {
     setAuthError("");
     setAuthInfo("");
+    setRegisterStep(1);
     setAuthModal("login");
     setActiveDropdown(null);
   }
@@ -930,6 +885,7 @@ function HomePageContent() {
   function openRegisterModal() {
     setAuthError("");
     setAuthInfo("");
+    setRegisterStep(1);
     setAuthModal("register");
     setActiveDropdown(null);
   }
@@ -939,6 +895,67 @@ function HomePageContent() {
     setAuthModal(null);
     setAuthError("");
     setAuthInfo("");
+    setRegisterStep(1);
+  }
+
+  function validateRegisterStep1(): boolean {
+    setAuthError("");
+    setAuthInfo("");
+    const firstName = registerFirstName.trim();
+    const email = registerEmail.trim();
+    if (!firstName) {
+      setAuthError(t("account.validation.profileFirstNameRequired"));
+      return false;
+    }
+    if (!email || !email.includes("@")) {
+      setAuthError(t("auth.errors.emailInvalid"));
+      return false;
+    }
+    return true;
+  }
+
+  function validateRegisterStep2(): boolean {
+    setAuthError("");
+    setAuthInfo("");
+    const phone = registerPhone.trim();
+    const password = registerPassword.trim();
+    const repeatedPassword = registerPasswordRepeat.trim();
+    if (!phone) {
+      setAuthError(t("auth.errors.phoneRequired"));
+      return false;
+    }
+    if (password.length < 6) {
+      setAuthError(t("auth.errors.passwordMin"));
+      return false;
+    }
+    if (password !== repeatedPassword) {
+      setAuthError(t("auth.errors.passwordMismatch"));
+      return false;
+    }
+    return true;
+  }
+
+  function scrollToPageTop() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function scrollToSearchForm() {
+    document.getElementById("servygo-search")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function handleMobileBottomNavAccount() {
+    setMobileAccountMenuOpen(true);
+  }
+
+  function closeMobileAccountMenu() {
+    setMobileAccountMenuOpen(false);
+  }
+
+  function openLandingPanelFromMobile(
+    key: "contact" | "about" | "workshops" | "drivers" | "howItWorks" | "faq",
+  ) {
+    closeMobileAccountMenu();
+    setLandingInfoPanel(key);
   }
 
   async function getUserProfile(userId: string): Promise<Profile | null> {
@@ -1754,7 +1771,9 @@ function HomePageContent() {
       <div className={pageMeshClass} />
       <div className={pageNoiseClass} />
       <div className={pagePatternClass} />
-      <main className="relative z-0 mx-auto w-full max-w-[1760px] px-4 py-5 max-md:px-3 max-md:py-4 sm:px-6 sm:py-9 lg:px-8 2xl:px-10">
+      <main
+        className="relative z-0 mx-auto w-full max-w-[1760px] px-4 pt-5 max-md:px-3 max-md:pt-4 max-sm:pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:py-9 lg:px-8 2xl:px-10"
+      >
         <section
           className="relative isolate w-full max-w-full overflow-x-hidden px-0 pb-8 pt-0 sm:pb-10"
         >
@@ -1796,13 +1815,13 @@ function HomePageContent() {
               <div
                 className={`relative z-[1001] ml-auto flex min-w-0 max-w-full flex-1 basis-0 flex-row flex-nowrap items-center justify-end gap-1 overflow-x-hidden max-sm:overflow-hidden max-md:gap-0.5 sm:max-w-none sm:flex-none sm:basis-auto sm:gap-2 sm:overflow-visible sm:pr-1 md:gap-3 md:pr-2 xl:ml-0${currentUser ? " max-md:gap-1" : ""}`}
               >
-                <div className="relative z-[1002] min-w-0 shrink">
+                <div className="relative z-[1002] hidden min-w-0 shrink sm:block">
                   <button
                     type="button"
                     onClick={() =>
                       setActiveDropdown((prev) => (prev === "user" ? null : "user"))
                     }
-                    className={`${userTriggerButtonClass}${currentUser ? " max-sm:h-[34px] max-sm:min-h-[34px] max-sm:w-[34px] max-sm:min-w-[34px] max-sm:justify-center max-sm:px-0 max-sm:py-0 max-sm:gap-0" : ""}`}
+                    className={`${userTriggerButtonClass}${currentUser ? " max-sm:min-h-11 max-sm:h-11 max-sm:w-11 max-sm:min-w-11 max-sm:justify-center max-sm:px-0 max-sm:py-0 max-sm:gap-0" : ""}`}
                   >
                     <svg
                       viewBox="0 0 24 24"
@@ -2074,24 +2093,16 @@ function HomePageContent() {
                 ) : null}
 
                 {!currentUser ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={openLoginModal}
-                      className={triggerButtonClass}
-                    >
+                  <div className="hidden gap-1 sm:flex sm:gap-2">
+                    <button type="button" onClick={openLoginModal} className={triggerButtonClass}>
                       <span className="inline sm:hidden">{t("header.loginShort")}</span>
                       <span className="hidden sm:inline">{t("header.login")}</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={openRegisterModal}
-                      className={ctaButtonClass}
-                    >
+                    <button type="button" onClick={openRegisterModal} className={ctaButtonClass}>
                       <span className="inline sm:hidden">{t("header.registerShort")}</span>
                       <span className="hidden sm:inline">{t("header.register")}</span>
                     </button>
-                  </>
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -2100,9 +2111,9 @@ function HomePageContent() {
           {isMobileViewport ? (
             <>
               <MobileBottomSheet
-                isOpen={activeDropdown === "user"}
-                onClose={() => setActiveDropdown(null)}
-                title="Konto"
+                isOpen={mobileAccountMenuOpen}
+                onClose={closeMobileAccountMenu}
+                title="Menu"
                 isDark={isDark}
               >
                 <div className="flex flex-col pb-[env(safe-area-inset-bottom,0px)]">
@@ -2116,109 +2127,107 @@ function HomePageContent() {
                       <button
                         type="button"
                         onClick={() => {
+                          closeMobileAccountMenu();
                           openAccountModal();
-                          setActiveDropdown(null);
                         }}
                         className={mobileAccountSheetRowClass}
                       >
-                        <span className="flex min-w-0 flex-col items-start gap-0.5">
-                          <span>{t("auth.account")}</span>
-                          {currentUser.email ? (
-                            <span className={`text-sm font-normal ${mobileAccountSheetSectionLabelClass}`}>{currentUser.email}</span>
-                          ) : null}
-                        </span>
+                        {t("auth.account")}
                       </button>
-                      <Link href="/moje-rezerwacje" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                      <Link href="/moje-rezerwacje" onClick={closeMobileAccountMenu} className={mobileAccountSheetRowClass}>
                         Moje rezerwacje
                       </Link>
-                      <Link href="/moje-auta" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                      <Link href="/moje-auta" onClick={closeMobileAccountMenu} className={mobileAccountSheetRowClass}>
                         Moje auta
                       </Link>
-                      <Link href="/moj-kalendarz" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                      <Link href="/moj-kalendarz" onClick={closeMobileAccountMenu} className={mobileAccountSheetRowClass}>
                         Mój kalendarz
                       </Link>
-                      <Link href="/moje-wiadomosci" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeMobileAccountMenu();
+                          setAccountTab("messages");
+                          openAccountModal();
+                        }}
+                        className={mobileAccountSheetRowClass}
+                      >
                         {t("header.conversationsNav")}
-                      </Link>
-                      <Link href="/ustawienia" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                      </button>
+                      <Link href="/ustawienia" onClick={closeMobileAccountMenu} className={mobileAccountSheetRowClass}>
                         Ustawienia
                       </Link>
                       {isCurrentUserAdmin ? (
-                        <Link href="/admin" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                        <Link href="/admin" onClick={closeMobileAccountMenu} className={mobileAccountSheetRowClass}>
                           Panel admina
                         </Link>
                       ) : null}
                       {hasWorkshopPanelAccess ? (
-                        <Link href="/workshop-panel" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
+                        <Link href="/workshop-panel" onClick={closeMobileAccountMenu} className={mobileAccountSheetRowClass}>
                           {t("workshop.panelTitle")}
                         </Link>
                       ) : null}
-                      <div className={mobileAccountSheetDividerClass} aria-hidden />
-                      <p
-                        className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
-                      >
-                        Strona
-                      </p>
-                      {landingHeaderNavItems.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => {
-                            setActiveDropdown(null);
-                            setLandingInfoPanel(item.key);
-                          }}
-                          className={mobileAccountSheetRowClass}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                      <div className={mobileAccountSheetDividerClass} aria-hidden />
+                    </>
+                  ) : null}
+
+                  {currentUser ? <div className={mobileAccountSheetDividerClass} aria-hidden /> : null}
+                  <p
+                    className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
+                  >
+                    Strona
+                  </p>
+                  {landingHeaderNavItems.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => openLandingPanelFromMobile(item.key)}
+                      className={mobileAccountSheetRowClass}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => openLandingPanelFromMobile("faq")}
+                    className={mobileAccountSheetRowClass}
+                  >
+                    FAQ
+                  </button>
+
+                  <div className={mobileAccountSheetDividerClass} aria-hidden />
+                  {currentUser ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeMobileAccountMenu();
+                        void handleLogout();
+                      }}
+                      className={mobileAccountSheetRowClass}
+                    >
+                      {t("auth.logout")}
+                    </button>
+                  ) : (
+                    <>
                       <button
                         type="button"
                         onClick={() => {
-                          setActiveDropdown(null);
-                          void handleLogout();
+                          closeMobileAccountMenu();
+                          openLoginModal();
                         }}
                         className={mobileAccountSheetRowClass}
                       >
-                        {t("auth.logout")}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p
-                        className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
-                      >
-                        Konto
-                      </p>
-                      <button type="button" onClick={openLoginModal} className={mobileAccountSheetRowClass}>
                         {t("header.login")}
                       </button>
-                      <button type="button" onClick={openRegisterModal} className={mobileAccountSheetRowClass}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeMobileAccountMenu();
+                          openRegisterModal();
+                        }}
+                        className={mobileAccountSheetRowClass}
+                      >
                         {t("header.register")}
                       </button>
-                      <Link href="/dodaj-warsztat" onClick={() => setActiveDropdown(null)} className={mobileAccountSheetRowClass}>
-                        {t("header.addWorkshop")}
-                      </Link>
-                      <div className={mobileAccountSheetDividerClass} aria-hidden />
-                      <p
-                        className={`px-4 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide ${mobileAccountSheetSectionLabelClass}`}
-                      >
-                        Strona
-                      </p>
-                      {landingHeaderNavItems.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => {
-                            setActiveDropdown(null);
-                            setLandingInfoPanel(item.key);
-                          }}
-                          className={mobileAccountSheetRowClass}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
                     </>
                   )}
                 </div>
@@ -2248,6 +2257,7 @@ function HomePageContent() {
                   ))}
                 </div>
               </MobileBottomSheet>
+
             </>
           ) : null}
 
@@ -2468,522 +2478,76 @@ function HomePageContent() {
                 ) : null}
               </div>
             ) : null}
-            <div className="mt-4 flex flex-wrap gap-2 max-md:mt-2 max-md:gap-1.5">
-              {vehicleTypeOptions.map((type) => {
-                const active = vehicleType === type.key;
-                return (
-                  <button
-                    key={type.key}
-                    type="button"
-                    onClick={() => {
-                      clearSearchFieldError("vehicleType");
-                      setVehicleType(type.key);
-                      setBrand("");
-                      setModel("");
-                      setYear("");
-                      setFuel("");
-                      setSelectedServiceItems([]);
-                    }}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition max-md:px-2.5 max-md:py-1.5 max-md:text-xs ${
-                      active
-                        ? "border-blue-600 bg-blue-600 text-white"
-                        : isDark
-                          ? "border-zinc-700 bg-zinc-900/70 text-zinc-200 hover:border-blue-400/60"
-                          : "border-blue-200 bg-white text-zinc-700 hover:border-blue-400"
-                    }`}
-                  >
-                    {t(`form.vehicleTypes.${type.key}`)}
-                  </button>
-                );
-              })}
-            </div>
-            <form
-              id="servygo-search"
+            <SearchWizard
+              isDark={isDark}
+              isSubmitting={isSubmitting}
+              language={language}
+              t={t}
               onSubmit={handleSubmit}
-              className="mt-6 grid grid-cols-1 gap-2 max-md:gap-2 max-md:pb-24 md:gap-4 md:grid-cols-2 xl:grid-cols-3"
-            >
-              <MobileCompactSearchField
-                label={t("form.labels.vehicleType")}
-                isDark={isDark}
-                icon={searchFormFieldIconMap.vehicleType}
-                error={
-                  searchFieldErrors.vehicleType ? (
-                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.vehicleType}</p>
-                  ) : null
-                }
-              >
-                <AutocompleteSelect
-                  value={vehicleType}
-                  onChange={(nextValue) => {
-                    clearSearchFieldError("vehicleType");
-                    const selectedType = nextValue as VehicleTypeKey | "";
-                    setVehicleType(selectedType);
-                    setBrand("");
-                    setModel("");
-                    setYear("");
-                    setSelectedServiceItems([]);
-                    setFuel("");
-                  }}
-                  options={vehicleTypeOptions.map((type) => ({
-                    value: type.key,
-                    label: t(`form.vehicleTypes.${type.key}`),
-                  }))}
-                  placeholder={t("form.selects.vehicleType")}
-                  required
-                  noResultsText={t("account.placeholders.noResults")}
-                  rootClassName={searchFormAutocompleteShell}
-                  toggleButtonClassName={searchFormChevronToggleHide}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.vehicleType ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  isDark={isDark}
-                />
-                <input type="hidden" name="vehicleType" value={vehicleType} />
-              </MobileCompactSearchField>
-
-              <MobileCompactSearchField
-                label={t("form.labels.brand")}
-                isDark={isDark}
-                icon={searchFormFieldIconMap.brand}
-                error={
-                  searchFieldErrors.brand ? (
-                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.brand}</p>
-                  ) : null
-                }
-              >
-                <AutocompleteSelect
-                  name="brand"
-                  value={brand}
-                  onChange={(nextBrand) => {
-                    clearSearchFieldError("brand");
-                    setBrand(nextBrand);
-                    setModel("");
-                  }}
-                  options={brandsForVehicleType}
-                  placeholder={
-                    vehicleType ? t("form.selects.brand") : t("form.selects.chooseTypeFirst")
-                  }
-                  disabled={!vehicleType}
-                  required
-                  noResultsText={t("account.placeholders.noResults")}
-                  rootClassName={searchFormAutocompleteShell}
-                  toggleButtonClassName={searchFormChevronToggleHide}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.brand ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  isDark={isDark}
-                />
-              </MobileCompactSearchField>
-
-              <MobileCompactSearchField
-                label={t("form.labels.model")}
-                isDark={isDark}
-                icon={searchFormFieldIconMap.model}
-                error={
-                  searchFieldErrors.model ? (
-                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.model}</p>
-                  ) : null
-                }
-              >
-                <AutocompleteSelect
-                  name="model"
-                  value={model}
-                  onChange={(nextModel) => {
-                    clearSearchFieldError("model");
-                    setModel(nextModel);
-                  }}
-                  options={modelsForBrand}
-                  placeholder={brand ? t("form.selects.model") : t("form.selects.chooseBrandFirst")}
-                  disabled={!brand}
-                  required
-                  noResultsText={t("account.placeholders.noResults")}
-                  rootClassName={searchFormAutocompleteShell}
-                  toggleButtonClassName={searchFormChevronToggleHide}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.model ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  isDark={isDark}
-                />
-              </MobileCompactSearchField>
-
-              <MobileCompactSearchField
-                label={t("form.labels.year")}
-                isDark={isDark}
-                icon={searchFormFieldIconMap.year}
-                error={
-                  searchFieldErrors.year ? (
-                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.year}</p>
-                  ) : null
-                }
-              >
-                <AutocompleteSelect
-                  name="year"
-                  value={year}
-                  onChange={(nextYear) => {
-                    clearSearchFieldError("year");
-                    setYear(nextYear);
-                  }}
-                  options={years}
-                  placeholder={t("form.selects.year")}
-                  required
-                  noResultsText={t("account.placeholders.noResults")}
-                  rootClassName={searchFormAutocompleteShell}
-                  toggleButtonClassName={searchFormChevronToggleHide}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.year ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  isDark={isDark}
-                />
-              </MobileCompactSearchField>
-
-              <MobileCompactSearchField
-                label={translatedFuelLabel}
-                isDark={isDark}
-                icon={searchFormFieldIconMap.fuel}
-                error={
-                  searchFieldErrors.fuel ? (
-                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.fuel}</p>
-                  ) : null
-                }
-              >
-                <AutocompleteSelect
-                  name="fuel"
-                  value={fuel}
-                  onChange={(nextFuel) => {
-                    clearSearchFieldError("fuel");
-                    setFuel(nextFuel);
-                  }}
-                  options={fuelsForVehicleType}
-                  placeholder={
-                    vehicleType ? t("form.selects.fuel") : t("form.selects.chooseTypeFirst")
-                  }
-                  disabled={!vehicleType}
-                  required
-                  noResultsText={t("account.placeholders.noResults")}
-                  rootClassName={searchFormAutocompleteShell}
-                  toggleButtonClassName={searchFormChevronToggleHide}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.fuel ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  isDark={isDark}
-                />
-              </MobileCompactSearchField>
-
-              <MobileCompactSearchField
-                label={translatedServiceLabel}
-                isDark={isDark}
-                icon={searchFormFieldIconMap.service}
-                error={
-                  searchFieldErrors.service ? (
-                    <p className={searchFieldErrorHintClass}>{searchFieldErrors.service}</p>
-                  ) : null
-                }
-              >
-                <p className={`mb-2 text-xs leading-snug ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                  {language === "pl"
-                    ? "Możesz wybrać usługę z listy albo zacząć pisać, aby szybciej ją znaleźć."
-                    : "Pick a service from the list or start typing to find it faster."}
-                </p>
-                <ServiceCategoryPicker
-                  value=""
-                  onChange={(next) => {
-                    if (next === "") setSelectedServiceItems([]);
-                  }}
-                  multiSelect
-                  selectedItems={selectedServiceItems}
-                  onToggleItem={(item) => {
-                    clearSearchFieldError("service");
-                    setSelectedServiceItems((prev) => toggleSelectedServiceItem(item, prev));
-                  }}
-                  categories={serviceCatalogForVehicleType}
-                  disabled={serviceCatalogForVehicleType.length === 0}
-                  isDark={isDark}
-                  toggleButtonClassName={searchFormChevronToggleHide}
-                  inputClassName={`${currentFieldClassName}${searchFieldErrors.service ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  placeholder="Wybierz z listy albo wpisz fragment nazwy…"
-                  noResultsText="Nie znaleziono usługi w katalogu."
-                  getFinalServiceAvailability={getFinalServiceAvailabilityFromFavorite}
-                />
-                <input type="hidden" name="service" value={selectedItemsToSummary(selectedServiceItems)} />
-                {selectedServiceItems.length > 0 ? (
-                  <div
-                    className={`mt-3 rounded-xl border px-3 py-2.5 ${
-                      isDark
-                        ? "border-zinc-600 bg-zinc-950/90 text-zinc-50"
-                        : "border-slate-300/90 bg-white text-zinc-950 shadow-sm shadow-slate-200/40"
-                    }`}
-                  >
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <p className={`text-sm font-semibold ${isDark ? "text-zinc-50" : "text-zinc-950"}`}>
-                        Wybrane usługi
-                        <span className={`ml-2 font-normal ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                          ({selectedServiceItems.length})
-                        </span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedServiceItems([]);
-                          clearSearchFieldError("service");
-                        }}
-                        className={`shrink-0 text-xs font-semibold underline ${isDark ? "text-blue-300" : "text-blue-800"}`}
-                      >
-                        Wyczyść wybór
-                      </button>
-                    </div>
-                    <ul className="max-h-40 space-y-1.5 overflow-y-auto [-webkit-overflow-scrolling:touch]">
-                      {selectedServiceItems.map((item) => (
-                        <li
-                          key={item.id}
-                          className={`flex items-start justify-between gap-2 rounded-lg px-2.5 py-2 text-sm ${
-                            isDark ? "bg-zinc-900/90 ring-1 ring-zinc-700/80" : "bg-slate-100 ring-1 ring-slate-200/90"
-                          }`}
-                        >
-                          <span className={`min-w-0 flex-1 break-words ${isDark ? "text-zinc-50" : "text-zinc-950"}`}>
-                            <span className={`font-semibold ${isDark ? "text-zinc-50" : "text-zinc-950"}`}>{item.name}</span>
-                            {item.source === "custom" ? (
-                              <span
-                                className={`ml-2 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                  isDark ? "border-zinc-500 text-zinc-300" : "border-zinc-400 text-zinc-700"
-                                }`}
-                              >
-                                Własny opis
-                              </span>
-                            ) : null}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedServiceItems((prev) => prev.filter((x) => x.id !== item.id))
-                            }
-                            className={`shrink-0 text-xs font-semibold underline decoration-orange-700/50 underline-offset-2 hover:decoration-orange-800 ${
-                              isDark ? "text-orange-300" : "text-orange-800"
-                            }`}
-                          >
-                            Usuń
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {selectedFavoriteWorkshopId && favoriteServiceBlocked ? (
-                  <div
-                    className={`mt-2 space-y-2 rounded-xl border px-3 py-2 text-sm ${
-                      isDark
-                        ? "border-red-500/40 bg-red-950/30 text-red-200"
-                        : "border-red-300/50 bg-red-500/5 text-red-700"
-                    }`}
-                  >
-                    <p>
-                      Co najmniej jedna wybrana usługa nie jest dostępna w wybranym warsztacie. Zmień wybór albo usuń
-                      filtr ulubionego warsztatu.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedFavoriteWorkshopId(null);
-                        clearSearchFieldError("service");
-                      }}
-                      className="font-semibold underline decoration-red-600/60 hover:no-underline"
-                    >
-                      Szukaj we wszystkich warsztatach
-                    </button>
-                  </div>
-                ) : null}
-              </MobileCompactSearchField>
-
-              <MobileCompactSearchField
-                label={t("form.labels.problem")}
-                isDark={isDark}
-                icon={searchFormFieldIconMap.problem}
-                variant="block"
-              >
-                <textarea
-                  name="problem"
-                  rows={3}
-                  placeholder={t("form.placeholders.problem")}
-                  className={`${currentFieldClassName} min-h-[100px] w-full max-md:min-h-[104px] max-md:px-2 max-md:py-2 max-md:text-base md:min-h-[120px]`}
-                />
-              </MobileCompactSearchField>
-
-              <div className="grid grid-cols-1 gap-2 max-md:gap-2 md:col-span-2 md:grid-cols-2 md:gap-4 xl:col-span-3">
-                <MobileCompactSearchField
-                  label={t("form.labels.city")}
-                  isDark={isDark}
-                  icon={searchFormFieldIconMap.city}
-                  error={
-                    searchFieldErrors.city ? (
-                      <p className={searchFieldErrorHintClass}>{searchFieldErrors.city}</p>
-                    ) : null
-                  }
-                >
-                  <input
-                    type="text"
-                    name="city"
-                    value={searchCity}
-                    onChange={(event) => {
-                      clearSearchFieldError("city");
-                      setSearchCity(event.target.value);
-                    }}
-                    placeholder={t("form.placeholders.city")}
-                    className={`${currentFieldClassName}${searchFieldErrors.city ? ` ${searchFieldErrorRingClass}` : ""} ${searchFormControlMobileStrip}`}
-                  />
-                </MobileCompactSearchField>
-                <MobileCompactSearchField label={t("form.labels.vin")} isDark={isDark} icon={searchFormFieldIconMap.vin}>
-                  <input
-                    type="text"
-                    name="vin"
-                    maxLength={17}
-                    value={searchVin}
-                    onChange={(event) => setSearchVin(event.target.value.toUpperCase().slice(0, 17))}
-                    placeholder={t("account.placeholders.vin")}
-                    className={`${currentFieldClassName} ${searchFormControlMobileStrip}`}
-                  />
-                  <VinOptionalHint text={t("account.vehicle.vinHint")} isDark={isDark} />
-                  {SHOW_MANUAL_MISSING_VEHICLE_UI ? (
-                    <div className="mt-1 flex items-center gap-2 max-md:mt-1 md:mt-1">
-                      <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>lub</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedSavedCarId("");
-                          setShowManualVehicle((prev) => !prev);
-                          setVehicleType("");
-                          setBrand("");
-                          setModel("");
-                          setYear("");
-                          setFuel("");
-                          setSelectedServiceItems([]);
-                          setSearchCity("");
-                          setSearchVin("");
-                        }}
-                        className={`text-xs font-semibold ${isDark ? "text-blue-300 hover:text-orange-300" : "text-blue-700 hover:text-orange-600"}`}
-                      >
-                        {t("form.manual.toggleShow")}
-                      </button>
-                    </div>
-                  ) : null}
-                </MobileCompactSearchField>
-              </div>
-
-              <div
-                className={`z-[1002] mt-1 grid grid-cols-1 gap-2 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:mx-auto max-md:mt-0 max-md:w-full max-md:grid-cols-2 max-md:gap-2 max-md:border-t max-md:px-3 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] max-md:pt-2 max-md:backdrop-blur-xl md:static md:col-span-2 md:grid md:grid-cols-2 md:gap-3 md:border-0 md:px-0 md:pb-0 md:pt-0 xl:col-span-3 ${
-                  isDark
-                    ? "max-md:border-zinc-700/80 max-md:bg-zinc-950/95"
-                    : "max-md:border-blue-200/90 max-md:bg-white/95"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedSavedCarId("");
-                    setShowManualVehicle(false);
-                    setVehicleType("");
-                    setBrand("");
-                    setModel("");
-                    setYear("");
-                    setFuel("");
-                    setSelectedServiceItems([]);
-                    setSearchCity("");
-                    setSearchVin("");
-                    setSearchFieldErrors({});
-                    setMessage("");
-                    setMessageType("");
-                  }}
-                  className={`inline-flex h-10 w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-300 hover:scale-[1.01] max-md:h-10 md:h-12 md:px-6 md:py-3 md:text-base ${
-                    isDark
-                      ? "border-zinc-600 bg-zinc-900/70 text-zinc-100 hover:border-blue-400/60"
-                      : "border-blue-200 bg-white text-zinc-800 hover:border-blue-500"
-                  }`}
-                >
-                  Wyczyść filtry
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="inline-flex h-10 w-full max-h-12 items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(59,130,246,0.28),0_8px_22px_rgba(249,115,22,0.24)] transition-all duration-300 hover:scale-[1.01] hover:from-blue-500 hover:to-orange-400 hover:shadow-[0_14px_36px_rgba(59,130,246,0.35),0_10px_28px_rgba(249,115,22,0.3)] max-md:h-10 max-md:max-h-[48px] md:h-12 md:px-6 md:py-3 md:text-base"
-                >
-                  {isSubmitting
-                    ? t("form.buttons.submitting")
-                    : language === "pl"
-                      ? selectedServiceItems.length > 1
-                        ? `Szukaj ofert (${selectedServiceItems.length} usług)`
-                        : "Szukaj ofert"
-                      : t("form.buttons.submit")}
-                </button>
-              </div>
-
-              {SHOW_MANUAL_MISSING_VEHICLE_UI && showManualVehicle ? (
-                <div
-                  className={`md:col-span-2 rounded-2xl border p-4 sm:p-5 ${
-                    isDark
-                      ? "border-zinc-700/70 bg-zinc-900/70"
-                      : "border-blue-200/80 bg-white/70"
-                  }`}
-                >
-                  <h3 className="text-lg font-semibold">{t("form.manual.title")}</h3>
-                  <p
-                    className={`mt-2 text-sm ${
-                      isDark ? "text-zinc-300" : "text-zinc-700"
-                    }`}
-                  >
-                    {t("form.manual.subtitle")}
-                  </p>
-                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("form.manual.labels.type")}</span>
-                      <input
-                        type="text"
-                        name="manualType"
-                        value={manualType}
-                        onChange={(event) => setManualType(event.target.value)}
-                        placeholder={t("form.manual.placeholders.type")}
-                        className={currentFieldClassName}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("form.manual.labels.brand")}</span>
-                      <input
-                        type="text"
-                        name="manualBrand"
-                        value={manualBrand}
-                        onChange={(event) => setManualBrand(event.target.value)}
-                        placeholder={t("form.manual.placeholders.brand")}
-                        className={currentFieldClassName}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("form.manual.labels.model")}</span>
-                      <input
-                        type="text"
-                        name="manualModel"
-                        value={manualModel}
-                        onChange={(event) => setManualModel(event.target.value)}
-                        placeholder={t("form.manual.placeholders.model")}
-                        className={currentFieldClassName}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("form.manual.labels.year")}</span>
-                      <input
-                        type="number"
-                        name="manualYear"
-                        min="1900"
-                        max={maxManualYear}
-                        value={manualYear}
-                        onChange={(event) => setManualYear(event.target.value)}
-                        placeholder={t("form.manual.placeholders.year")}
-                        className={currentFieldClassName}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 md:col-span-2">
-                      <span className="text-sm font-medium">{t("form.manual.labels.description")}</span>
-                      <textarea
-                        name="manualDescription"
-                        rows={3}
-                        value={manualDescription}
-                        onChange={(event) =>
-                          setManualDescription(event.target.value)
-                        }
-                        placeholder={t("form.manual.placeholders.description")}
-                        className={currentFieldClassName}
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : null}
-            </form>
+              vehicleType={vehicleType}
+              setVehicleType={setVehicleType}
+              brand={brand}
+              setBrand={setBrand}
+              model={model}
+              setModel={setModel}
+              year={year}
+              setYear={setYear}
+              fuel={fuel}
+              setFuel={setFuel}
+              selectedServiceItems={selectedServiceItems}
+              setSelectedServiceItems={setSelectedServiceItems}
+              searchCity={searchCity}
+              setSearchCity={setSearchCity}
+              searchVin={searchVin}
+              setSearchVin={setSearchVin}
+              searchFieldErrors={searchFieldErrors}
+              setSearchFieldErrors={setSearchFieldErrors}
+              clearSearchFieldError={clearSearchFieldError}
+              brandsForVehicleType={brandsForVehicleType}
+              modelsForBrand={modelsForBrand}
+              fuelsForVehicleType={fuelsForVehicleType}
+              years={years}
+              serviceCatalogForVehicleType={serviceCatalogForVehicleType}
+              getFinalServiceAvailabilityFromFavorite={getFinalServiceAvailabilityFromFavorite}
+              translatedFuelLabel={translatedFuelLabel}
+              translatedServiceLabel={translatedServiceLabel}
+              currentFieldClassName={currentFieldClassName}
+              searchFormControlMobileStrip={searchFormControlMobileStrip}
+              searchFormAutocompleteShell={searchFormAutocompleteShell}
+              searchFormChevronToggleHide={searchFormChevronToggleHide}
+              favoriteServiceBlocked={favoriteServiceBlocked}
+              selectedFavoriteWorkshopId={selectedFavoriteWorkshopId}
+              setSelectedFavoriteWorkshopId={setSelectedFavoriteWorkshopId}
+              onClearFilters={() => {
+                setSelectedSavedCarId("");
+                setShowManualVehicle(false);
+                setVehicleType("");
+                setBrand("");
+                setModel("");
+                setYear("");
+                setFuel("");
+                setSelectedServiceItems([]);
+                setSearchCity("");
+                setSearchVin("");
+                setSearchFieldErrors({});
+                setMessage("");
+                setMessageType("");
+              }}
+              showManualVehicle={showManualVehicle}
+              setShowManualVehicle={setShowManualVehicle}
+              setSelectedSavedCarId={setSelectedSavedCarId}
+              manualType={manualType}
+              setManualType={setManualType}
+              manualBrand={manualBrand}
+              setManualBrand={setManualBrand}
+              manualModel={manualModel}
+              setManualModel={setManualModel}
+              manualYear={manualYear}
+              setManualYear={setManualYear}
+              manualDescription={manualDescription}
+              setManualDescription={setManualDescription}
+              maxManualYear={maxManualYear}
+            />
             {message ? (
               <p
                 className={`mt-4 rounded-xl border px-4 py-3 text-sm font-medium ${
@@ -3016,7 +2580,6 @@ function HomePageContent() {
           isDark={isDark}
           isLoggedIn={Boolean(currentUser)}
           sortedVehicles={sortedVehicles}
-          dashboardUpcomingBooking={dashboardUpcomingBooking}
           steps={steps}
           onOpenAccountModal={openAccountModal}
         />
@@ -3025,6 +2588,10 @@ function HomePageContent() {
           isDark={isDark}
           onOpenContact={() => setLandingInfoPanel("contact")}
           onOpenFaq={() => setLandingInfoPanel("faq")}
+        />
+        <div
+          className="hidden h-[calc(5.5rem+env(safe-area-inset-bottom,0px))] shrink-0 max-sm:block"
+          aria-hidden
         />
 
         {accountModalOpen ? (
@@ -3678,138 +3245,233 @@ function HomePageContent() {
                   <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                     {t("auth.registerSubtitle")}
                   </p>
-                  <form onSubmit={handleRegisterSubmit} className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("auth.fields.firstName")}</span>
-                      <input
-                        type="text"
-                        value={registerFirstName}
-                        onChange={(event) => setRegisterFirstName(event.target.value)}
-                        className={currentFieldClassName}
-                        placeholder={t("auth.placeholders.firstName")}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("auth.fields.lastName")}</span>
-                      <input
-                        type="text"
-                        value={registerLastName}
-                        onChange={(event) => setRegisterLastName(event.target.value)}
-                        className={currentFieldClassName}
-                        placeholder={t("auth.placeholders.lastName")}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 sm:col-span-2">
-                      <span className="text-sm font-medium">{t("auth.fields.email")}</span>
-                      <input
-                        type="email"
-                        value={registerEmail}
-                        onChange={(event) => setRegisterEmail(event.target.value)}
-                        className={currentFieldClassName}
-                        placeholder={t("auth.placeholders.email")}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 sm:col-span-2">
-                      <span className="text-sm font-medium">{t("auth.fields.phone")}</span>
-                      <input
-                        type="tel"
-                        value={registerPhone}
-                        onChange={(event) => setRegisterPhone(event.target.value)}
-                        className={currentFieldClassName}
-                        placeholder={t("auth.placeholders.phone")}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("auth.fields.password")}</span>
-                      <input
-                        type="password"
-                        value={registerPassword}
-                        onChange={(event) => setRegisterPassword(event.target.value)}
-                        className={currentFieldClassName}
-                        placeholder={t("auth.placeholders.password")}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2">
-                      <span className="text-sm font-medium">{t("auth.fields.repeatPassword")}</span>
-                      <input
-                        type="password"
-                        value={registerPasswordRepeat}
-                        onChange={(event) => setRegisterPasswordRepeat(event.target.value)}
-                        className={currentFieldClassName}
-                        placeholder={t("auth.placeholders.repeatPassword")}
-                      />
-                    </label>
-                    <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                      <input
-                        type="checkbox"
-                        checked={registerLegalAccepted}
-                        onChange={(event) => setRegisterLegalAccepted(event.target.checked)}
-                        className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
-                      />
-                      <span>
-                        {t("legal.registration.acceptPrefix")}{" "}
-                        <Link href="/regulamin" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
-                          {t("legal.registration.termsLabel")}
-                        </Link>{" "}
-                        {t("legal.registration.acceptMiddle")}{" "}
-                        <Link href="/polityka-prywatnosci" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
-                          {t("legal.registration.privacyLabel")}
-                        </Link>
-                        .
-                      </span>
-                    </label>
-                    <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                      <input
-                        type="checkbox"
-                        checked={registerMarketingConsent}
-                        onChange={(event) => setRegisterMarketingConsent(event.target.checked)}
-                        className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
-                      />
-                      <span>
-                        {t("legal.registration.marketingLabel")}
-                      </span>
-                    </label>
+                  {isMobileViewport ? (
+                    <div className="mt-4 flex items-center justify-center gap-2" aria-label={`Krok ${registerStep} z 3`}>
+                      {([1, 2, 3] as const).map((step) => (
+                        <span
+                          key={step}
+                          className={`h-2 w-2 rounded-full transition-colors ${
+                            registerStep >= step
+                              ? "bg-blue-600"
+                              : isDark
+                                ? "bg-zinc-600"
+                                : "bg-zinc-300"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                  <form
+                    onSubmit={(event) => {
+                      if (isMobileViewport && registerStep < 3) {
+                        event.preventDefault();
+                        return;
+                      }
+                      void handleRegisterSubmit(event);
+                    }}
+                    className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2"
+                  >
+                    {(!isMobileViewport || registerStep === 1) && (
+                      <>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium">{t("auth.fields.firstName")}</span>
+                          <input
+                            type="text"
+                            value={registerFirstName}
+                            onChange={(event) => setRegisterFirstName(event.target.value)}
+                            className={currentFieldClassName}
+                            placeholder={t("auth.placeholders.firstName")}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium">{t("auth.fields.lastName")}</span>
+                          <input
+                            type="text"
+                            value={registerLastName}
+                            onChange={(event) => setRegisterLastName(event.target.value)}
+                            className={currentFieldClassName}
+                            placeholder={t("auth.placeholders.lastName")}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2 sm:col-span-2">
+                          <span className="text-sm font-medium">{t("auth.fields.email")}</span>
+                          <input
+                            type="email"
+                            value={registerEmail}
+                            onChange={(event) => setRegisterEmail(event.target.value)}
+                            className={currentFieldClassName}
+                            placeholder={t("auth.placeholders.email")}
+                          />
+                        </label>
+                      </>
+                    )}
+
+                    {(!isMobileViewport || registerStep === 2) && (
+                      <>
+                        <label className="flex flex-col gap-2 sm:col-span-2">
+                          <span className="text-sm font-medium">{t("auth.fields.phone")}</span>
+                          <input
+                            type="tel"
+                            value={registerPhone}
+                            onChange={(event) => setRegisterPhone(event.target.value)}
+                            className={currentFieldClassName}
+                            placeholder={t("auth.placeholders.phone")}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium">{t("auth.fields.password")}</span>
+                          <input
+                            type="password"
+                            value={registerPassword}
+                            onChange={(event) => setRegisterPassword(event.target.value)}
+                            className={currentFieldClassName}
+                            placeholder={t("auth.placeholders.password")}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-2">
+                          <span className="text-sm font-medium">{t("auth.fields.repeatPassword")}</span>
+                          <input
+                            type="password"
+                            value={registerPasswordRepeat}
+                            onChange={(event) => setRegisterPasswordRepeat(event.target.value)}
+                            className={currentFieldClassName}
+                            placeholder={t("auth.placeholders.repeatPassword")}
+                          />
+                        </label>
+                      </>
+                    )}
+
+                    {(!isMobileViewport || registerStep === 3) && (
+                      <>
+                        <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                          <input
+                            type="checkbox"
+                            checked={registerLegalAccepted}
+                            onChange={(event) => setRegisterLegalAccepted(event.target.checked)}
+                            className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                          />
+                          <span>
+                            {t("legal.registration.acceptPrefix")}{" "}
+                            <Link href="/regulamin" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
+                              {t("legal.registration.termsLabel")}
+                            </Link>{" "}
+                            {t("legal.registration.acceptMiddle")}{" "}
+                            <Link href="/polityka-prywatnosci" className={`font-medium underline underline-offset-2 ${isDark ? "text-sky-300 hover:text-orange-200" : "text-blue-700 hover:text-orange-600"}`}>
+                              {t("legal.registration.privacyLabel")}
+                            </Link>
+                            .
+                          </span>
+                        </label>
+                        <label className={`sm:col-span-2 flex items-start gap-3 text-sm leading-snug ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                          <input
+                            type="checkbox"
+                            checked={registerMarketingConsent}
+                            onChange={(event) => setRegisterMarketingConsent(event.target.checked)}
+                            className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-400"
+                          />
+                          <span>{t("legal.registration.marketingLabel")}</span>
+                        </label>
+                      </>
+                    )}
 
                     {authError ? (
-                      <p className={`sm:col-span-2 rounded-xl border px-3 py-2 text-sm ${
-                        isDark ? "border-orange-400/40 bg-orange-500/10 text-orange-200" : "border-orange-200 bg-orange-50 text-orange-700"
-                      }`}>
+                      <p
+                        className={`sm:col-span-2 rounded-xl border px-3 py-2 text-sm ${
+                          isDark
+                            ? "border-orange-400/40 bg-orange-500/10 text-orange-200"
+                            : "border-orange-200 bg-orange-50 text-orange-700"
+                        }`}
+                      >
                         {authError}
                       </p>
                     ) : null}
                     {authInfo ? (
-                      <p className={`sm:col-span-2 rounded-xl border px-3 py-2 text-sm ${
-                        isDark ? "border-blue-400/40 bg-blue-500/10 text-blue-100" : "border-blue-200 bg-blue-50 text-blue-700"
-                      }`}>
+                      <p
+                        className={`sm:col-span-2 rounded-xl border px-3 py-2 text-sm ${
+                          isDark
+                            ? "border-blue-400/40 bg-blue-500/10 text-blue-100"
+                            : "border-blue-200 bg-blue-50 text-blue-700"
+                        }`}
+                      >
                         {authInfo}
                       </p>
                     ) : null}
 
-                    <button
-                      type="submit"
-                      disabled={authLoading}
-                      className="sm:col-span-2 inline-flex h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-5 font-semibold text-white transition-all duration-300 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {authLoading ? t("auth.buttons.registering") : t("auth.buttons.register")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleGoogleLogin}
-                      className={`sm:col-span-2 inline-flex h-11 w-full items-center justify-center rounded-xl border px-5 font-medium transition ${
-                        isDark ? "border-blue-400/30 bg-zinc-900/60 hover:border-orange-400/50" : "border-blue-200 bg-white/80 hover:border-orange-300"
-                      }`}
-                    >
-                      {t("auth.buttons.continueGoogle")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleAppleLogin}
-                      className={`sm:col-span-2 inline-flex h-11 w-full items-center justify-center rounded-xl border px-5 font-medium transition ${
-                        isDark ? "border-blue-400/30 bg-zinc-900/60 hover:border-orange-400/50" : "border-blue-200 bg-white/80 hover:border-orange-300"
-                      }`}
-                    >
-                      {t("auth.buttons.continueApple")}
-                    </button>
+                    {isMobileViewport ? (
+                      <div className="flex flex-col gap-2 sm:col-span-2">
+                        {registerStep > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAuthError("");
+                              setRegisterStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2 | 3) : prev));
+                            }}
+                            className={`inline-flex h-11 w-full items-center justify-center rounded-xl border px-5 font-semibold transition ${
+                              isDark
+                                ? "border-zinc-600 bg-zinc-900/70 text-zinc-100 hover:border-blue-400/60"
+                                : "border-blue-200 bg-white text-zinc-800 hover:border-blue-500"
+                            }`}
+                          >
+                            Wstecz
+                          </button>
+                        ) : null}
+                        {registerStep < 3 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (registerStep === 1 && validateRegisterStep1()) setRegisterStep(2);
+                              if (registerStep === 2 && validateRegisterStep2()) setRegisterStep(3);
+                            }}
+                            className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-5 font-semibold text-white transition-all duration-300 hover:brightness-110"
+                          >
+                            Dalej →
+                          </button>
+                        ) : (
+                          <button
+                            type="submit"
+                            disabled={authLoading}
+                            className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-5 font-semibold text-white transition-all duration-300 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {authLoading ? t("auth.buttons.registering") : t("auth.buttons.register")}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="sm:col-span-2 inline-flex h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-5 font-semibold text-white transition-all duration-300 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {authLoading ? t("auth.buttons.registering") : t("auth.buttons.register")}
+                      </button>
+                    )}
+
+                    {!isMobileViewport || registerStep === 3 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleGoogleLogin}
+                          className={`sm:col-span-2 inline-flex h-11 w-full items-center justify-center rounded-xl border px-5 font-medium transition ${
+                            isDark
+                              ? "border-blue-400/30 bg-zinc-900/60 hover:border-orange-400/50"
+                              : "border-blue-200 bg-white/80 hover:border-orange-300"
+                          }`}
+                        >
+                          {t("auth.buttons.continueGoogle")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAppleLogin}
+                          className={`sm:col-span-2 inline-flex h-11 w-full items-center justify-center rounded-xl border px-5 font-medium transition ${
+                            isDark
+                              ? "border-blue-400/30 bg-zinc-900/60 hover:border-orange-400/50"
+                              : "border-blue-200 bg-white/80 hover:border-orange-300"
+                          }`}
+                        >
+                          {t("auth.buttons.continueApple")}
+                        </button>
+                      </>
+                    ) : null}
                   </form>
                   <p className={`mt-4 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                     {t("auth.switch.hasAccount")}{" "}
@@ -3841,6 +3503,15 @@ function HomePageContent() {
           isDark={isDark}
         />
       </main>
+
+      {isMobileViewport ? (
+        <MobileBottomNav
+          isDark={isDark}
+          onStart={scrollToPageTop}
+          onSearch={scrollToSearchForm}
+          onAccount={handleMobileBottomNavAccount}
+        />
+      ) : null}
     </div>
   );
 }
