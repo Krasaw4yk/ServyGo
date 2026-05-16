@@ -156,7 +156,7 @@ function WorkshopServicesPricingSectionImpl({
           type="button"
           disabled={readOnly}
           onClick={onRequestAddCustomService}
-          className="rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          className="mb-3 w-full rounded-xl bg-gradient-to-r from-blue-600 to-orange-500 py-2.5 text-sm font-semibold text-white disabled:opacity-50 md:mb-0 md:w-auto md:px-4 md:py-2 md:from-blue-600 md:via-blue-500 md:to-orange-500"
         >
           Dodaj własną usługę
         </button>
@@ -247,7 +247,70 @@ function WorkshopServicesPricingSectionImpl({
           </button>
         ))}
       </div>
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 space-y-2 md:hidden">
+        {pagedServiceRows.map((row) => {
+          const effectiveCategory = resolveWorkshopServiceCategory(row.service_name, row.category, row.category_manual);
+          const vehicleCount = vehiclePriceCountByService.get(row.service_name.trim().toLowerCase()) ?? 0;
+          return (
+            <div
+              key={row.id ?? row.service_key ?? row.service_name}
+              id={`workshop-svc-mobile-${stableServiceDraftKey(row)}`}
+              className={`mb-2 rounded-xl border p-3 ${isDark ? "border-zinc-700/80 bg-zinc-900" : "border-zinc-200 bg-white shadow-sm"}`}
+            >
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">{row.service_name}</div>
+                  <div className="mt-0.5 text-[11px] text-zinc-500">{effectiveCategory || "—"}</div>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    row.is_active
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                      : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500"
+                  }`}
+                >
+                  {row.is_active ? "Aktywna" : "Nieaktywna"}
+                </span>
+              </div>
+              <div className="mb-2 flex gap-4 text-[11px] text-zinc-500 dark:text-zinc-400">
+                {(row.price_from || row.price_to) && (
+                  <span>
+                    💰 {row.price_from || "—"}
+                    {row.price_to ? ` – ${row.price_to} zł` : " zł"}
+                  </span>
+                )}
+                {row.duration_minutes ? <span>⏱ {row.duration_minutes} min</span> : null}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenVehiclePricing(row.service_name)}
+                  className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                >
+                  Ceny ({vehicleCount})
+                </button>
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => onPatchService(row, { is_active: !row.is_active })}
+                  className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                >
+                  {row.is_active ? "Deaktywuj" : "Aktywuj"}
+                </button>
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => void onDeleteService(row)}
+                  className="flex-1 rounded-lg border border-rose-300 px-2 py-1.5 text-[11px] font-semibold text-rose-500 disabled:opacity-50"
+                >
+                  Usuń
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 hidden overflow-x-auto md:block">
         <table className="min-w-full text-sm">
           <thead className={isDark ? "text-zinc-400" : "text-zinc-600"}>
             <tr>

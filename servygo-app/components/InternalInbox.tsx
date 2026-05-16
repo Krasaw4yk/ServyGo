@@ -82,6 +82,26 @@ export default function InternalInbox({
     return d.toLocaleString(dateLocaleTag);
   }
 
+  function formatListTime(value: string) {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString(dateLocaleTag, { hour: "2-digit", minute: "2-digit" });
+    }
+    return d.toLocaleDateString(dateLocaleTag, { day: "numeric", month: "short" });
+  }
+
+  function participantInitials(label: string) {
+    const trimmed = label.trim();
+    if (!trimmed) return "SG";
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
+    }
+    return trimmed.slice(0, 2).toUpperCase();
+  }
+
   const [loading, setLoading] = useState(true);
   const [inbox, setInbox] = useState<InternalMessage[]>([]);
   const [sent, setSent] = useState<InternalMessage[]>([]);
@@ -1021,70 +1041,81 @@ export default function InternalInbox({
     )
   );
 
-  const mobileUnreadCardHighlight = !isDark
-    ? "border-blue-200 bg-sky-50/90 shadow-sm ring-1 ring-blue-100/70"
-    : "border-blue-800/45 bg-blue-950/35 ring-1 ring-blue-500/25";
-
   const sidebarListMobileAsCards =
     mergedSidebarRows.length === 0 ? (
-      <p className={`rounded-2xl border border-blue-100 bg-white/90 p-6 text-center text-sm shadow-sm ${isDark ? "border-zinc-700 bg-zinc-900/80 text-zinc-400" : "text-zinc-500"}`}>
+      <p
+        className={`rounded-xl border p-6 text-center text-sm ${
+          isDark ? "border-zinc-700/80 bg-zinc-900 text-zinc-400" : "border-zinc-200 bg-white text-zinc-500"
+        }`}
+      >
         {resolvedEmptyListHint}
       </p>
     ) : (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col">
         {mergedSidebarRows.map((row) =>
           row.kind === "notification" ? (
             <button
               key={row.key}
               type="button"
               onClick={() => void openNotification(row.notification)}
-              className={`w-full rounded-2xl border p-4 text-left shadow-sm transition ${
-                resolvedSelectedKey === row.key ? (!isDark ? "border-blue-300 bg-blue-50/95" : "border-blue-500/40 bg-zinc-800") : ""
-              } ${!row.notification.is_read ? mobileUnreadCardHighlight : !isDark ? "border-blue-100 bg-white/90" : "border-zinc-700 bg-zinc-900/85"}`}
+              className={`mb-2 flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
+                isDark
+                  ? "border-zinc-700/80 bg-zinc-900 hover:bg-zinc-800"
+                  : "border-zinc-200 bg-white hover:bg-zinc-50"
+              } ${!row.notification.is_read ? "border-l-2 border-l-blue-500" : ""} ${
+                resolvedSelectedKey === row.key ? (isDark ? "ring-1 ring-blue-500/40" : "ring-1 ring-blue-200") : ""
+              }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <p className={`flex-1 break-words font-semibold ${!row.notification.is_read ? "text-blue-600" : isDark ? "text-zinc-100" : "text-zinc-900"}`}>{row.notification.title}</p>
-                {!row.notification.is_read ? (
-                  <span className="mt-1 flex shrink-0 items-center gap-1" aria-hidden={true}>
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                  </span>
-                ) : null}
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                  isDark ? "bg-zinc-800 text-zinc-300" : "bg-blue-50 text-blue-700"
+                }`}
+              >
+                !
               </div>
-              <p className={`mt-1 text-xs font-medium ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{notificationKindLabel(row.notification)}</p>
-              {row.notification.body ? <p className={`mt-2 line-clamp-3 max-w-full break-words text-sm ${isDark ? "text-zinc-400" : "text-zinc-700"}`}>{row.notification.body}</p> : null}
-              <p className="mt-3 text-[11px] text-zinc-500">{formatDate(row.notification.created_at)}</p>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                {!row.notification.is_read ? t("inboxPage.readStateUnread") : t("inboxPage.readStateRead")}
-              </p>
+              <div className="min-w-0 flex-1">
+                <div className="mb-0.5 flex items-baseline justify-between gap-2">
+                  <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">{row.notification.title}</span>
+                  <span className="shrink-0 text-[10px] text-zinc-400">{formatListTime(row.notification.created_at)}</span>
+                </div>
+                <p className="truncate text-[12px] leading-snug text-zinc-500 dark:text-zinc-400">
+                  {row.notification.body || notificationKindLabel(row.notification)}
+                </p>
+              </div>
+              {!row.notification.is_read ? <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" /> : null}
             </button>
           ) : (
             <button
               key={row.key}
               type="button"
               onClick={() => void openMessage(row.thread.latest)}
-              className={`w-full rounded-2xl border p-4 text-left shadow-sm transition ${
-                resolvedSelectedKey === row.key ? (!isDark ? "border-blue-300 bg-blue-50/95" : "border-blue-500/40 bg-zinc-800") : ""
-              } ${row.thread.unreadCount > 0 ? mobileUnreadCardHighlight : !isDark ? "border-blue-100 bg-white/90" : "border-zinc-700 bg-zinc-900/85"}`}
+              className={`mb-2 flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${
+                isDark
+                  ? "border-zinc-700/80 bg-zinc-900 hover:bg-zinc-800"
+                  : "border-zinc-200 bg-white hover:bg-zinc-50"
+              } ${row.thread.unreadCount > 0 ? "border-l-2 border-l-blue-500" : ""} ${
+                resolvedSelectedKey === row.key ? (isDark ? "ring-1 ring-blue-500/40" : "ring-1 ring-blue-200") : ""
+              }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <p className={`flex-1 break-words font-semibold ${row.thread.unreadCount > 0 ? (isDark ? "text-blue-300" : "text-blue-700") : isDark ? "text-zinc-100" : "text-zinc-900"}`}>{row.thread.latest.subject || t("inboxPage.noSubject")}</p>
-                {row.thread.unreadCount > 0 ? (
-                  <span className="mt-1 flex shrink-0 items-center gap-1.5" aria-hidden={true}>
-                    {row.thread.unreadCount > 1 ? (
-                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white ${isDark ? "bg-blue-500" : "bg-blue-600"}`}>{row.thread.unreadCount}</span>
-                    ) : null}
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                  </span>
-                ) : null}
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                  isDark ? "bg-zinc-800 text-zinc-300" : "bg-blue-50 text-blue-700"
+                }`}
+              >
+                {participantInitials(row.thread.latest.sender_label)}
               </div>
-              <p className={`mt-1 text-xs font-medium ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                {row.thread.label} · {row.thread.latest.sender_label}
-              </p>
-              {row.thread.latest.body ? <p className={`mt-2 line-clamp-3 max-w-full break-words text-sm ${isDark ? "text-zinc-400" : "text-zinc-700"}`}>{row.thread.latest.body}</p> : null}
-              <p className="mt-3 text-[11px] text-zinc-500">{formatDate(row.thread.latest.created_at)}</p>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                {row.thread.unreadCount > 0 ? t("inboxPage.readStateUnread") : t("inboxPage.readStateRead")}
-              </p>
+              <div className="min-w-0 flex-1">
+                <div className="mb-0.5 flex items-baseline justify-between gap-2">
+                  <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
+                    {row.thread.latest.sender_label || row.thread.label}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-zinc-400">{formatListTime(row.thread.latest.created_at)}</span>
+                </div>
+                <p className="truncate text-[12px] leading-snug text-zinc-500 dark:text-zinc-400">
+                  {row.thread.latest.body || row.thread.latest.subject || t("inboxPage.noSubject")}
+                </p>
+              </div>
+              {row.thread.unreadCount > 0 ? <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" /> : null}
             </button>
           ),
         )}

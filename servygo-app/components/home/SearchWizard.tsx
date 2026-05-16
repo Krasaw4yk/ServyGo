@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useState, type Dispatch, type SetStateAction } from "react";
+import { FormEvent, useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import AutocompleteSelect from "@/components/AutocompleteSelect";
 import ServiceCategoryPicker from "@/components/ServiceCategoryPicker";
 import { MobileCompactSearchField, searchFormFieldIconMap } from "@/components/home/MobileCompactSearchField";
@@ -85,6 +85,7 @@ export type SearchWizardProps = {
   manualDescription: string;
   setManualDescription: (value: string) => void;
   maxManualYear: string | undefined;
+  onWizardStepChange?: (step: 1 | 2) => void;
 };
 
 function WizardProgress({ step, isDark }: { step: 1 | 2; isDark: boolean }) {
@@ -201,9 +202,14 @@ export default function SearchWizard({
   manualDescription,
   setManualDescription,
   maxManualYear,
+  onWizardStepChange,
 }: SearchWizardProps) {
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   const [wizardStepError, setWizardStepError] = useState("");
+
+  useEffect(() => {
+    onWizardStepChange?.(wizardStep);
+  }, [onWizardStepChange, wizardStep]);
 
   const vehicleSummary =
     brand && model && year && fuel ? `${brand} ${model} ${year} · ${fuel}` : "";
@@ -702,11 +708,15 @@ export default function SearchWizard({
         <div className={`contents ${mobileStep2Hidden ? "max-md:hidden" : ""}`}>{serviceFields}</div>
 
         <div
-          className={`z-[1002] mt-1 grid grid-cols-1 gap-2 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:mx-auto max-md:mt-0 max-md:w-full max-md:gap-2.5 max-md:border-t max-md:px-4 max-md:pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] max-md:pt-3 max-md:backdrop-blur-xl md:static md:col-span-2 md:grid md:grid-cols-2 md:gap-3 md:border-0 md:px-0 md:pb-0 md:pt-0 xl:col-span-3 ${
+          className={`mt-1 grid grid-cols-1 gap-2 md:static md:col-span-2 md:grid md:grid-cols-2 md:gap-3 md:border-0 md:px-0 md:pb-0 md:pt-0 xl:col-span-3 ${
+            isSubmitting
+              ? "max-md:hidden"
+              : "z-[1002] max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:mx-auto max-md:mt-0 max-md:w-full max-md:gap-2.5 max-md:border-t max-md:px-4 max-md:pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] max-md:pt-3 max-md:backdrop-blur-xl"
+          } ${
             isDark
               ? "max-md:border-zinc-700/80 max-md:bg-zinc-950/95"
               : "max-md:border-blue-200/90 max-md:bg-white/95"
-          } ${mobileStep1Hidden && mobileStep2Hidden ? "" : ""}`}
+          }`}
         >
           {wizardStep === 1 ? (
             <button

@@ -21,6 +21,12 @@ export default class OffersLeafletMapErrorBoundary extends Component<Props, Stat
     console.error("[OffersLeafletMap]", error.message, info.componentStack);
   }
 
+  componentDidUpdate(prevProps: Props) {
+    if (this.state.hasError && prevProps.children !== this.props.children) {
+      this.setState({ hasError: false });
+    }
+  }
+
   render() {
     if (this.state.hasError) return this.props.fallback;
     return this.props.children;

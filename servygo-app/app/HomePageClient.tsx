@@ -208,6 +208,7 @@ function HomePageContent() {
   const [favoriteWorkshopOffers, setFavoriteWorkshopOffers] = useState<WorkshopServiceOffer[] | null>(null);
   const [favoriteWorkshopBanner, setFavoriteWorkshopBanner] = useState("");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [searchWizardStep, setSearchWizardStep] = useState<1 | 2>(1);
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [registerFirstName, setRegisterFirstName] = useState("");
@@ -848,7 +849,6 @@ function HomePageContent() {
       query.set("problem", problemText);
     }
     persistSelectedServicesToSession(selectedServiceItems);
-    setIsSubmitting(false);
     if (
       selectedFavoriteWorkshopId &&
       favoriteWorkshopOffers &&
@@ -1772,7 +1772,13 @@ function HomePageContent() {
       <div className={pageNoiseClass} />
       <div className={pagePatternClass} />
       <main
-        className="relative z-0 mx-auto w-full max-w-[1760px] px-4 pt-5 max-md:px-3 max-md:pt-4 max-sm:pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:py-9 lg:px-8 2xl:px-10"
+        className={`relative z-0 mx-auto w-full max-w-[1760px] px-4 pt-5 max-md:px-3 max-md:pt-4 sm:px-6 sm:py-9 lg:px-8 2xl:px-10 ${
+          isMobileViewport
+            ? searchWizardStep === 2
+              ? "max-md:pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]"
+              : "max-md:pb-[calc(7rem+env(safe-area-inset-bottom,0px))]"
+            : ""
+        }`}
       >
         <section
           className="relative isolate w-full max-w-full overflow-x-hidden px-0 pb-8 pt-0 sm:pb-10"
@@ -2547,6 +2553,7 @@ function HomePageContent() {
               manualDescription={manualDescription}
               setManualDescription={setManualDescription}
               maxManualYear={maxManualYear}
+              onWizardStepChange={setSearchWizardStep}
             />
             {message ? (
               <p
@@ -2566,33 +2573,31 @@ function HomePageContent() {
           </div>
         </section>
 
-        <UserCenterCards
-          isDark={isDark}
-          isLoggedIn={Boolean(currentUser)}
-          favoriteWorkshopsCount={favoriteWorkshopsCount}
-          dashboardBookingsCount={dashboardBookingsCount}
-          triggerButtonClass={triggerButtonClass}
-          ctaButtonClass={ctaButtonClass}
-          onLogin={openLoginModal}
-          onRegister={openRegisterModal}
-        />
-        <UserDetailsSection
-          isDark={isDark}
-          isLoggedIn={Boolean(currentUser)}
-          sortedVehicles={sortedVehicles}
-          steps={steps}
-          onOpenAccountModal={openAccountModal}
-        />
-        <RecommendedWorkshopsSection isDark={isDark} city={searchCity} />
-        <LandingCtaFooter
-          isDark={isDark}
-          onOpenContact={() => setLandingInfoPanel("contact")}
-          onOpenFaq={() => setLandingInfoPanel("faq")}
-        />
-        <div
-          className="hidden h-[calc(5.5rem+env(safe-area-inset-bottom,0px))] shrink-0 max-sm:block"
-          aria-hidden
-        />
+        <div className="max-md:pb-28">
+          <UserCenterCards
+            isDark={isDark}
+            isLoggedIn={Boolean(currentUser)}
+            favoriteWorkshopsCount={favoriteWorkshopsCount}
+            dashboardBookingsCount={dashboardBookingsCount}
+            triggerButtonClass={triggerButtonClass}
+            ctaButtonClass={ctaButtonClass}
+            onLogin={openLoginModal}
+            onRegister={openRegisterModal}
+          />
+          <UserDetailsSection
+            isDark={isDark}
+            isLoggedIn={Boolean(currentUser)}
+            sortedVehicles={sortedVehicles}
+            steps={steps}
+            onOpenAccountModal={openAccountModal}
+          />
+          <RecommendedWorkshopsSection isDark={isDark} city={searchCity} />
+          <LandingCtaFooter
+            isDark={isDark}
+            onOpenContact={() => setLandingInfoPanel("contact")}
+            onOpenFaq={() => setLandingInfoPanel("faq")}
+          />
+        </div>
 
         {accountModalOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 max-md:p-0 max-md:items-stretch">
@@ -3504,7 +3509,7 @@ function HomePageContent() {
         />
       </main>
 
-      {isMobileViewport ? (
+      {isMobileViewport && searchWizardStep === 1 ? (
         <MobileBottomNav
           isDark={isDark}
           onStart={scrollToPageTop}

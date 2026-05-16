@@ -681,7 +681,27 @@ function WorkshopDetailsPageContent() {
   }, [calendarDaySlots, calendarGrid, todayStart]);
 
   const effectiveDateKey = selectedDateKey || firstAvailableDateKey;
+  const todayKey = useMemo(() => toDateKey(todayStart), [todayStart]);
   const selectedDayDate = useMemo(() => parseDateKey(effectiveDateKey), [effectiveDateKey]);
+
+  function calendarDayCellClass(isDisabled: boolean, isToday: boolean, isSelected: boolean, isDimMonth: boolean) {
+    let cellClass: string;
+    if (isDisabled) {
+      cellClass = "opacity-25 pointer-events-none cursor-default text-zinc-400 dark:text-zinc-600";
+    } else if (isToday && isSelected) {
+      cellClass = "bg-emerald-500 text-white font-semibold rounded-lg cursor-pointer";
+    } else if (isToday && !isSelected) {
+      cellClass =
+        "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-semibold rounded-lg ring-1 ring-emerald-400 dark:ring-emerald-600 cursor-pointer";
+    } else if (!isToday && isSelected) {
+      cellClass = "bg-blue-600 text-white font-semibold rounded-lg cursor-pointer";
+    } else {
+      cellClass =
+        "text-zinc-700 dark:text-zinc-300 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer";
+    }
+    if (isDimMonth) cellClass += " opacity-35";
+    return cellClass;
+  }
 
   const isSelectedDayClosed = useMemo(() => {
     if (!selectedDayDate || !effectiveDateKey) return false;
@@ -964,9 +984,9 @@ function WorkshopDetailsPageContent() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-2 py-5 sm:px-6 sm:py-8">
-        <div className="mx-auto w-full max-w-6xl space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+      <main className="min-h-screen max-md:px-0 max-md:py-0 px-2 py-5 sm:px-6 sm:py-8">
+        <div className="mx-auto w-full max-w-6xl md:space-y-3">
+          <div className="hidden flex-wrap items-center justify-between gap-2 md:flex">
             <Link
               href="/"
               onClick={(event) => {
@@ -1012,7 +1032,521 @@ function WorkshopDetailsPageContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="relative z-10 md:hidden">
+            <div className="sticky top-0 z-30 flex items-center gap-2.5 border-b border-zinc-200 bg-white/95 px-3 py-2.5 backdrop-blur-xl dark:border-zinc-700/80 dark:bg-zinc-950/95">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+                aria-label="Wróć"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <span className="flex-1 truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{workshop.name}</span>
+            </div>
+
+            <div className="border-b border-zinc-100 px-4 py-3.5 dark:border-zinc-800">
+              <h1 className="text-[20px] font-semibold leading-tight text-zinc-900 dark:text-zinc-100">{workshop.name}</h1>
+              <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-zinc-500 dark:text-zinc-400">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                  <path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z" />
+                  <circle cx="12" cy="10" r="2.5" />
+                </svg>
+                {workshop.address}, {workshop.city}
+              </p>
+              {workshop.isDemo ? (
+                <span className="mt-2 inline-block rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+                  Profil demonstracyjny
+                </span>
+              ) : null}
+              <div className="mt-2.5 flex flex-wrap gap-3 text-[12px] text-zinc-500 dark:text-zinc-400">
+                <span className="flex items-center gap-1.5">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-amber-500" aria-hidden>
+                    <path d="M12 2l2.9 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 7.1-1.01L12 2z" />
+                  </svg>
+                  {servygoReviews.length ? averageRating(servygoReviews).toFixed(1) : workshop.rating.toFixed(1)} (
+                  {servygoReviews.length || workshop.reviewsCount} opinii)
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                  {workshop.availability.openingHours.start}-{workshop.availability.openingHours.end}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                <WorkshopFavoriteToggle
+                  workshopId={workshop.supabaseId}
+                  isDark={isDark}
+                  isLoggedIn={isLoggedIn}
+                  userId={currentUserId}
+                  onRequireAuth={() => {
+                    router.push("/?auth=login");
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.getElementById("mobile-booking-section")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="h-10 rounded-xl bg-blue-600 text-[12px] font-medium text-white"
+                >
+                  Umów wizytę ↓
+                </button>
+              </div>
+            </div>
+
+            <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+              {(() => {
+                const photos = workshopPhotos.filter((ph) => ph.public_url);
+                if (photos.length === 0) {
+                  return (
+                    <div
+                      className={`flex h-24 w-full items-center justify-center rounded-xl border border-dashed text-center ${
+                        isDark ? "border-zinc-700 bg-zinc-800/60" : "border-zinc-300 bg-zinc-50"
+                      }`}
+                    >
+                      <div>
+                        <svg className="mx-auto mb-1 opacity-30" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                          Brak zdjęć · właściciel może je dodać w panelu
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <>
+                    <div className="relative mb-1.5 h-[100px] overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photos[0]!.public_url!} alt="" className="h-full w-full object-cover" />
+                    </div>
+                    {photos.length > 1 ? (
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {photos.slice(1, 4).map((p, i) => (
+                          <div key={p.id} className="relative h-[56px] overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={p.public_url!} alt="" className="h-full w-full object-cover" />
+                            {i === 2 && photos.length > 4 ? (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-[12px] font-medium text-white">
+                                +{photos.length - 4}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
+            </div>
+            <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-400 dark:text-zinc-500">O warsztacie</p>
+              {workshop.description && workshop.description !== "—" ? (
+                <p className="mb-3 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{workshop.description}</p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                {(workshop.workshopGoogleMapsUrl?.trim() || workshop.googleMapsUrl) ? (
+                  <a
+                    href={(workshop.workshopGoogleMapsUrl?.trim() || workshop.googleMapsUrl) || "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                      <path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z" />
+                      <circle cx="12" cy="10" r="2.5" />
+                    </svg>
+                    Google Maps
+                  </a>
+                ) : null}
+                <a
+                  href={(workshop.workshopGoogleMapsUrl?.trim() || workshop.googleMapsUrl) || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-amber-500" aria-hidden>
+                    <path d="M12 2l2.9 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 7.1-1.01L12 2z" />
+                  </svg>
+                  Opinia Google
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isLoggedIn) {
+                      router.push("/?auth=login");
+                      return;
+                    }
+                    setServygoMsg("");
+                    setServygoReviewOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                  </svg>
+                  Zostaw opinię ServyGo
+                </button>
+              </div>
+            </div>
+
+            <div className="relative z-10 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Usługi i ceny</p>
+                <button type="button" className="text-[11px] text-blue-600 dark:text-blue-400">
+                  Zmień auto
+                </button>
+              </div>
+              {partialCoverage && partialCoverage.total > 0 && partialCoverage.matched < partialCoverage.total ? (
+                <p className="mb-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-900 dark:border-blue-500/35 dark:bg-blue-950/50 dark:text-blue-100">
+                  Ten warsztat obsługuje {partialCoverage.matched} z {partialCoverage.total} wybranych usług.
+                </p>
+              ) : null}
+              {filteredServices.map((offer) => {
+                const stableKey = workshopOfferStableKey(offer);
+                const isChosen = selectedWorkshopOfferKeys.includes(stableKey);
+                return (
+                  <button
+                    type="button"
+                    key={`mobile-svc-${stableKey}`}
+                    onClick={() => {
+                      setSelectedWorkshopOfferKeys((prev) =>
+                        prev.includes(stableKey) ? prev.filter((x) => x !== stableKey) : [...prev, stableKey],
+                      );
+                      setSelectedTime("");
+                    }}
+                    className={`mb-2 w-full rounded-xl border px-3 py-2.5 text-left transition ${
+                      isChosen
+                        ? isDark
+                          ? "border-emerald-600/60 bg-emerald-950/30"
+                          : "border-emerald-400/70 bg-emerald-50"
+                        : isDark
+                          ? "border-zinc-700/80 bg-zinc-900"
+                          : "border-zinc-200 bg-white"
+                    }`}
+                  >
+                    <div className="mb-1 flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span
+                          className={`text-[13px] font-medium ${
+                            isChosen ? "text-emerald-700 dark:text-emerald-400" : "text-zinc-900 dark:text-zinc-100"
+                          }`}
+                        >
+                          {isChosen ? (
+                            <svg
+                              className="mr-1.5 inline shrink-0 text-emerald-600 dark:text-emerald-400"
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden
+                            >
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          ) : null}
+                          {offer.service_name}
+                        </span>
+                        {"difficulty_level" in offer && offer.difficulty_level != null ? (
+                          <ServiceDifficultyBadge difficulty_level={offer.difficulty_level} isDark={isDark} compact />
+                        ) : null}
+                      </div>
+                      <span
+                        className={`shrink-0 text-[13px] font-semibold ${
+                          isChosen ? "text-emerald-700 dark:text-emerald-400" : "text-blue-700 dark:text-blue-400"
+                        }`}
+                      >
+                        {formatPriceRange(offer.price_from, offer.price_to, offer.price)}
+                      </span>
+                    </div>
+                    <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-500">
+                      {offer.brand} {offer.model} · {offer.engine} · {offer.year_from}–{offer.year_to}
+                      {offer.duration_minutes ? ` · ${offer.duration_minutes} min` : ""}
+                    </p>
+                  </button>
+                );
+              })}
+              {filteredServices.length === 0 ? (
+                <p className="text-[11px] text-orange-700 dark:text-orange-200">Brak usług dla wybranego auta.</p>
+              ) : null}
+            </div>
+
+            <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Opinie ServyGo</p>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-700/80 dark:bg-zinc-900">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[12px] font-medium text-zinc-900 dark:text-zinc-100">
+                    Średnia: {servygoReviews.length ? averageRating(servygoReviews).toFixed(1) : "—"}
+                  </span>
+                  <span className="text-[11px] text-zinc-500">{servygoReviews.length} opinii</span>
+                </div>
+                {servygoReviews.length === 0 ? (
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500">Jeszcze brak opinii dla tego warsztatu.</p>
+                ) : (
+                  servygoReviews.slice(0, 2).map((r) => (
+                    <div
+                      key={r.id}
+                      className="mt-2 border-t border-zinc-200 pt-2 text-[11px] text-zinc-500 dark:border-zinc-700/80 dark:text-zinc-400"
+                    >
+                      <p>{r.comment}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div id="mobile-booking-section" className={`mx-4 mb-4 overflow-hidden rounded-2xl border shadow-sm ${isDark ? "border-zinc-700/80 bg-zinc-900" : "border-zinc-200 bg-white"}`}>
+              <div className="px-4 py-3">
+              <p className="mb-3 text-[10px] font-medium uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Wybierz termin</p>
+              <p className="mb-3 text-[11px] text-zinc-400 dark:text-zinc-500">
+                Godziny otwarcia: {workshop.availability.openingHours.start}-{workshop.availability.openingHours.end}
+              </p>
+              <div className="mb-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVisitKind(BOOKING_TYPE_EXACT_TIME);
+                    setSelectedTime("");
+                  }}
+                  className={`rounded-xl px-3 py-2.5 text-left transition ${
+                    visitKind === BOOKING_TYPE_EXACT_TIME
+                      ? "border-2 border-blue-500 bg-blue-50/40 dark:bg-blue-950/30"
+                      : "border border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  <p className="text-[12px] font-medium text-zinc-900 dark:text-zinc-100">Rezerwacja godzinowa</p>
+                  <p className="mt-0.5 text-[10px] leading-snug text-zinc-400">Auto naprawiane o wybranej godzinie</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVisitKind(BOOKING_TYPE_DROPOFF);
+                    setSelectedTime("");
+                  }}
+                  className={`rounded-xl px-3 py-2.5 text-left transition ${
+                    visitKind === BOOKING_TYPE_DROPOFF
+                      ? "border-2 border-blue-500 bg-blue-50/40 dark:bg-blue-950/30"
+                      : "border border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  <p className="text-[12px] font-medium text-zinc-900 dark:text-zinc-100">Zostaw auto</p>
+                  <p className="mt-0.5 text-[10px] leading-snug text-zinc-400">Warsztat powiadomi gdy gotowe</p>
+                </button>
+              </div>
+              <div className="mb-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1));
+                    setSelectedTime("");
+                  }}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-sm dark:border-zinc-700"
+                >
+                  ‹
+                </button>
+                <p className="text-sm font-semibold capitalize">{monthTitle}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1));
+                    setSelectedTime("");
+                  }}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-sm dark:border-zinc-700"
+                >
+                  ›
+                </button>
+              </div>
+              <div className="mb-2 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                {["Pon", "Wto", "Śro", "Czw", "Pią", "Sob", "Nie"].map((dayName) => (
+                  <span key={dayName}>{dayName}</span>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-0.5">
+                {calendarGrid.map((day) => {
+                  const cellDateKey = day.key;
+                  const normalizedDay = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
+                  const isPast = normalizedDay < todayStart;
+                  const hasDaySlots = (calendarDaySlots[cellDateKey] ?? []).length > 0;
+                  const isClosed = isPast || !hasDaySlots;
+                  const isDisabled = !day.isCurrentMonth || isClosed;
+                  const isToday = cellDateKey === todayKey;
+                  const isSelected = cellDateKey === effectiveDateKey;
+                  const isDimMonth = !day.isCurrentMonth;
+                  return (
+                    <button
+                      key={`mobile-${workshop.id}-day-${cellDateKey}`}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => {
+                        setSelectedDateKey(cellDateKey);
+                        setSelectedTime("");
+                      }}
+                      className={`flex aspect-square items-center justify-center text-[11px] transition ${calendarDayCellClass(
+                        isDisabled,
+                        isToday,
+                        isSelected,
+                        isDimMonth,
+                      )}`}
+                    >
+                      {day.date.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+              {isSelectedDayClosed ? (
+                <p className="mt-3 text-[11px] text-orange-700 dark:text-orange-200">{t("workshopDetails.workshopClosedDay")}</p>
+              ) : (
+                <>
+                  <div className="mt-3 grid grid-cols-3 gap-1.5">
+                    {dynamicAvailableTimes.map((slot) => (
+                      <button
+                        key={`mobile-${workshop.id}-time-${slot}`}
+                        type="button"
+                        onClick={() => setSelectedTime(slot)}
+                        className={`rounded-lg border py-2 text-[12px] font-medium transition ${
+                          effectiveSelectedTime === slot
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : isDark
+                              ? "border-zinc-700 bg-zinc-800 text-zinc-100 hover:border-blue-400"
+                              : "border-zinc-200 bg-white text-zinc-900 hover:border-blue-400"
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                  {dynamicAvailableTimes.length === 0 ? (
+                    <p className="mt-2 text-[11px] text-zinc-500">{t("workshopDetails.noHoursAvailable")}</p>
+                  ) : null}
+                  <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-zinc-200 px-3 py-2.5 text-[12px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden className="shrink-0">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
+                    </svg>
+                    <button type="button" onClick={() => setEmployeeSheetOpen(true)} className="flex-1 text-left">
+                      {selectedEmployeeId === "any"
+                        ? "Dowolny dostępny pracownik"
+                        : employeeOptions.find((employee) => employee.id === selectedEmployeeId)?.label ?? "Wybierz pracownika"}
+                    </button>
+                  </div>
+                  <MobileBottomSheet
+                    isOpen={employeeSheetOpen}
+                    onClose={() => setEmployeeSheetOpen(false)}
+                    title="Wybierz pracownika"
+                    isDark={isDark}
+                  >
+                    <div className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmployeeId("any");
+                          setSelectedTime("");
+                          setEmployeeSheetOpen(false);
+                        }}
+                        className="w-full rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10"
+                      >
+                        Dowolny dostępny pracownik
+                      </button>
+                      {employeeOptions.map((employee) => (
+                        <button
+                          key={employee.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedEmployeeId(employee.id);
+                            setSelectedTime("");
+                            setEmployeeSheetOpen(false);
+                          }}
+                          className="flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm hover:bg-blue-500/10"
+                        >
+                          <span>{employee.label}</span>
+                          {selectedEmployeeId === employee.id ? <span>✓</span> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </MobileBottomSheet>
+                  {visitKind === BOOKING_TYPE_DROPOFF ? (
+                    <p className="mt-2 text-[10px] leading-snug text-sky-800 dark:text-sky-200">
+                      Przewidywany czas realizacji: 1–2 dni robocze. Warsztat poinformuje Cię, gdy auto będzie gotowe.
+                    </p>
+                  ) : null}
+                </>
+              )}
+              {selectedWorkshopOffers.length > 0 ? (
+                <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[12px] leading-relaxed text-zinc-500 dark:border-zinc-700/80 dark:bg-zinc-900 dark:text-zinc-400">
+                  <p className="mb-0.5 font-medium text-zinc-900 dark:text-zinc-100">
+                    Wybrane usługi: {selectedWorkshopOffers.length}
+                  </p>
+                  <p>{bookingServicesSummaryLine || selectedWorkshopOffers.map((i) => i.service_name).join(" + ")}</p>
+                  <p className="mt-0.5 font-medium text-zinc-900 dark:text-zinc-100">
+                    Łącznie: {formatVisitDurationPl(bookingBundle.durationMinutes)}
+                  </p>
+                </div>
+              ) : null}
+              </div>
+            </div>
+
+            <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Lokalizacja</p>
+              <div className="pointer-events-none relative isolate z-0 h-[130px] w-full overflow-hidden rounded-xl [&_.leaflet-container]:!h-full [&_.leaflet-container]:!min-h-0">
+                {workshop.hasMapPin === true && workshopDetailHref ? (
+                  <WorkshopLocationMiniMap
+                    workshopId={workshop.id}
+                    name={workshop.name}
+                    addressLine={[workshop.city, workshop.address].filter(Boolean).join(" · ")}
+                    city={workshop.city}
+                    lat={workshop.lat}
+                    lng={workshop.lng}
+                    detailsHref={workshopDetailHref}
+                    rating={workshop.rating}
+                    reviewsCount={workshop.reviewsCount}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center bg-zinc-100 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    {t("workshopDetails.noWorkshopLocation")}
+                  </div>
+                )}
+              </div>
+              <p className="mt-1.5 text-center text-[11px] text-zinc-400 dark:text-zinc-500">
+                {workshop.address}, {workshop.city}
+              </p>
+            </div>
+
+            <div className="sticky bottom-0 z-30 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur-xl pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] dark:border-zinc-700/80 dark:bg-zinc-950/95">
+              <button
+                type="button"
+                disabled={!effectiveDateKey || !effectiveSelectedTime || selectedWorkshopOffers.length === 0}
+                onClick={() => {
+                  setBookingSuccess("");
+                  setBookingError("");
+                  void trackEvent("booking_start", {
+                    workshopId: workshop.supabaseId,
+                    workshopName: workshop.name,
+                    service: bookingServicesSummaryLine || null,
+                  });
+                  setIsBookingModalOpen(true);
+                }}
+                className="w-full rounded-xl bg-blue-600 py-3.5 text-[13px] font-semibold text-white transition disabled:opacity-40"
+              >
+                {effectiveDateKey && effectiveSelectedTime
+                  ? `Umów termin — ${effectiveSelectedTime}, ${effectiveDateKey}`
+                  : "Wybierz termin aby umówić wizytę"}
+              </button>
+            </div>
+          </div>
+
+
+          <div className="relative max-md:hidden md:grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
             <section
               className={`rounded-3xl border p-5 backdrop-blur-xl sm:p-6 ${
                 isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/80"
@@ -1180,7 +1714,7 @@ function WorkshopDetailsPageContent() {
                 <div className="mt-3 space-y-2">
                   {filteredServices.map((service) => {
                     const stableKey = workshopOfferStableKey(service);
-                    const highlighted = selectedWorkshopOfferKeys.includes(stableKey);
+                    const isChosen = selectedWorkshopOfferKeys.includes(stableKey);
                     const vehicleClientHint =
                       selectedVehicle.brand && selectedVehicle.model
                         ? `${selectedVehicle.brand} ${selectedVehicle.model}${Number.isFinite(selectedVehicle.year) ? ` (${selectedVehicle.year})` : ""}`
@@ -1196,38 +1730,51 @@ function WorkshopDetailsPageContent() {
                           setSelectedTime("");
                         }}
                         className={`rounded-2xl border p-3 text-left transition ${
-                          highlighted
-                            ? "border-orange-300 bg-orange-500/12 shadow-[0_0_0_1px_rgba(249,115,22,0.45),0_0_20px_rgba(249,115,22,0.22)]"
+                          isChosen
+                            ? isDark
+                              ? "border-emerald-600/60 bg-emerald-950/30"
+                              : "border-emerald-400/70 bg-emerald-50"
                             : isDark
-                              ? "border-blue-500/25 bg-zinc-900/60 hover:border-blue-400/50"
-                              : "border-blue-200 bg-white/75 hover:border-blue-300"
+                              ? "border-zinc-700/80 bg-zinc-900"
+                              : "border-zinc-200 bg-white"
                         }`}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                            <p className="break-words text-base font-semibold">{service.service_name}</p>
+                            {isChosen ? (
+                              <svg
+                                className="shrink-0 text-emerald-600 dark:text-emerald-400"
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            ) : null}
+                            <p
+                              className={`break-words text-base font-semibold ${
+                                isChosen ? "text-emerald-700 dark:text-emerald-400" : "text-zinc-900 dark:text-zinc-100"
+                              }`}
+                            >
+                              {service.service_name}
+                            </p>
                             {"difficulty_level" in service && service.difficulty_level != null ? (
                               <ServiceDifficultyBadge difficulty_level={service.difficulty_level} isDark={isDark} />
                             ) : null}
                           </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            {highlighted ? (
-                              <span className="rounded-full border border-blue-300/40 bg-blue-500/15 px-2 py-0.5 text-xs font-semibold text-blue-200">
-                                {t("workshopDetails.selected")}
-                              </span>
-                            ) : null}
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                highlighted
-                                  ? "bg-orange-500 text-white"
-                                  : isDark
-                                    ? "border border-blue-400/40 bg-blue-500/15 text-blue-200"
-                                    : "border border-blue-300/60 bg-blue-50 text-blue-700"
-                              }`}
-                            >
-                              {formatPriceRange(service.price_from, service.price_to, service.price)}
-                            </span>
-                          </div>
+                          <span
+                            className={`shrink-0 text-[13px] font-semibold ${
+                              isChosen ? "text-emerald-700 dark:text-emerald-400" : "text-blue-700 dark:text-blue-400"
+                            }`}
+                          >
+                            {formatPriceRange(service.price_from, service.price_to, service.price)}
+                          </span>
                         </div>
                         <p className={`mt-1 text-xs sm:text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                           {vehicleClientHint} • {service.engine} • {service.year_from}-{service.year_to} • {service.fuelType ?? "—"}
@@ -1393,31 +1940,30 @@ function WorkshopDetailsPageContent() {
                   </div>
                   <div className="grid grid-cols-7 gap-1">
                     {calendarGrid.map((day) => {
+                      const cellDateKey = day.key;
                       const normalizedDay = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
                       const isPast = normalizedDay < todayStart;
-                      const hasDaySlots = (calendarDaySlots[day.key] ?? []).length > 0;
+                      const hasDaySlots = (calendarDaySlots[cellDateKey] ?? []).length > 0;
                       const isClosed = isPast || !hasDaySlots;
-                      const isActive = day.key === effectiveDateKey;
+                      const isDisabled = !day.isCurrentMonth || isClosed;
+                      const isToday = cellDateKey === todayKey;
+                      const isSelected = cellDateKey === effectiveDateKey;
+                      const isDimMonth = !day.isCurrentMonth;
                       return (
                         <button
-                          key={`${workshop.id}-day-${day.key}`}
+                          key={`${workshop.id}-day-${cellDateKey}`}
                           type="button"
-                          disabled={!day.isCurrentMonth || isClosed}
+                          disabled={isDisabled}
                           onClick={() => {
-                            setSelectedDateKey(day.key);
+                            setSelectedDateKey(cellDateKey);
                             setSelectedTime("");
                           }}
-                          className={`h-9 rounded-lg border text-xs font-semibold transition ${
-                            isActive
-                              ? "border-orange-300 bg-orange-500 text-white shadow-[0_0_0_1px_rgba(249,115,22,0.45)]"
-                              : !day.isCurrentMonth || isClosed
-                                ? isDark
-                                  ? "cursor-not-allowed border-zinc-800 bg-zinc-900/40 text-zinc-600"
-                                  : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                                : isDark
-                                  ? "border-zinc-700 bg-zinc-900/60 hover:border-blue-400/60"
-                                  : "border-blue-200 bg-white/70 hover:border-blue-300"
-                          }`}
+                          className={`flex h-9 items-center justify-center text-xs transition ${calendarDayCellClass(
+                            isDisabled,
+                            isToday,
+                            isSelected,
+                            isDimMonth,
+                          )}`}
                         >
                           {day.date.getDate()}
                         </button>
@@ -1612,6 +2158,7 @@ function WorkshopDetailsPageContent() {
                     workshopId={workshop.id}
                     name={workshop.name}
                     addressLine={[workshop.city, workshop.address].filter(Boolean).join(" · ")}
+                    city={workshop.city}
                     lat={workshop.lat}
                     lng={workshop.lng}
                     detailsHref={workshopDetailHref}

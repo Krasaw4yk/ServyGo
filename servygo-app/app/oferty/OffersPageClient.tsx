@@ -523,7 +523,6 @@ export default function OffersPageClient() {
 
   const mapMarkers: OffersMapMarker[] = useMemo(() => {
     return filteredAndSorted
-      .filter((w) => w.hasMapPin === true)
       .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
       .map((workshop) => {
         const firstOffer = workshop.services[0];
@@ -590,7 +589,7 @@ export default function OffersPageClient() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className="min-h-screen px-2 py-5 sm:px-6 sm:py-8 xl:px-8">
+      <main className="min-h-screen px-2 py-5 max-md:pb-10 sm:px-6 sm:py-8 xl:px-8">
         <div className="mx-auto w-full max-w-[1680px]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
             <Link href="/" className="inline-flex items-center">
@@ -1029,7 +1028,7 @@ export default function OffersPageClient() {
               className={`grid grid-cols-1 gap-4 md:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] ${resultsDesktopHeightClass}`}
             >
               <section className={`${viewMode === "map" ? "hidden md:block" : "block"} md:min-h-0`}>
-                <div className="space-y-2 md:h-full md:overflow-y-auto md:pr-1">
+                <div className="space-y-2 max-md:pb-28 md:h-full md:overflow-y-auto md:pr-1">
                   {filteredAndSorted.filter((w) => w.services[0]).map((workshop) => {
                     const firstOffer = workshop.services[0]!;
                     const detailsParams = buildDetailsParams(workshop);

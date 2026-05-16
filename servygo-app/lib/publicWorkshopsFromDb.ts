@@ -442,8 +442,8 @@ export function buildMockWorkshopFromDbRow(w: WorkshopWithNestedServices): MockW
     showOnMap,
     isDemo: w.is_demo === true,
     visibilityStatus,
-    /** Na mapie /oferty: wystarczy włączenie „na mapę” + poprawne lat/lng (z bazy lub przybliżenie z miasta). */
-    hasMapPin: Boolean(showOnMap && Number.isFinite(lat) && Number.isFinite(lng)),
+    /** Na mapie /oferty: poprawne lat/lng (z bazy lub przybliżenie z miasta). showOnMap to osobna flaga admina. */
+    hasMapPin: Boolean(Number.isFinite(lat) && Number.isFinite(lng)),
     hasPreciseMapCoords: hasDbCoords,
     usesLocalCalendar: false,
     photoUrls: [],

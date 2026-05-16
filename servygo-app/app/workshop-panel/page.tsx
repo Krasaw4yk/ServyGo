@@ -108,6 +108,7 @@ const WORKSHOP_PANEL_ACTIVE_CALENDAR_STATUSES = new Set([
 ]);
 
 type WorkshopSection = (typeof WORKSHOP_SECTIONS)[number];
+type WorkshopPanelSection = WorkshopSection | "menu_mobile";
 
 const WORKSHOP_SECTION_LABEL_PATH: Record<WorkshopSection, string> = {
   Dashboard: "workshopPanel.sections.dashboard",
@@ -374,6 +375,38 @@ function isBookingCancelledStatus(status: string) {
   return x === "cancelled" || x.startsWith("cancelled_by");
 }
 
+const BOOKING_LIST_FILTER_LABELS = ["Wszystkie", "Wycena", "Potwierdzone", "W realizacji", "Zakończone", "Anulowane"] as const;
+type BookingListFilterLabel = (typeof BOOKING_LIST_FILTER_LABELS)[number];
+
+function matchesBookingListFilter(status: string, filter: BookingListFilterLabel): boolean {
+  const st = (status ?? "").toLowerCase();
+  if (filter === "Wszystkie") return true;
+  if (filter === "Wycena") {
+    return (
+      st === "pending_quote" ||
+      st === "awaiting_quote" ||
+      st === "quote_sent" ||
+      st === "quote_rejected" ||
+      st === "awaiting_new_quote" ||
+      st === "new" ||
+      st === "pending"
+    );
+  }
+  if (filter === "Potwierdzone") return st === "confirmed" || st === "quote_accepted";
+  if (filter === "W realizacji") {
+    return st === "confirmed" || st === "quote_accepted" || st === "awaiting_reschedule" || st === "ready_for_pickup";
+  }
+  if (filter === "Zakończone") return st === "completed" || st === "done";
+  if (filter === "Anulowane") return isBookingCancelledStatus(status) || st === "no_show";
+  return true;
+}
+
+function mobileStatTileClass(isDark: boolean) {
+  return `rounded-xl p-3 cursor-pointer transition-all hover:ring-1 hover:ring-blue-400/40 ${
+    isDark ? "bg-zinc-800/80 border border-zinc-700/60" : "bg-white border border-zinc-200 shadow-sm"
+  }`;
+}
+
 function addMinutesToTimeString(t: string, mins: number): string {
   const [hRaw, mRaw] = t.split(":");
   const h = Number(hRaw);
@@ -474,6 +507,70 @@ function asDateKey(date: Date) {
   return `${y}-${m}-${d}`;
 }
 
+function isThisWeek(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  startOfWeek.setHours(0, 0, 0, 0);
+  return d >= startOfWeek && d <= now;
+}
+
+function isThisMonth(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+}
+
+function bookingActivityAt(b: WorkshopOwnerBookingRow): string | null | undefined {
+  return (b as WorkshopOwnerBookingRow & { updated_at?: string | null }).updated_at ?? b.cancelled_at ?? b.created_at;
+}
+
+function bookingDisplayDateKey(b: WorkshopOwnerBookingRow): string {
+  return (b.booking_date ?? b.date ?? "").trim();
+}
+
+function bookingDisplayTime(b: WorkshopOwnerBookingRow): string {
+  return b.start_time?.slice(0, 5) ?? b.time?.slice(0, 5) ?? "—";
+}
+
+type MobileCalDay = {
+  date: Date;
+  dateKey: string;
+  inCurrentMonth: boolean;
+  isToday: boolean;
+  hasOrange: boolean;
+  hasEmerald: boolean;
+  hasBlue: boolean;
+};
+
+function buildMobileMonthCalendarDays(calViewMonth: Date, bookings: WorkshopOwnerBookingRow[]): MobileCalDay[] {
+  const y = calViewMonth.getFullYear();
+  const m = calViewMonth.getMonth();
+  const firstDay = new Date(y, m, 1);
+  const firstDowMon0 = (firstDay.getDay() + 6) % 7;
+  const gridStart = new Date(y, m, 1 - firstDowMon0);
+  const todayKey = asDateKey(new Date());
+  return Array.from({ length: 42 }, (_, idx) => {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + idx);
+    const dateKey = asDateKey(d);
+    const dayBookings = bookings.filter((b) => bookingDisplayDateKey(b) === dateKey);
+    const statuses = dayBookings.map((b) => (b.status ?? "").toLowerCase());
+    return {
+      date: d,
+      dateKey,
+      inCurrentMonth: d.getMonth() === m,
+      isToday: dateKey === todayKey,
+      hasOrange: statuses.some((s) => s === "pending_quote" || s === "awaiting_quote"),
+      hasEmerald: statuses.some((s) => s === "confirmed" || s === "quote_accepted"),
+      hasBlue: statuses.some((s) => s === "completed" || s === "done"),
+    };
+  });
+}
+
 function parseDateKeyLocal(dateKey: string) {
   const [yearRaw, monthRaw, dayRaw] = dateKey.split("-");
   const year = Number(yearRaw);
@@ -520,8 +617,9 @@ function WorkshopPanelPageContent() {
   const [bookings, setBookings] = useState<WorkshopOwnerBookingRow[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [activeSection, setActiveSection] = useState<WorkshopSection>("Dashboard");
-  const activeSectionRef = useRef<WorkshopSection>(activeSection);
+  const [activeSection, setActiveSection] = useState<WorkshopPanelSection>("Dashboard");
+  const activeSectionRef = useRef<WorkshopPanelSection>(activeSection);
+  const [calViewMonth, setCalViewMonth] = useState(() => new Date());
   useEffect(() => {
     activeSectionRef.current = activeSection;
   }, [activeSection]);
@@ -568,6 +666,8 @@ function WorkshopPanelPageContent() {
     is_active: true,
   });
   const [bookingActionId, setBookingActionId] = useState<string | null>(null);
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [bookingListFilter, setBookingListFilter] = useState<BookingListFilterLabel>("Wszystkie");
   const [clientRescheduleBusyId, setClientRescheduleBusyId] = useState<string | null>(null);
   const [quoteDraftByBookingId, setQuoteDraftByBookingId] = useState<Record<string, string>>({});
   const [quoteNoteByBookingId, setQuoteNoteByBookingId] = useState<Record<string, string>>({});
@@ -2068,6 +2168,104 @@ function WorkshopPanelPageContent() {
     router.replace("/");
   }
 
+  const pendingQuoteCount = bookings.filter(
+    (b) => b.status === "pending_quote" || b.status === "awaiting_quote",
+  ).length;
+  const filteredBookingsForList = bookings.filter((b) => matchesBookingListFilter(b.status, bookingListFilter));
+  const mobileCalDays = buildMobileMonthCalendarDays(calViewMonth, bookings);
+  const googleReviewsCount =
+    (workshop as (typeof workshop & { google_reviews_count?: number | null }) | null)?.google_reviews_count ?? null;
+
+  function renderBookingActionButtons(b: WorkshopOwnerBookingRow, fullWidth: boolean) {
+    const busy = bookingActionId === b.id;
+    const crBusy = clientRescheduleBusyId === b.id;
+    const st = b.status.toLowerCase();
+    const cancelled = isBookingCancelledStatus(b.status);
+    const canNoShow = st === "confirmed" && isBookingVisitWindowEnded(b) && !cancelled;
+    const clientPending =
+      (b.reschedule_status ?? "").trim().toLowerCase() === "pending_workshop_decision" &&
+      (b.proposed_by ?? "").trim().toLowerCase() === "client";
+    const btn = fullWidth ? "w-full rounded-lg border px-2 py-2 text-xs font-semibold disabled:opacity-40" : "rounded-lg border px-2 py-1 text-xs font-semibold disabled:opacity-40";
+    return (
+      <div className={fullWidth ? "flex flex-col gap-2" : "flex min-w-[200px] max-w-[220px] flex-col gap-1"}>
+        <button type="button" disabled={readOnly || busy} onClick={() => openBookingQuoteDetails(b)} className={`${btn} border-emerald-500/50`}>
+          Przejdź do wyceny
+        </button>
+        <button type="button" disabled title="Formularz dodatkowych usług — wkrótce w panelu" className={`${btn} border-dashed border-zinc-500/50 opacity-50`}>
+          Dodaj propozycję dodatkowych usług
+        </button>
+        <button
+          type="button"
+          disabled={readOnly || busy || st === "completed" || st === "done" || st === "no_show" || cancelled}
+          onClick={() => openCancelBookingModal(b)}
+          className={`${btn} border-rose-500/50`}
+        >
+          Anuluj
+        </button>
+        {clientPending ? (
+          <>
+            <button
+              type="button"
+              disabled={readOnly || busy || crBusy}
+              onClick={() => void respondClientRescheduleProposal(b, true)}
+              className={`${btn} border-emerald-500/60 bg-emerald-500/10 text-emerald-800 dark:text-emerald-100`}
+            >
+              {crBusy ? "…" : "Akceptuj nowy termin"}
+            </button>
+            <button
+              type="button"
+              disabled={readOnly || busy || crBusy}
+              onClick={() => void respondClientRescheduleProposal(b, false)}
+              className={`${btn} border-zinc-400/60`}
+            >
+              Odrzuć zmianę
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          disabled={
+            readOnly ||
+            busy ||
+            st === "completed" ||
+            st === "done" ||
+            st === "no_show" ||
+            cancelled ||
+            st === "awaiting_reschedule" ||
+            clientPending
+          }
+          onClick={() => openRescheduleModal(b)}
+          className={`${btn} border-purple-500/50`}
+        >
+          Zmień termin
+        </button>
+        <button
+          type="button"
+          disabled={readOnly || busy || st !== "confirmed"}
+          onClick={() => void setBookingStatus(b.id, "completed")}
+          className={`${btn} border-blue-500/50`}
+        >
+          Oznacz jako zakończone
+        </button>
+        <button
+          type="button"
+          disabled={readOnly || busy || !canNoShow}
+          title={canNoShow ? "Oznacz brak stawienia się klienta po zakończeniu terminu" : "Dostępne po zakończeniu zaplanowanego terminu (potwierdzona rezerwacja)"}
+          onClick={() => void markNoShowForBooking(b.id)}
+          className={`${btn} border-amber-500/50`}
+        >
+          Klient nie przyjechał
+        </button>
+        {!readOnly ? (
+          <ClientInternalNotesTriggerButton
+            density="compact"
+            onClick={() => setClientInternalNotesTarget({ clientUserId: b.user_id, bookingId: b.id })}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
   if (!mounted) return null;
 
   if (!isSupabaseConfigured) {
@@ -2083,8 +2281,19 @@ function WorkshopPanelPageContent() {
 
   return (
     <ServyGoPageShell isDark={isDark}>
-      <main className={`min-h-screen w-full max-w-none px-3 py-3 sm:px-4 lg:px-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
-        <ServyGoSubpageNavBar isDark={isDark} />
+      <main className={`min-h-screen w-full max-w-none px-3 py-3 pb-20 sm:px-4 md:pb-0 lg:px-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+        <ServyGoSubpageNavBar
+          isDark={isDark}
+          showMojeKonto={false}
+          onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        />
+        <div className="mb-3 px-1 md:hidden">
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Panel warsztatu</h1>
+          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+            {workshop?.name ?? "Warsztat"}
+            {workshop?.city ? ` · ${workshop.city}` : ""}
+          </p>
+        </div>
         <div className="flex w-full gap-3 lg:gap-4">
           <aside className="hidden md:block md:w-60 md:min-w-[15rem] md:max-w-[15rem] md:flex-shrink-0 xl:w-64 xl:min-w-[16rem] xl:max-w-[16rem]">
             <div className={`sticky top-4 rounded-3xl border p-4 backdrop-blur-xl ${isDark ? "border-blue-500/25 bg-zinc-900/92" : "border-blue-200/85 bg-white/85"}`}>
@@ -2126,7 +2335,7 @@ function WorkshopPanelPageContent() {
           </aside>
 
           <div
-            className={`fixed inset-0 z-[70] md:hidden ${isSidebarOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+            className={`fixed inset-0 z-[70] hidden ${isSidebarOpen ? "pointer-events-auto" : "pointer-events-none"}`}
             aria-hidden={!isSidebarOpen}
           >
             <button
@@ -2191,17 +2400,9 @@ function WorkshopPanelPageContent() {
           </div>
 
           <section className="min-w-0 flex-1 space-y-4">
-            <header className={`rounded-3xl border px-4 py-3 backdrop-blur-xl sm:px-5 ${isDark ? "border-blue-500/25 bg-zinc-900/88" : "border-blue-200/85 bg-white/86"}`}>
+            <header className={`hidden rounded-3xl border px-4 py-3 backdrop-blur-xl sm:px-5 md:block ${isDark ? "border-blue-500/25 bg-zinc-900/88" : "border-blue-200/85 bg-white/86"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsSidebarOpen(true)}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-300/70 text-xl md:hidden"
-                    aria-label="Otwórz menu panelu warsztatu"
-                  >
-                    ☰
-                  </button>
                   <Link href="/" className="inline-flex items-center">
                     <Image
                       src={isDark ? "/servygo-logo-dark-cropped.png" : "/servygo-logo-light-cropped.png"}
@@ -2259,6 +2460,32 @@ function WorkshopPanelPageContent() {
               </p>
             ) : null}
 
+            {!loading && workshop ? (
+              <nav
+                className={`hidden md:flex overflow-x-auto rounded-2xl border p-2 gap-1.5 scrollbar-thin ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}
+                aria-label="Sekcje panelu"
+              >
+                {WORKSHOP_SECTIONS.map((item) => (
+                  <button
+                    key={`pill-${item}`}
+                    type="button"
+                    onClick={() => setActiveSection(item)}
+                    className={`shrink-0 rounded-xl px-3 py-2 text-sm font-medium transition whitespace-nowrap ${
+                      activeSection === item
+                        ? isDark
+                          ? "bg-gradient-to-r from-blue-600/80 to-orange-500/80 text-white"
+                          : "bg-gradient-to-r from-blue-600 to-orange-500 text-white"
+                        : isDark
+                          ? "text-zinc-200 hover:bg-zinc-800/80"
+                          : "text-zinc-700 hover:bg-blue-50"
+                    }`}
+                  >
+                    {t(WORKSHOP_SECTION_LABEL_PATH[item])}
+                  </button>
+                ))}
+              </nav>
+            ) : null}
+
             {loading ? <p className="text-sm">Ładowanie panelu…</p> : null}
 
             {!loading && !workshop ? (
@@ -2271,6 +2498,121 @@ function WorkshopPanelPageContent() {
               <>
                 {activeSection === "Dashboard" ? (
                   <section className="space-y-4">
+                    <div className="space-y-4 md:hidden">
+                      {pendingQuoteCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection("Rezerwacje")}
+                          className={`w-full cursor-pointer rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-all hover:ring-1 hover:ring-blue-400/50 ${
+                            isDark
+                              ? "border-amber-500/40 bg-amber-950/40 text-amber-100"
+                              : "border-amber-300 bg-amber-50 text-amber-900"
+                          }`}
+                        >
+                          {pendingQuoteCount} rezerwacji czeka na odpowiedź — odpowiedz w ciągu 24h
+                        </button>
+                      ) : null}
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Ten tydzień</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={() => setActiveSection("Rezerwacje")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Nowe rezerwacje</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-zinc-900 dark:text-zinc-100`}>
+                              {bookings.filter((b) => isThisWeek(b.created_at)).length}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Rezerwacje")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Oczekują na wycenę</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-amber-600`}>
+                              {pendingQuoteCount}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Rezerwacje")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Potwierdzone</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-blue-600`}>
+                              {bookings.filter((b) => { const st = (b.status ?? "").toLowerCase(); return st === "quote_accepted" || st === "confirmed"; }).length}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Rezerwacje")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Zakończone (tydzień)</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-emerald-600`}>
+                              {bookings.filter((b) => { const st = (b.status ?? "").toLowerCase(); return (st === "completed" || st === "done") && isThisWeek(bookingActivityAt(b)); }).length}
+                            </div>
+                          </button>
+                      </div>
+                      </div>
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Ten miesiąc</h3>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button type="button" onClick={() => setActiveSection("Rezerwacje")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Wszystkie rez.</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-zinc-900 dark:text-zinc-100`}>
+                              {bookings.filter((b) => isThisMonth(b.created_at)).length}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Rezerwacje")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Zakończone</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-emerald-600`}>
+                              {bookings.filter((b) => { const st = (b.status ?? "").toLowerCase(); return (st === "completed" || st === "done") && isThisMonth(bookingActivityAt(b)); }).length}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Rezerwacje")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Anulowane</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-rose-600`}>
+                              {bookings.filter((b) => isBookingCancelledStatus(b.status) && isThisMonth(bookingActivityAt(b))).length}
+                            </div>
+                          </button>
+                      </div>
+                      </div>
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Leady ServyGo</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={() => setActiveSection("Leady i rozliczenia")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Leady (mies.)</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-zinc-900 dark:text-zinc-100`}>
+                              {(leadLatestMonthSnapshot?.billable_leads ?? 0) + (leadLatestMonthSnapshot?.waived_test_leads ?? 0)}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Leady i rozliczenia")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">No-show</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-amber-600`}>
+                              {leadLatestMonthSnapshot?.no_show_bookings ?? 0}
+                            </div>
+                          </button>
+                      </div>
+                      </div>
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Oceny i profil</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={() => setActiveSection("Opinie Servygo")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Ocena ServyGo</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-zinc-900 dark:text-zinc-100`}>
+                              {(servygoReviewsPanel.length ? averageRating(servygoReviewsPanel).toFixed(1) : "—") + " ★"}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Opinie Google")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Opinie Google</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-zinc-900 dark:text-zinc-100`}>
+                              {googleReviewsCount != null ? String(googleReviewsCount) : "—"}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Usługi i ceny")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Aktywne usługi</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-blue-600`}>
+                              {serviceDraftRows.filter((r) => r.is_active).length}
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => setActiveSection("Pracownicy")} className={`text-left ${mobileStatTileClass(isDark)}`}>
+                            <div className="text-[11px] font-medium leading-snug text-zinc-500 dark:text-zinc-400">Pracownicy</div>
+                            <div className={`mt-0.5 text-2xl font-semibold text-blue-600`}>
+                              {employeeDraftRows.filter((r) => r.is_active).length}
+                            </div>
+                          </button>
+                      </div>
+                      </div>
+                    </div>
+
+                    <div className="hidden space-y-4 md:block">
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                       {[
                         { label: "Rezerwacje dzisiaj", value: stats.todayBookings, icon: "today" as const, tone: "text-blue-500" },
@@ -2426,6 +2768,7 @@ function WorkshopPanelPageContent() {
                         </div>
                       </section>
                     </div>
+                    </div>
                   </section>
                 ) : null}
 
@@ -2433,7 +2776,103 @@ function WorkshopPanelPageContent() {
                   <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h2 className="text-lg font-semibold">Rezerwacje</h2>
                     <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Pełna lista rezerwacji z akcjami operacyjnymi.</p>
-                    <div className="mt-3 min-w-0 overflow-x-auto">
+                    <div className="mb-3 mt-3 flex gap-2 overflow-x-auto pb-1 md:hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      {BOOKING_LIST_FILTER_LABELS.map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => setBookingListFilter(label)}
+                          className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                            bookingListFilter === label
+                              ? "border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950 dark:text-blue-300"
+                              : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="md:hidden">
+                      {filteredBookingsForList.length === 0 ? (
+                        <p className="py-6 text-center text-sm text-zinc-500">Brak rezerwacji.</p>
+                      ) : (
+                        filteredBookingsForList.map((b) => {
+                          const st = b.status.toLowerCase();
+                          const leadHint = leadSettlementHint(b);
+                          const clientPending =
+                            (b.reschedule_status ?? "").trim().toLowerCase() === "pending_workshop_decision" &&
+                            (b.proposed_by ?? "").trim().toLowerCase() === "client";
+                          return (
+                            <div
+                              key={`mob-booking-${b.id}`}
+                              className="mb-3 overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setExpandedBookingId(expandedBookingId === b.id ? null : b.id)}
+                                className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+                                    {b.clientLabel} · {b.service_name}
+                                  </div>
+                                  <div className="mt-0.5 text-[11px] text-zinc-500">
+                                    {b.booking_date ?? b.date} · {b.start_time?.slice(0, 5) ?? b.time}
+                                    {b.duration_minutes ? ` · ${b.duration_minutes} min` : ""}
+                                  </div>
+                                </div>
+                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusPillClass(b.status, isDark)}`}>
+                                  {formatBookingStatus(b.status)}
+                                </span>
+                                <svg
+                                  className={`shrink-0 transition-transform ${expandedBookingId === b.id ? "rotate-180" : ""}`}
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-hidden
+                                >
+                                  <polyline points="6 9 12 15 18 9" />
+                                </svg>
+                              </button>
+                              {expandedBookingId === b.id ? (
+                                <div className="border-t border-zinc-200 px-3 pb-3 pt-2 dark:border-zinc-700">
+                                  <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                                    <div><span className="font-medium">Auto:</span> {b.carLabel}</div>
+                                    <div><span className="font-medium">VIN:</span> {b.car_id ? "…" : "—"}</div>
+                                    {b.price != null ? (
+                                      <div><span className="font-medium">Cena:</span> {b.price} zł</div>
+                                    ) : null}
+                                    {leadHint ? (
+                                      <div className="col-span-2 text-amber-600 dark:text-amber-400">{leadHint}</div>
+                                    ) : null}
+                                    {clientPending ? (
+                                      <div className="col-span-2 text-sky-700 dark:text-sky-300">
+                                        Klient prosi o zmianę terminu: {(b.proposed_booking_date ?? "").slice(0, 10)}{" "}
+                                        {(b.proposed_start_time ?? "").slice(0, 5)}
+                                      </div>
+                                    ) : null}
+                                    {b.final_price != null && Number.isFinite(b.final_price) && (st === "quote_sent" || st === "confirmed" || st === "quote_rejected") ? (
+                                      <div className="col-span-2">
+                                        Wycena: {Number(b.final_price).toFixed(2)} zł · {quoteDecisionLabel(b.quote_status, b.status)}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  {renderBookingActionButtons(b, true)}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="mt-3 hidden min-w-0 overflow-x-auto md:block">
                       <table className="w-full min-w-[1060px] table-auto text-sm">
                         <thead className={isDark ? "text-zinc-300" : "text-zinc-600"}>
                           <tr>
@@ -2510,94 +2949,7 @@ function WorkshopPanelPageContent() {
                                       </div>
                                     ) : null}
                                   </td>
-                                  <td className="px-3 py-2 align-top">
-                                    <div className="flex min-w-[200px] max-w-[220px] flex-col gap-1">
-                                      <button
-                                        type="button"
-                                        disabled={readOnly || busy}
-                                        onClick={() => openBookingQuoteDetails(b)}
-                                        className="rounded-lg border border-emerald-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                                      >
-                                        Przejdź do wyceny
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled
-                                        title="Formularz dodatkowych usług — wkrótce w panelu"
-                                        className="rounded-lg border border-dashed border-zinc-500/50 px-2 py-1 text-xs font-semibold opacity-50"
-                                      >
-                                        Dodaj propozycję dodatkowych usług
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={readOnly || busy || st === "completed" || st === "done" || st === "no_show" || cancelled}
-                                        onClick={() => openCancelBookingModal(b)}
-                                        className="rounded-lg border border-rose-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                                      >
-                                        Anuluj
-                                      </button>
-                                      {clientPending ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            disabled={readOnly || busy || crBusy}
-                                            onClick={() => void respondClientRescheduleProposal(b, true)}
-                                            className="rounded-lg border border-emerald-500/60 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-800 disabled:opacity-40 dark:text-emerald-100"
-                                          >
-                                            {crBusy ? "…" : "Akceptuj nowy termin"}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={readOnly || busy || crBusy}
-                                            onClick={() => void respondClientRescheduleProposal(b, false)}
-                                            className="rounded-lg border border-zinc-400/60 px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                                          >
-                                            Odrzuć zmianę
-                                          </button>
-                                        </>
-                                      ) : null}
-                                      <button
-                                        type="button"
-                                        disabled={
-                                          readOnly ||
-                                          busy ||
-                                          st === "completed" ||
-                                          st === "done" ||
-                                          st === "no_show" ||
-                                          cancelled ||
-                                          st === "awaiting_reschedule" ||
-                                          clientPending
-                                        }
-                                        onClick={() => openRescheduleModal(b)}
-                                        className="rounded-lg border border-purple-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                                      >
-                                        Zmień termin
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={readOnly || busy || st !== "confirmed"}
-                                        onClick={() => void setBookingStatus(b.id, "completed")}
-                                        className="rounded-lg border border-blue-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                                      >
-                                        Oznacz jako zakończone
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={readOnly || busy || !canNoShow}
-                                        title={canNoShow ? "Oznacz brak stawienia się klienta po zakończeniu terminu" : "Dostępne po zakończeniu zaplanowanego terminu (potwierdzona rezerwacja)"}
-                                        onClick={() => void markNoShowForBooking(b.id)}
-                                        className="rounded-lg border border-amber-500/50 px-2 py-1 text-xs font-semibold disabled:opacity-40"
-                                      >
-                                        Klient nie przyjechał
-                                      </button>
-                                      {!readOnly ? (
-                                        <ClientInternalNotesTriggerButton
-                                          density="compact"
-                                          onClick={() => setClientInternalNotesTarget({ clientUserId: b.user_id, bookingId: b.id })}
-                                        />
-                                      ) : null}
-                                    </div>
-                                  </td>
+                                  <td className="px-3 py-2 align-top">{renderBookingActionButtons(b, false)}</td>
                                 </tr>
                               );
                             })
@@ -2872,17 +3224,125 @@ function WorkshopPanelPageContent() {
                 ) : null}
 
                 {activeSection === "Moje wiadomości" && currentUserId ? (
-                  <InternalInbox
-                    currentUserId={currentUserId}
-                    isDark={isDark}
-                    viewerRole="workshop"
-                    onUnreadCountChange={setUnreadMessages}
-                  />
+                  <section
+                    className={`rounded-2xl border p-3 md:p-5 ${isDark ? "border-zinc-700 bg-zinc-950 md:bg-zinc-900/70" : "border-blue-200 bg-zinc-50 md:bg-white/85"}`}
+                  >
+                    <InternalInbox
+                      currentUserId={currentUserId}
+                      isDark={isDark}
+                      viewerRole="workshop"
+                      embeddedInPage
+                      enableMobileMessenger
+                      onUnreadCountChange={setUnreadMessages}
+                    />
+                  </section>
                 ) : null}
 
                 {activeSection === "Kalendarz / dostępność" ? (
-                  <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_1fr]">
-                    <article className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                  <section className="space-y-4">
+                    <article className={`md:hidden rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
+                      <h2 className="text-lg font-semibold">Kalendarz</h2>
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCalViewMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                          className="rounded-lg border px-3 py-1 text-lg leading-none"
+                          aria-label="Poprzedni miesiąc"
+                        >
+                          ‹
+                        </button>
+                        <p className="text-sm font-semibold capitalize">
+                          {calViewMonth.toLocaleDateString("pl-PL", { month: "long", year: "numeric" })}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setCalViewMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                          className="rounded-lg border px-3 py-1 text-lg leading-none"
+                          aria-label="Następny miesiąc"
+                        >
+                          ›
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-zinc-500">
+                        {["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"].map((d) => (
+                          <div key={`mhd-${d}`}>{d}</div>
+                        ))}
+                      </div>
+                      <div className="mt-1 grid grid-cols-7 gap-1">
+                        {mobileCalDays.map((day) => {
+                          const selected = day.dateKey === selectedDateKey;
+                          return (
+                            <button
+                              key={`mob-cal-${day.dateKey}`}
+                              type="button"
+                              disabled={!day.inCurrentMonth}
+                              onClick={() => {
+                                if (day.inCurrentMonth) setSelectedDateKey(day.dateKey);
+                              }}
+                              className={`flex aspect-square flex-col items-center justify-center rounded-lg text-xs transition ${
+                                !day.inCurrentMonth ? "pointer-events-none opacity-30" : ""
+                              } ${
+                                day.isToday
+                                  ? "bg-emerald-50 ring-1 ring-emerald-500 dark:bg-emerald-950/50 dark:ring-emerald-500"
+                                  : selected
+                                    ? "bg-blue-50 ring-1 ring-blue-500 dark:bg-blue-950/50 dark:ring-blue-500"
+                                    : isDark
+                                      ? "hover:bg-zinc-800/80"
+                                      : "hover:bg-zinc-100"
+                              }`}
+                            >
+                              <span
+                                className={`font-medium ${
+                                  day.isToday
+                                    ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                                    : selected
+                                      ? "font-semibold text-blue-700 dark:text-blue-400"
+                                      : ""
+                                }`}
+                              >
+                                {day.date.getDate()}
+                              </span>
+                              <div className="mt-0.5 flex h-2 items-center gap-0.5">
+                                {day.hasOrange ? <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> : null}
+                                {day.hasEmerald ? <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> : null}
+                                {day.hasBlue ? <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> : null}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {selectedDateKey ? (
+                        <div className={`mt-4 rounded-xl border p-3 ${isDark ? "border-zinc-700 bg-zinc-950/50" : "border-zinc-200 bg-zinc-50/80"}`}>
+                          <p className="text-sm font-semibold">
+                            {parseDateKeyLocal(selectedDateKey).toLocaleDateString("pl-PL", {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                            })}
+                          </p>
+                          <div className="mt-2 space-y-1.5">
+                            {bookings.filter((b) => bookingDisplayDateKey(b) === selectedDateKey).length === 0 ? (
+                              <p className={`text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Brak wizyt tego dnia</p>
+                            ) : (
+                              bookings
+                                .filter((b) => bookingDisplayDateKey(b) === selectedDateKey)
+                                .map((b) => (
+                                  <div
+                                    key={`mob-day-b-${b.id}`}
+                                    className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm ${isDark ? "border-zinc-800" : "border-zinc-200"}`}
+                                  >
+                                    <span className="font-medium tabular-nums">{bookingDisplayTime(b)}</span>
+                                    <span className="truncate text-right">{b.service_name}</span>
+                                  </div>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </article>
+
+                    <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_1fr]">
+                    <article className={`hidden md:block rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                       <h2 className="text-lg font-semibold">Kalendarz / dostępność</h2>
                       <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                         Ustawiaj dostępność na konkretne dni, tygodnie i miesiące.
@@ -3081,6 +3541,7 @@ function WorkshopPanelPageContent() {
                         })}
                       </div>
                     </article>
+                    </section>
                   </section>
                 ) : null}
 
@@ -3434,6 +3895,151 @@ function WorkshopPanelPageContent() {
                   <section className={`rounded-2xl border p-5 ${isDark ? "border-zinc-700 bg-zinc-900/70" : "border-blue-200 bg-white/85"}`}>
                     <h2 className="text-lg font-semibold">Ustawienia</h2>
                     <p className={`mt-2 text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>Sekcja techniczna pod kolejne konfiguracje panelu warsztatu.</p>
+                  </section>
+                ) : null}
+
+                {activeSection === "menu_mobile" ? (
+                  <section className={`md:hidden space-y-1 rounded-2xl p-3 ${isDark ? "bg-zinc-950" : "bg-zinc-50"}`}>
+                    <h2 className="mb-3 text-lg font-semibold">Więcej</h2>
+                    {[
+                      {
+                        label: "Leady i rozliczenia",
+                        section: "Leady i rozliczenia" as const,
+                        sub: `${(leadLatestMonthSnapshot?.billable_leads ?? 0) + (leadLatestMonthSnapshot?.waived_test_leads ?? 0)} leadów w tym miesiącu`,
+                        iconBg: "bg-purple-50 dark:bg-purple-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-purple-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M12 3v18M5 8h14M5 16h14" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Moje wiadomości",
+                        section: "Moje wiadomości" as const,
+                        sub: unreadMessages > 0 ? `${unreadMessages} nieprzeczytanych` : "Brak nowych",
+                        badge: unreadMessages,
+                        iconBg: "bg-emerald-50 dark:bg-emerald-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <rect x="3" y="5" width="18" height="14" rx="2" />
+                            <path d="m4 7 8 6 8-6" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Usługi i ceny",
+                        section: "Usługi i ceny" as const,
+                        sub: `${serviceDraftRows.filter((r) => r.is_active).length} aktywnych usług`,
+                        iconBg: "bg-blue-50 dark:bg-blue-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M4 7h16M4 12h10M4 17h6" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Pracownicy",
+                        section: "Pracownicy" as const,
+                        sub: `${employeeDraftRows.filter((r) => r.is_active).length} aktywnych`,
+                        iconBg: "bg-amber-50 dark:bg-amber-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <circle cx="9" cy="8" r="3" />
+                            <circle cx="17" cy="9" r="2.5" />
+                            <path d="M3 19c0-3 3-5 6-5s6 2 6 5M14 19c0-2 1.5-3.5 3-3.5" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Zdjęcia warsztatu",
+                        section: "Zdjęcia warsztatu" as const,
+                        sub: "Galeria zdjęć",
+                        iconBg: "bg-violet-50 dark:bg-violet-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-violet-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <rect x="3" y="5" width="18" height="14" rx="2" />
+                            <circle cx="9" cy="10" r="2" />
+                            <path d="m3 17 5-4 4 3 5-6 6 7" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Dane warsztatu",
+                        section: "Dane warsztatu" as const,
+                        sub: workshop?.city ?? "",
+                        iconBg: "bg-slate-50 dark:bg-slate-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M4 20h16M6 20V9l6-5 6 5v11" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Opinie Google",
+                        section: "Opinie Google" as const,
+                        sub: "Link do opinii",
+                        iconBg: "bg-red-50 dark:bg-red-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-red-600" fill="currentColor">
+                            <path d="M12 2l2.2 4.5 5 .7-3.6 3.5.9 5.2L12 13.8 7.5 16.9l.9-5.2L4.8 7.2l5-.7L12 2z" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Opinie Servygo",
+                        section: "Opinie Servygo" as const,
+                        sub: `${servygoReviewsPanel.length ? averageRating(servygoReviewsPanel).toFixed(1) : "—"} · ${servygoReviewsPanel.length} opinii`,
+                        iconBg: "bg-yellow-50 dark:bg-yellow-950/40",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-yellow-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="m12 3 2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.2l-4.8 2.7.9-5.4-3.9-3.8 5.4-.8L12 3z" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        label: "Ustawienia",
+                        section: "Ustawienia" as const,
+                        sub: "Panel i preferencje",
+                        iconBg: "bg-zinc-100 dark:bg-zinc-800/60",
+                        icon: (
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-zinc-600" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+                          </svg>
+                        ),
+                      },
+                    ].map((item) => (
+                      <button
+                        key={item.section}
+                        type="button"
+                        onClick={() => setActiveSection(item.section)}
+                        className={`mb-1.5 flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                          isDark
+                            ? "border-zinc-700/80 bg-zinc-900 hover:bg-zinc-800"
+                            : "border-zinc-200 bg-white hover:bg-zinc-50"
+                        }`}
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${item.iconBg}`}>
+                            {item.icon}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+                              <span>{item.label}</span>
+                              {"badge" in item && item.badge && item.badge > 0 ? (
+                                <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 py-0.5 text-[9px] font-semibold text-white">
+                                  {item.badge > 99 ? "99+" : item.badge}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="truncate text-[10px] text-zinc-500">{item.sub}</div>
+                          </div>
+                        </div>
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="m9 6 6 6-6 6" />
+                        </svg>
+                      </button>
+                    ))}
                   </section>
                 ) : null}
               </>
@@ -4026,6 +4632,72 @@ function WorkshopPanelPageContent() {
               </div>
             </div>
           </div>
+        ) : null}
+
+        {!loading && workshop ? (
+          <nav
+            className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-zinc-200 bg-white/95 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/95 md:hidden pb-[env(safe-area-inset-bottom,0px)]"
+            aria-label="Nawigacja panelu"
+          >
+            <button
+              type="button"
+              onClick={() => setActiveSection("Dashboard")}
+              className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[9px] font-semibold ${
+                activeSection === "Dashboard" ? "text-blue-600" : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
+                <rect x="3" y="3" width="8" height="8" rx="1" />
+                <rect x="13" y="3" width="8" height="8" rx="1" />
+                <rect x="3" y="13" width="8" height="8" rx="1" />
+                <rect x="13" y="13" width="8" height="8" rx="1" />
+              </svg>
+              Główna
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSection("Rezerwacje")}
+              className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[9px] font-semibold ${
+                activeSection === "Rezerwacje" ? "text-blue-600" : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              {pendingQuoteCount > 0 ? (
+                <span className="absolute top-1.5 left-1/2 ml-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
+                  {pendingQuoteCount > 9 ? "9+" : pendingQuoteCount}
+                </span>
+              ) : null}
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <rect x="4" y="5" width="16" height="15" rx="2" />
+                <path d="M8 3v3M16 3v3M4 10h16" />
+              </svg>
+              Rezerwacje
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSection("Kalendarz / dostępność")}
+              className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[9px] font-semibold ${
+                activeSection === "Kalendarz / dostępność" ? "text-blue-600" : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <path d="M4 9h16M9 4v4M15 4v4M9 13h2M13 13h2M9 17h2M13 17h2" />
+              </svg>
+              Kalendarz
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSection("menu_mobile")}
+              className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[9px] font-semibold ${
+                activeSection === "menu_mobile" ? "text-blue-600" : "text-zinc-500 dark:text-zinc-400"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+              Więcej
+            </button>
+          </nav>
         ) : null}
       </main>
       {vehiclePriceEditorDraft ? (

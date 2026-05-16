@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { getApproxCityCenterCoords } from "@/lib/offersGeo";
 
 const OffersLeafletMap = dynamic(() => import("@/components/offers/OffersLeafletMap"), {
   ssr: false,
@@ -15,6 +16,7 @@ type WorkshopLocationMiniMapProps = {
   workshopId: string;
   name: string;
   addressLine: string;
+  city?: string;
   lat: number;
   lng: number;
   detailsHref: string;
@@ -22,24 +24,31 @@ type WorkshopLocationMiniMapProps = {
   reviewsCount?: number;
 };
 
+function resolveMapCoords(lat: number, lng: number, city?: string): { lat: number; lng: number } {
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  return getApproxCityCenterCoords(city ?? "");
+}
+
 /** Jedna pinezka — te same kafelki OSM co /oferty; bez stałych kart nad markerem. */
 export default function WorkshopLocationMiniMap({
   workshopId,
   name,
   addressLine,
+  city,
   lat,
   lng,
   detailsHref,
   rating = 0,
   reviewsCount = 0,
 }: WorkshopLocationMiniMapProps) {
+  const coords = resolveMapCoords(lat, lng, city);
   return (
     <OffersLeafletMap
       markers={[
         {
           id: workshopId,
-          lat,
-          lng,
+          lat: coords.lat,
+          lng: coords.lng,
           name,
           address: addressLine,
           rating,
@@ -50,7 +59,7 @@ export default function WorkshopLocationMiniMap({
           selected: true,
         },
       ]}
-      selectedId={workshopId}
+      selectedId={null}
       onMarkerClick={() => {}}
       compactCardsOnMap={false}
     />

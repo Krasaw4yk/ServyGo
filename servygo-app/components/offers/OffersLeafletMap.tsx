@@ -5,7 +5,6 @@ import { useEffect, useMemo } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import Link from "next/link";
-import "leaflet/dist/leaflet.css";
 
 export type OffersMapMarker = {
   id: string;
@@ -28,6 +27,10 @@ export type OffersMapMarker = {
   adminPopup?: ReactNode;
 };
 
+function isValidLatLng(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
 function createMarkerIcon(selected: boolean, tone: "primary" | "muted" = "primary") {
   const color = selected ? "#ea580c" : tone === "muted" ? "#71717a" : "#2563eb";
   return L.divIcon({
@@ -42,12 +45,13 @@ function createMarkerIcon(selected: boolean, tone: "primary" | "muted" = "primar
 function FitBoundsWhenReady({ markers }: { markers: OffersMapMarker[] }) {
   const map = useMap();
   useEffect(() => {
-    if (markers.length === 0) return;
-    if (markers.length === 1) {
-      map.setView([markers[0].lat, markers[0].lng], 15, { animate: false });
+    const valid = markers.filter((m) => isValidLatLng(m.lat, m.lng));
+    if (valid.length === 0) return;
+    if (valid.length === 1) {
+      map.setView([valid[0].lat, valid[0].lng], 15, { animate: false });
       return;
     }
-    const b = L.latLngBounds(markers.map((m) => [m.lat, m.lng] as [number, number]));
+    const b = L.latLngBounds(valid.map((m) => [m.lat, m.lng] as [number, number]));
     map.fitBounds(b, { padding: [40, 40], maxZoom: 14, animate: false });
   }, [map, markers]);
   return null;
@@ -58,7 +62,7 @@ function FlyToSelected({ selectedId, markers }: { selectedId: string | null; mar
   useEffect(() => {
     if (!selectedId) return;
     const m = markers.find((x) => x.id === selectedId);
-    if (!m) return;
+    if (!m || !isValidLatLng(m.lat, m.lng)) return;
     const z = Math.max(map.getZoom(), 15);
     map.flyTo([m.lat, m.lng], z, { duration: 0.35 });
   }, [map, markers, selectedId]);
@@ -82,28 +86,40 @@ export default function OffersLeafletMap({
   seeOfferLabel,
   compactCardsOnMap = true,
 }: OffersLeafletMapProps) {
+  const validMarkers = useMemo(
+    () => markers.filter((m) => isValidLatLng(m.lat, m.lng)),
+    [markers],
+  );
+
   const center = useMemo((): [number, number] => {
-    if (markers.length === 0) return [52.23, 21.01];
-    const lat = markers.reduce((s, m) => s + m.lat, 0) / markers.length;
-    const lng = markers.reduce((s, m) => s + m.lng, 0) / markers.length;
-    return [lat, lng];
-  }, [markers]);
+    if (validMarkers.length === 0) return [52.23, 21.01];
+    const lat = validMarkers.reduce((s, m) => s + m.lat, 0) / validMarkers.length;
+    const lng = validMarkers.reduce((s, m) => s + m.lng, 0) / validMarkers.length;
+    return isValidLatLng(lat, lng) ? [lat, lng] : [52.23, 21.01];
+  }, [validMarkers]);
 
   const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
   const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
   return (
     <MapContainer
+      key={validMarkers.map((m) => m.id).join(",")}
       center={center}
       zoom={12}
-      className="h-full w-full min-h-[320px] rounded-2xl z-0"
+      style={{
+        height: "100%",
+        width: "100%",
+        minHeight: "320px",
+        borderRadius: "1rem",
+        zIndex: 0,
+      }}
       scrollWheelZoom
       preferCanvas
     >
       <TileLayer attribution={attribution} url={tileUrl} />
-      <FitBoundsWhenReady markers={markers} />
-      <FlyToSelected selectedId={selectedId} markers={markers} />
-      {markers.map((m) => {
+      <FitBoundsWhenReady markers={validMarkers} />
+      <FlyToSelected selectedId={selectedId} markers={validMarkers} />
+      {validMarkers.map((m) => {
         const showCompact = compactCardsOnMap && !m.adminPopup;
         const addr = (m.mapCardAddress ?? m.address).trim() || "—";
         const sel = m.selected || selectedId === m.id;
