@@ -532,3 +532,64 @@ export async function fetchPublicWorkshopByIdAsMock(id: string): Promise<MockWor
   const specific = buildVehicleSpecificOffers((vehiclePricesRaw as WorkshopVehiclePriceRow[] | null) ?? []);
   return { ...base, services: mergeOffers(specific, base.services).map((s) => ({ ...s, workshopId: row.id })) };
 }
+
+type RecommendedWorkshopPhotoRow = {
+  public_url: string | null;
+  sort_order: number;
+  status: string;
+};
+
+type RecommendedWorkshopDbRow = {
+  id: string;
+  name: string | null;
+  city: string | null;
+  status: string | null;
+  visibility_status: string | null;
+  rating: number | string | null;
+  reviews_count: number | null;
+  workshop_photos: RecommendedWorkshopPhotoRow[] | null;
+};
+
+export type RecommendedWorkshopCard = {
+  id: string;
+  name: string;
+  city: string | null;
+  rating: number;
+  reviewsCount: number;
+  coverPhotoUrl: string | null;
+};
+
+function pickWorkshopCoverPhoto(photos: RecommendedWorkshopPhotoRow[] | null | undefined): string | null {
+  if (!photos?.length) return null;
+  const active = photos
+    .filter((p) => p.status === "active" && (p.public_url ?? "").trim())
+    .sort((a, b) => a.sort_order - b.sort_order);
+  return active[0]?.public_url?.trim() ?? null;
+}
+
+/** Karty „Polecane warsztaty” na stronie głównej (aktywne + widoczne, z okładką ze zdjęć). */
+export async function fetchRecommendedWorkshopsForHome(limit = 4): Promise<RecommendedWorkshopCard[]> {
+  if (!supabase) return [];
+  const fetchLimit = Math.max(limit * 4, limit);
+  const { data, error } = await supabase
+    .from("workshops")
+    .select(
+      "id, name, city, status, visibility_status, rating, reviews_count, workshop_photos ( public_url, sort_order, status )",
+    )
+    .eq("status", "active")
+    .order("reviews_count", { ascending: false, nullsFirst: false })
+    .limit(fetchLimit);
+  if (error) throw new Error(formatSupabaseError(error));
+  const rows = (data as RecommendedWorkshopDbRow[] | null) ?? [];
+  return rows
+    .filter((w) => isWorkshopPubliclyVisible(w.status, w.visibility_status))
+    .slice(0, limit)
+    .map((w) => ({
+      id: w.id,
+      name: (w.name ?? "").trim() || "Warsztat",
+      city: (w.city ?? "").trim() || null,
+      rating: parseDbRating(w.rating),
+      reviewsCount: typeof w.reviews_count === "number" && Number.isFinite(w.reviews_count) ? w.reviews_count : 0,
+      coverPhotoUrl: pickWorkshopCoverPhoto(w.workshop_photos),
+    }));
+}

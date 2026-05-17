@@ -74,6 +74,16 @@ Tu zbieramy **wszystko, co musisz uzupełnić poza samym SQL** — numeracja **K
 
 Jeśli brakuje tylko K.03, API zwraca **503** z czytelną listą brakujących zmiennych (komunikat z `describeMissingEnvForAdminSupabaseApis` w `lib/supabaseAdmin.ts`).
 
+### K.08 — Zdjęcia warsztatu (upload w `/workshop-panel`)
+
+**Aplikacja** wgrywa pliki przez `POST /api/workshop/photos/upload` (service role po stronie serwera) — wymaga **K.03** (`SUPABASE_SERVICE_ROLE_KEY` w `.env.local`).
+
+**Ty w Supabase Dashboard:**
+
+1. **Storage** → bucket **`workshop-photos`** (jeśli brak) → **Public bucket**.
+2. **SQL Editor** → `supabase-45-workshop-photos.sql` (tabela + RLS). Opcjonalnie `supabase-61-workshop-photos-storage.sql` (bezpośredni upload z przeglądarki).
+3. Zrestartuj `npm run dev` po zmianie `.env.local`.
+
 ## Kolejność uruchamiania (zalecana)
 
 ### Wymagane

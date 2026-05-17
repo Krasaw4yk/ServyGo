@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import { addAdmin } from "@/lib/adminApi";
+import { isDevOnlyRouteAllowed } from "@/lib/isDevOnlyRouteAllowed";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 
 export default function MakeMeAdminPage() {
   const [mounted, setMounted] = useState(false);
+  const [devAllowed, setDevAllowed] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -16,6 +18,7 @@ export default function MakeMeAdminPage() {
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       setMounted(true);
+      setDevAllowed(isDevOnlyRouteAllowed(window.location.hostname));
       const savedTheme = window.localStorage.getItem("servygo-theme");
       if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
     });
@@ -28,6 +31,12 @@ export default function MakeMeAdminPage() {
   }, [mounted, theme]);
 
   useEffect(() => {
+    if (!mounted) return;
+    if (!devAllowed) {
+      setLoading(false);
+      return;
+    }
+
     async function runPromotion() {
       if (!isSupabaseConfigured || !supabase) {
         setMessage("Brak konfiguracji Supabase.");
@@ -52,17 +61,32 @@ export default function MakeMeAdminPage() {
           setMessage("Nie udało się dodać admina. Prawdopodobnie admin_users nie jest pusta.");
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Nie udało się dodać admina.";
-        setMessage(errorMessage);
+        setMessage(error instanceof Error ? error.message : "Nie udało się dodać admina.");
       } finally {
         setLoading(false);
       }
     }
 
-    runPromotion();
-  }, []);
+    void runPromotion();
+  }, [mounted, devAllowed]);
 
   const isDark = mounted ? theme === "dark" : false;
+
+  if (mounted && !devAllowed) {
+    return (
+      <ServyGoPageShell isDark={isDark}>
+        <main className="flex min-h-screen items-center justify-center px-4">
+          <div className="text-center">
+            <p className="text-4xl font-bold text-zinc-400">404</p>
+            <p className="mt-2 text-zinc-500">Strona nie istnieje.</p>
+            <Link href="/" className="mt-6 inline-block text-sm text-blue-500 hover:underline">
+              Wróć na stronę główną
+            </Link>
+          </div>
+        </main>
+      </ServyGoPageShell>
+    );
+  }
 
   return (
     <ServyGoPageShell isDark={isDark}>
@@ -84,7 +108,7 @@ export default function MakeMeAdminPage() {
           </div>
 
           <p className={`mt-3 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-            Tymczasowy endpoint testowy. Działa tylko gdy tabela `admin_users` jest pusta.
+            Endpoint developerski — działa tylko lokalnie (localhost).
           </p>
 
           <div
@@ -102,15 +126,19 @@ export default function MakeMeAdminPage() {
                     : "border-orange-200 bg-orange-50 text-orange-700"
             }`}
           >
-            {loading ? "Trwa sprawdzanie uprawnień i próba nadania roli..." : message}
+            {loading ? "Trwa sprawdzanie uprawnień..." : message}
           </div>
 
           <div className="mt-5">
             <Link
               href="/admin"
-              className="inline-flex rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white"
+              className={`inline-flex rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white transition-opacity ${
+                loading ? "pointer-events-none cursor-wait opacity-50" : "cursor-pointer opacity-100"
+              }`}
+              aria-disabled={loading}
+              tabIndex={loading ? -1 : 0}
             >
-              Przejdź do panelu admina
+              {loading ? "Ładowanie..." : "Przejdź do panelu admina"}
             </Link>
           </div>
         </div>

@@ -1,5 +1,6 @@
 -- ServyGo — zdjęcia warsztatu (tylko warsztat i admin wg aplikacji).
--- Bucket „workshop-photos” utwórz w Supabase Storage (public read dla aktywnych zdjęć lub signed URLs — dostosuj polityki bucketu).
+-- Po tym pliku uruchom: supabase-61-workshop-photos-storage.sql (RLS uploadu do Storage).
+-- Bucket „workshop-photos”: utwórz ręcznie w Dashboard → Storage → Public bucket.
 
 begin;
 

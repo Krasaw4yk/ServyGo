@@ -21,7 +21,11 @@ import { dash, parseBookingVehicleData } from "@/lib/bookingSnapshotDisplay";
 import { BOOKING_PHONE_SCOPE_NOTICE } from "@/lib/bookingComplianceCopy";
 import { normalizeSelectedServices } from "@/lib/selectedServices";
 import { runExpirePendingBookingsWorkshopTimeout } from "@/lib/bookingWorkshopResponseExpiry";
-import { notifyClientBookingQuoteSent, quoteDecisionLabel } from "@/lib/bookingQuoteNotifications";
+import {
+  notifyClientBookingQuoteSent,
+  quoteDecisionLabel,
+  sendWorkshopClientBookingEmail,
+} from "@/lib/bookingQuoteNotifications";
 import { resolveMessageViewerContext, sendSystemMessage, workshopRespondClientReschedule } from "@/lib/messagesApi";
 import { submitSupportReport } from "@/lib/supportReportsApi";
 import {
@@ -31,7 +35,6 @@ import {
 } from "@/lib/workshopServygoReviewsApi";
 import { getUnifiedUnreadCount } from "@/lib/notificationsApi";
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
-import { sendBookingNotificationEmail } from "@/lib/sendBookingNotificationEmail";
 import { isValidWorkshopGoogleMapsUrl, type Workshop } from "@/lib/workshopApi";
 import {
   getWorkshopServiceCatalogFlatRows,
@@ -1725,6 +1728,7 @@ function WorkshopPanelPageContent() {
       setSelectedBooking((prev) => (prev && prev.id === id && fresh ? fresh : prev));
       await notifyClientBookingQuoteSent({
         clientUserId: booking.user_id,
+        clientEmail: booking.client_email ?? null,
         bookingId: booking.id,
         workshopId: workshop.id,
         workshopName: workshop.name,
@@ -1793,9 +1797,10 @@ function WorkshopPanelPageContent() {
         subject: `ServyGo: anulowanie rezerwacji ${booking.service_name}`,
         message: `Warsztat ${workshop.name} anulował rezerwację. Powód: ${reason}`,
       });
-      await sendBookingNotificationEmail({
+      await sendWorkshopClientBookingEmail({
         type: "booking_cancelled",
-        bookingId: booking.id,
+        booking,
+        workshopId: workshop.id,
         subject: `Anulowanie rezerwacji: ${booking.service_name}`,
         body: `Warsztat ${workshop.name} anulował rezerwację. Powód: ${reason}`,
       });
@@ -1869,9 +1874,10 @@ function WorkshopPanelPageContent() {
         subject: `ServyGo: propozycja nowego terminu (${booking.service_name})`,
         message: `Warsztat zaproponował nowy termin: ${newDate} ${newTime}. Powód: ${reason}`,
       });
-      await sendBookingNotificationEmail({
+      await sendWorkshopClientBookingEmail({
         type: "reschedule_proposed",
-        bookingId: booking.id,
+        booking,
+        workshopId: workshop.id,
         subject: "Propozycja zmiany terminu",
         body: `Nowy termin: ${newDate} ${newTime}. Powód: ${reason}`,
       });

@@ -51,34 +51,34 @@ export async function uploadWorkshopPhoto(params: {
   uploadedByRole: string;
 }): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Musisz być zalogowany.");
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error("Musisz być zalogowany.");
 
-  const safeName = params.file.name.replace(/[^\w.\-]+/g, "_").slice(0, 120);
-  const path = `${params.workshopId}/${crypto.randomUUID()}-${safeName}`;
+  const formData = new FormData();
+  formData.append("workshopId", params.workshopId);
+  formData.append("file", params.file);
+  formData.append("uploadedByRole", params.uploadedByRole);
+  if (params.caption?.trim()) {
+    formData.append("caption", params.caption.trim());
+  }
 
-  const { error: upErr } = await supabase.storage.from(WORKSHOP_PHOTOS_BUCKET).upload(path, params.file, {
-    cacheControl: "3600",
-    upsert: false,
+  const res = await fetch("/api/workshop/photos/upload", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
   });
-  if (upErr) throw new Error(upErr.message || "Nie udało się wgrać pliku (sprawdź bucket workshop-photos w Supabase).");
 
-  const pub = supabase.storage.from(WORKSHOP_PHOTOS_BUCKET).getPublicUrl(path);
-  const publicUrl = pub.data.publicUrl ?? null;
+  let payload: { error?: string } = {};
+  try {
+    payload = (await res.json()) as { error?: string };
+  } catch {
+    payload = {};
+  }
 
-  const { error } = await supabase.from("workshop_photos").insert({
-    workshop_id: params.workshopId,
-    storage_path: path,
-    public_url: publicUrl,
-    uploaded_by: user.id,
-    uploaded_by_role: params.uploadedByRole,
-    caption: params.caption?.trim() || null,
-    sort_order: 0,
-    status: "active",
-  });
-  if (error) throw new Error(formatSupabaseError(error));
+  if (!res.ok) {
+    throw new Error(payload.error || "Upload nie powiódł się.");
+  }
 }
 
 export async function setWorkshopPhotoHidden(id: string, hidden: boolean): Promise<void> {

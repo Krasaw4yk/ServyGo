@@ -2,6 +2,7 @@
 
 import { sendBookingEmailNotification } from "@/lib/notificationApi";
 import { sendBookingNotificationEmail } from "@/lib/sendBookingNotificationEmail";
+import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 
 function originForLinks(): string {
   if (typeof window !== "undefined" && window.location?.origin) {
@@ -10,7 +11,11 @@ function originForLinks(): string {
   return "";
 }
 
-/** TODO: dodatkowy kanał e-mail (np. Edge Function) — obecnie POST /api/notifications/email + Resend. */
+async function authBearerToken(): Promise<string | null> {
+  if (!isSupabaseConfigured || !supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token?.trim() || null;
+}
 
 export function quoteDecisionLabel(
   quoteStatus: string | null | undefined,
@@ -46,6 +51,7 @@ const FALLBACK_DECISION_LABELS_BY_PATH = {
 
 export async function notifyClientBookingQuoteSent(payload: {
   clientUserId: string;
+  clientEmail?: string | null;
   bookingId: string;
   workshopId: string;
   workshopName: string;
@@ -83,23 +89,50 @@ export async function notifyClientBookingQuoteSent(payload: {
     `Termin rezerwacji: ${payload.bookingDateLine}`,
   ].join("\n");
 
+  const subject = "Wycena gotowa";
+  const token = await authBearerToken();
+  if (token) {
+    try {
+      const res = await fetch("/api/notifications/client-quote-sent", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clientUserId: payload.clientUserId,
+          clientEmail: payload.clientEmail ?? null,
+          bookingId: payload.bookingId,
+          workshopId: payload.workshopId,
+          subject,
+          body: emailBody,
+        }),
+      });
+      if (res.ok) return;
+      console.warn("[notifyClientBookingQuoteSent] API client-quote-sent nie powiodło się, fallback lokalny.");
+    } catch (e) {
+      console.warn("[notifyClientBookingQuoteSent] Błąd API, fallback lokalny:", e);
+    }
+  }
+
   await sendBookingNotificationEmail({
+    to: payload.clientEmail ?? undefined,
     type: "quote_sent",
     bookingId: payload.bookingId,
-    subject: "Wycena gotowa",
+    subject,
     body: emailBody,
   });
 }
 
 export async function notifyWorkshopOwnerQuoteResponded(payload: {
   ownerUserId: string | null;
+  ownerEmail?: string | null;
   bookingId: string;
   workshopId: string;
   workshopName: string;
   serviceName: string;
   accepted: boolean;
   finalPrice?: number | null;
-  /** Overrides default Polish workshop notification copy (UI language). */
   emailSubject?: string;
   emailBody?: string;
 }): Promise<void> {
@@ -115,10 +148,81 @@ export async function notifyWorkshopOwnerQuoteResponded(payload: {
     (payload.accepted
       ? `Klient zaakceptował wycenę dla usługi „${payload.serviceName}”.${priceBit} Warsztat: ${payload.workshopName}.`
       : `Klient odrzucił wycenę dla usługi „${payload.serviceName}”. Warsztat: ${payload.workshopName}.`);
+
+  const token = await authBearerToken();
+  if (token) {
+    try {
+      const res = await fetch("/api/notifications/workshop-quote-response", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ownerUserId: payload.ownerUserId,
+          ownerEmail: payload.ownerEmail ?? null,
+          bookingId: payload.bookingId,
+          workshopId: payload.workshopId,
+          accepted: payload.accepted,
+          emailSubject: subject,
+          emailBody: body,
+        }),
+      });
+      if (res.ok) return;
+      console.warn("[notifyWorkshopOwnerQuoteResponded] API nie powiodło się, fallback lokalny.");
+    } catch (e) {
+      console.warn("[notifyWorkshopOwnerQuoteResponded] Błąd API, fallback lokalny:", e);
+    }
+  }
+
   await sendBookingNotificationEmail({
+    to: payload.ownerEmail ?? undefined,
     type: payload.accepted ? "quote_accepted" : "quote_rejected",
     bookingId: payload.bookingId,
     subject,
     body,
+  });
+}
+
+/** E-mail do klienta z panelu warsztatu (anulowanie / zmiana terminu). */
+export async function sendWorkshopClientBookingEmail(payload: {
+  type: "booking_cancelled" | "reschedule_proposed";
+  booking: { id: string; user_id: string; client_email?: string | null };
+  workshopId: string;
+  subject: string;
+  body: string;
+}): Promise<void> {
+  const token = await authBearerToken();
+  if (token) {
+    try {
+      const res = await fetch("/api/notifications/workshop-client-booking-email", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: payload.type,
+          clientUserId: payload.booking.user_id,
+          clientEmail: payload.booking.client_email ?? null,
+          bookingId: payload.booking.id,
+          workshopId: payload.workshopId,
+          subject: payload.subject,
+          body: payload.body,
+        }),
+      });
+      if (res.ok) return;
+      console.warn("[sendWorkshopClientBookingEmail] API nie powiodło się, fallback lokalny.");
+    } catch (e) {
+      console.warn("[sendWorkshopClientBookingEmail] Błąd API, fallback lokalny:", e);
+    }
+  }
+
+  await sendBookingNotificationEmail({
+    to: payload.booking.client_email ?? undefined,
+    type: payload.type,
+    bookingId: payload.booking.id,
+    subject: payload.subject,
+    body: payload.body,
   });
 }

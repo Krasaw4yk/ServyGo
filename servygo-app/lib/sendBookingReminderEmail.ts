@@ -1,6 +1,7 @@
+import { sendEmail } from "@/lib/resendClient";
+
 /**
- * Placeholder przypomnień e-mail o wizycie (Resend / Supabase Edge Function / SMTP).
- * TODO: podłączyć realny dostawca; nie zmieniaj sygnatury bez aktualizacji processBookingReminders.
+ * Przypomnienia e-mail o wizycie (Resend).
  */
 export type BookingReminderEmailKind = "visit_5_days_before" | "visit_1_day_before";
 
@@ -13,6 +14,15 @@ export async function sendBookingReminderEmail(payload: {
   bookingDate: string;
   startTime: string;
 }): Promise<void> {
+  const to = payload.to?.trim();
+  if (!to) {
+    console.info("[sendBookingReminderEmail] Brak adresu e-mail odbiorcy — pominięto wysyłkę.", {
+      kind: payload.kind,
+      bookingId: payload.bookingId,
+    });
+    return;
+  }
+
   const subjects: Record<BookingReminderEmailKind, string> = {
     visit_5_days_before: "ServyGo: zbliża się Twoja wizyta w warsztacie",
     visit_1_day_before: "ServyGo: przypomnienie o jutrzejszej wizycie",
@@ -23,11 +33,20 @@ export async function sendBookingReminderEmail(payload: {
     visit_1_day_before: `Jutro masz wizytę w warsztacie ${payload.workshopName} dla usługi ${payload.serviceName}. Termin: ${payload.bookingDate} o ${payload.startTime}. Jeśli nie możesz przyjechać, anuluj wizytę w ServyGo lub skontaktuj się z warsztatem.`,
   };
 
-  console.info("[sendBookingReminderEmail:TODO]", {
-    kind: payload.kind,
-    bookingId: payload.bookingId,
-    to: payload.to ?? null,
-    subject: subjects[payload.kind],
-    bodyPreview: bodies[payload.kind].slice(0, 180),
-  });
+  try {
+    const result = await sendEmail({
+      to,
+      subject: subjects[payload.kind],
+      text: bodies[payload.kind],
+    });
+    if (!result.sent) {
+      console.warn("[sendBookingReminderEmail] Nie wysłono e-maila.", {
+        kind: payload.kind,
+        bookingId: payload.bookingId,
+        reason: result.reason ?? "unknown",
+      });
+    }
+  } catch (error) {
+    console.error("[sendBookingReminderEmail] Błąd wysyłki:", error);
+  }
 }

@@ -32,6 +32,7 @@ import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 import ServiceDifficultyBadge from "@/components/ServiceDifficultyBadge";
 import WorkshopFavoriteToggle from "@/components/WorkshopFavoriteToggle";
 import WorkshopLocationMiniMap from "@/components/workshop/WorkshopLocationMiniMap";
+import WorkshopPhotoGallery from "@/components/workshop/WorkshopPhotoGallery";
 import {
   averageRating,
   fetchPublishedServygoReviewsForWorkshop,
@@ -1100,52 +1101,12 @@ function WorkshopDetailsPageContent() {
             </div>
 
             <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
-              {(() => {
-                const photos = workshopPhotos.filter((ph) => ph.public_url);
-                if (photos.length === 0) {
-                  return (
-                    <div
-                      className={`flex h-24 w-full items-center justify-center rounded-xl border border-dashed text-center ${
-                        isDark ? "border-zinc-700 bg-zinc-800/60" : "border-zinc-300 bg-zinc-50"
-                      }`}
-                    >
-                      <div>
-                        <svg className="mx-auto mb-1 opacity-30" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <rect x="3" y="3" width="18" height="18" rx="2" />
-                          <circle cx="8.5" cy="8.5" r="1.5" />
-                          <polyline points="21 15 16 10 5 21" />
-                        </svg>
-                        <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                          Brak zdjęć · właściciel może je dodać w panelu
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-                return (
-                  <>
-                    <div className="relative mb-1.5 h-[100px] overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={photos[0]!.public_url!} alt="" className="h-full w-full object-cover" />
-                    </div>
-                    {photos.length > 1 ? (
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {photos.slice(1, 4).map((p, i) => (
-                          <div key={p.id} className="relative h-[56px] overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={p.public_url!} alt="" className="h-full w-full object-cover" />
-                            {i === 2 && photos.length > 4 ? (
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-[12px] font-medium text-white">
-                                +{photos.length - 4}
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
-                );
-              })()}
+              <WorkshopPhotoGallery
+                photos={workshopPhotos}
+                workshopName={workshop.name}
+                isDark={isDark}
+                layout="mobile"
+              />
             </div>
             <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
               <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-400 dark:text-zinc-500">O warsztacie</p>
@@ -1619,64 +1580,17 @@ function WorkshopDetailsPageContent() {
                     : "border-blue-200 bg-gradient-to-br from-sky-100 via-white to-orange-100"
                 }`}
               >
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-                  <div
-                    className={`relative overflow-hidden rounded-2xl border ${
-                      isDark ? "border-zinc-700 bg-zinc-800/70" : "border-blue-100 bg-white/70"
-                    }`}
-                  >
-                    <div className="h-52 bg-[linear-gradient(120deg,rgba(59,130,246,0.16),rgba(249,115,22,0.18),rgba(56,189,248,0.14))] dark:bg-[linear-gradient(120deg,rgba(59,130,246,0.22),rgba(249,115,22,0.16),rgba(2,6,23,0.22))]" />
-                    <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_30%,rgba(255,255,255,0.22)_45%,transparent_60%)]" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 md:grid-cols-1">
-                    {[1, 2, 3].map((thumb) => (
-                      <div
-                        key={thumb}
-                        className={`relative h-[68px] overflow-hidden rounded-xl border ${
-                          isDark ? "border-zinc-700 bg-zinc-800/70" : "border-blue-100 bg-white/70"
-                        }`}
-                      >
-                        <div className="h-full bg-[linear-gradient(120deg,rgba(59,130,246,0.14),rgba(249,115,22,0.14),rgba(15,23,42,0.08))]" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <WorkshopPhotoGallery
+                  photos={workshopPhotos}
+                  workshopName={workshop.name}
+                  isDark={isDark}
+                  layout="desktop"
+                />
               </div>
 
               <p className={`mt-4 text-sm leading-relaxed sm:text-base ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
                 {workshop.description}
               </p>
-
-              {workshopPhotos.length > 0 ? (
-                <div className="mt-6">
-                  <h2 className={`text-lg font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>Zdjęcia warsztatu</h2>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {workshopPhotos.map((ph) =>
-                      ph.public_url ? (
-                        <div
-                          key={ph.id}
-                          className={`overflow-hidden rounded-2xl border ${
-                            isDark ? "border-zinc-700 bg-zinc-900/60" : "border-blue-100 bg-white/80"
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={ph.public_url} alt="" className="aspect-video w-full object-cover" />
-                          {ph.caption ? (
-                            <p className={`px-2 py-1 text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{ph.caption}</p>
-                          ) : null}
-                        </div>
-                      ) : null,
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className={`mt-6 overflow-hidden rounded-2xl border ${isDark ? "border-zinc-700 bg-zinc-900/50" : "border-blue-100 bg-white/80"}`}>
-                  <div className="h-40 bg-[linear-gradient(120deg,rgba(59,130,246,0.16),rgba(249,115,22,0.16),rgba(30,41,59,0.08))] dark:bg-[linear-gradient(120deg,rgba(59,130,246,0.22),rgba(249,115,22,0.2),rgba(2,6,23,0.28))]" />
-                  <div className={`px-4 py-3 text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                    Zdjęcie warsztatu wkrótce
-                  </div>
-                </div>
-              )}
 
               <div className="mt-6">
                 <button
