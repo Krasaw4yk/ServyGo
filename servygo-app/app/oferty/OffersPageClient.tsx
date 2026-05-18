@@ -7,10 +7,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { createTranslator, LanguageCode } from "@/lib/translations";
 import { useServyGoLanguage } from "@/lib/useServyGoLanguage";
-import type { MockWorkshop } from "@/lib/mockWorkshops";
+import type { MockWorkshop, WorkshopServiceOffer } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopsAsMock, matchWorkshopServicesForVehicle } from "@/lib/publicWorkshopsFromDb";
 import { resolveAvailableSlotsForWorkshopDay, toLocalDateKey } from "@/lib/bookingAvailability";
-import { getApproxCityCenterCoords, haversineDistanceKm } from "@/lib/offersGeo";
+import { getApproxCityCenterCoords, haversineDistanceKm, isValidLatLng } from "@/lib/offersGeo";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
 import { getServiceCatalogByVehicleType } from "@/lib/serviceCatalog";
 import type { VehicleTypeKey } from "@/lib/vehicleData";
@@ -26,7 +26,6 @@ import {
   type SelectedServiceItem,
   type WorkshopServiceMatchResult,
 } from "@/lib/selectedServices";
-import ServiceDifficultyBadge from "@/components/ServiceDifficultyBadge";
 import ServyGoPageShell from "@/components/ServyGoPageShell";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
 import { trackEvent } from "@/lib/analytics";
@@ -68,6 +67,29 @@ function formatPriceRange(priceFrom?: number | null, priceTo?: number | null) {
   return "Cena po wycenie";
 }
 
+function formatTotalPriceRange(services: WorkshopServiceOffer[]): string {
+  if (services.length === 0) return "Cena po wycenie";
+  if (services.length === 1) return formatPriceRange(services[0].price_from, services[0].price_to);
+  let totalFrom = 0;
+  let totalTo = 0;
+  let hasFrom = false;
+  let hasTo = false;
+  for (const s of services) {
+    if (s.price_from != null) {
+      totalFrom += s.price_from;
+      hasFrom = true;
+    }
+    if (s.price_to != null) {
+      totalTo += s.price_to;
+      hasTo = true;
+    }
+  }
+  if (hasFrom && hasTo) return `od ${totalFrom} do ${totalTo} zł`;
+  if (hasFrom) return `od ${totalFrom} zł`;
+  if (hasTo) return `do ${totalTo} zł`;
+  return "Cena po wycenie";
+}
+
 function formatDistanceKm(km: number | null) {
   if (km == null || !Number.isFinite(km)) return "—";
   if (km < 1) return `${Math.round(km * 1000)} m`;
@@ -85,9 +107,41 @@ function slotSortRank(label: string, lang: LanguageCode): number {
 }
 
 function priceFromFirstOffer(workshop: MockWorkshop) {
-  const o = workshop.services[0];
-  if (!o) return 0;
-  return o.price_from ?? o.price ?? 0;
+  if (workshop.services.length === 0) return 0;
+  if (workshop.services.length === 1) {
+    const o = workshop.services[0];
+    return o.price_from ?? o.price ?? 0;
+  }
+  return workshop.services.reduce((sum, s) => sum + (s.price_from ?? s.price ?? 0), 0);
+}
+
+function totalDurationMinutes(services: WorkshopServiceOffer[]): number {
+  if (services.length === 0) return 0;
+  return services.reduce((sum, s) => sum + (s.duration_minutes ?? 60), 0);
+}
+
+function formatDuration(totalMinutes: number): string {
+  const rounded = Math.ceil(totalMinutes / 30) * 30;
+  const hours = Math.floor(rounded / 60);
+  const mins = rounded % 60;
+  if (hours === 0) return `ok. ${rounded} min`;
+  if (mins === 0) return `ok. ${hours} h (${rounded} min)`;
+  return `ok. ${hours} h ${mins} min (${rounded} min)`;
+}
+
+function resolveNearestSlotLabel(
+  workshopId: string,
+  slotAvailability: Record<string, { today: boolean; tomorrow: boolean; firstSlotLabel: string | null }>,
+  slotsLoading: boolean,
+): string {
+  if (slotsLoading) return "Sprawdzam…";
+  const avail = slotAvailability[workshopId];
+  if (!avail) return "Brak danych";
+  if (avail.today && avail.firstSlotLabel) return `Dziś ${avail.firstSlotLabel}`;
+  if (avail.today) return "Dziś";
+  if (avail.tomorrow && avail.firstSlotLabel) return `Jutro ${avail.firstSlotLabel}`;
+  if (avail.tomorrow) return "Jutro";
+  return "Zostaw auto";
 }
 
 function displayWord(raw: string) {
@@ -107,7 +161,7 @@ export default function OffersPageClient() {
   const [offersError, setOffersError] = useState("");
   const [selectedWorkshopId, setSelectedWorkshopId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [sortKey, setSortKey] = useState<SortKey>("nearest");
+  const [sortKey, setSortKey] = useState<SortKey>("match");
   const [maxPrice, setMaxPrice] = useState("");
   const [minRating, setMinRating] = useState("");
   const [maxDistanceKm, setMaxDistanceKm] = useState("");
@@ -119,7 +173,10 @@ export default function OffersPageClient() {
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [slotAvailability, setSlotAvailability] = useState<Record<string, { today: boolean; tomorrow: boolean }>>({});
+  const [mapLayoutVisible, setMapLayoutVisible] = useState(false);
+  const [slotAvailability, setSlotAvailability] = useState<
+    Record<string, { today: boolean; tomorrow: boolean; firstSlotLabel: string | null }>
+  >({});
   const [slotsLoading, setSlotsLoading] = useState(false);
   const listCardRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -182,6 +239,15 @@ export default function OffersPageClient() {
     if (!mounted) return;
     window.localStorage.setItem("servygo-theme", theme);
   }, [mounted, theme]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const mq = window.matchMedia("(min-width: 768px)");
+    const sync = () => setMapLayoutVisible(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [mounted]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -391,13 +457,26 @@ export default function OffersPageClient() {
       void (async () => {
         const entries = await Promise.all(
           baseMatches.map(async (w) => {
-            const dur = w.services[0]?.duration_minutes ?? 60;
+            const totalDur = w.services.reduce((sum, s) => sum + (s.duration_minutes ?? 60), 0);
             try {
-              const todaySlots = await resolveAvailableSlotsForWorkshopDay(w, todayKey, dur);
-              const tomorrowSlots = await resolveAvailableSlotsForWorkshopDay(w, tomorrowKey, dur);
-              return [w.id, { today: todaySlots.length > 0, tomorrow: tomorrowSlots.length > 0 }] as const;
+              const todaySlots = await resolveAvailableSlotsForWorkshopDay(w, todayKey, totalDur);
+              const tomorrowSlots = await resolveAvailableSlotsForWorkshopDay(w, tomorrowKey, totalDur);
+              const firstSlotLabel =
+                todaySlots.length > 0
+                  ? todaySlots[0]
+                  : tomorrowSlots.length > 0
+                    ? tomorrowSlots[0]
+                    : null;
+              return [
+                w.id,
+                {
+                  today: todaySlots.length > 0,
+                  tomorrow: tomorrowSlots.length > 0,
+                  firstSlotLabel,
+                },
+              ] as const;
             } catch {
-              return [w.id, { today: false, tomorrow: false }] as const;
+              return [w.id, { today: false, tomorrow: false, firstSlotLabel: null }] as const;
             }
           }),
         );
@@ -523,7 +602,7 @@ export default function OffersPageClient() {
 
   const mapMarkers: OffersMapMarker[] = useMemo(() => {
     return filteredAndSorted
-      .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
+      .filter((w) => isValidLatLng(w.lat, w.lng))
       .map((workshop) => {
         const firstOffer = workshop.services[0];
         const detailsParams = buildDetailsParams(workshop);
@@ -540,13 +619,26 @@ export default function OffersPageClient() {
           mapCardAddress: mapCardAddress || workshop.address,
           rating: workshop.rating,
           reviewsCount: workshop.reviewsCount,
-          priceLabel: formatPriceRange(firstOffer?.price_from, firstOffer?.price_to),
+          priceLabel:
+            workshop.services.length > 1
+              ? formatTotalPriceRange(workshop.services)
+              : formatPriceRange(firstOffer?.price_from, firstOffer?.price_to),
           nearestSlot: firstOffer?.next_available ?? "—",
           detailsHref: `/warsztat/${workshop.id}?${detailsParams.toString()}`,
           selected: activeSelectedWorkshopId === workshop.id,
         };
       });
   }, [activeSelectedWorkshopId, buildDetailsParams, filteredAndSorted]);
+
+  const mapFocusWorkshopId = useMemo(() => {
+    if (activeSelectedWorkshopId && mapMarkers.some((m) => m.id === activeSelectedWorkshopId)) {
+      return activeSelectedWorkshopId;
+    }
+    return mapMarkers[0]?.id ?? null;
+  }, [activeSelectedWorkshopId, mapMarkers]);
+
+  const shouldMountLeafletMap =
+    mapMarkers.length > 0 && (viewMode === "map" || mapLayoutVisible);
 
   const resultsDesktopHeightClass = hasFallback ? "md:h-[calc(100vh-340px)]" : "md:h-[calc(100vh-300px)]";
 
@@ -601,13 +693,52 @@ export default function OffersPageClient() {
                 className="h-10 w-auto object-contain sm:h-12"
               />
             </Link>
-            <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-                className="inline-flex w-full justify-center rounded-xl border border-blue-300/60 px-3 py-2 text-sm font-semibold transition hover:border-orange-300 sm:w-auto sm:px-4"
+                aria-label={theme === "dark" ? t("header.themeLight") : t("header.themeDark")}
+                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border transition ${
+                  isDark
+                    ? "border-zinc-600 bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                    : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+                }`}
               >
-                {theme === "dark" ? "☀️" : "🌙"} {theme === "dark" ? t("header.themeLight") : t("header.themeDark")}
+                {theme === "dark" ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="5" />
+                    <line x1="12" y1="1" x2="12" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="23" />
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                    <line x1="1" y1="12" x2="3" y2="12" />
+                    <line x1="21" y1="12" x2="23" y2="12" />
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                )}
               </button>
             </div>
           </div>
@@ -628,123 +759,93 @@ export default function OffersPageClient() {
                   {queryFilters.problem.length > 160 ? `${queryFilters.problem.slice(0, 160)}…` : queryFilters.problem}
                 </p>
               ) : null}
-              {selectedItemsForMatch.length > 1 ? (
-                <div
-                  className={`mt-3 space-y-3 rounded-xl border px-3 py-3 text-sm ${
-                    isDark ? "border-zinc-700 bg-zinc-900/45" : "border-blue-200 bg-white/75"
-                  }`}
-                >
-                  <div className="flex flex-col gap-2">
-                    <p className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>Tryb wyszukiwania</p>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSearchMode("best_match");
-                          patchOffersQuery({ searchMode: undefined });
-                        }}
-                        className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold sm:flex-1 ${
-                          searchMode === "best_match"
-                            ? "border-blue-500 bg-blue-600 text-white"
-                            : isDark
-                              ? "border-zinc-600 text-zinc-200"
-                              : "border-zinc-300 text-zinc-800"
-                        }`}
-                      >
-                        Najlepsze dopasowanie warsztatu
-                        <span className={`mt-1 block font-normal ${searchMode === "best_match" ? "text-blue-100" : isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                          Pokażemy warsztaty, które mogą zrobić jak najwięcej wybranych usług podczas jednej wizyty.
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSearchMode("separate");
-                          patchOffersQuery({ searchMode: "separate" });
-                        }}
-                        className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold sm:flex-1 ${
-                          searchMode === "separate"
-                            ? "border-blue-500 bg-blue-600 text-white"
-                            : isDark
-                              ? "border-zinc-600 text-zinc-200"
-                              : "border-zinc-300 text-zinc-800"
-                        }`}
-                      >
-                        Dobierz warsztaty osobno
-                        <span className={`mt-1 block font-normal ${searchMode === "separate" ? "text-blue-100" : isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                          Sprawdź pasujące warsztaty dla każdej wybranej usługi osobno.
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                  <label className={`flex cursor-pointer items-start gap-2 text-xs ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-4 w-4 rounded border-zinc-400"
-                      checked={fullMatchOnly}
-                      onChange={(e) => {
-                        const on = e.target.checked;
-                        setFullMatchOnly(on);
-                        patchOffersQuery({ fullMatch: on ? "1" : undefined });
-                      }}
-                    />
-                    <span>Pokaż tylko warsztaty, które obsługują wszystko</span>
-                  </label>
-                  {searchMode === "separate" ? (
-                    <div className={`space-y-2 border-t pt-3 text-xs ${isDark ? "border-zinc-700 text-zinc-300" : "border-blue-100 text-zinc-700"}`}>
-                      {/* TODO(multi-booking): docelowy checkout wielu rezerwacji naraz — MVP: szybkie linki pod pojedyncze wyszukiwania. */}
-                      <p className="font-semibold">Usługi z Twojej listy</p>
-                      <ul className="space-y-1">
-                        {selectedItemsForMatch.map((item) => {
-                          const p = new URLSearchParams(window.location.search);
-                          p.set("services", encodeSelectedServicesToQuery([item]));
-                          p.delete("searchMode");
-                          return (
-                            <li key={item.id}>
-                              <Link
-                                href={`/oferty?${p.toString()}`}
-                                className={`font-medium underline ${isDark ? "text-blue-300" : "text-blue-700"}`}
-                              >
-                                {item.name}
-                              </Link>{" "}
-                              — zobacz warsztaty dla samej tej usługi
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           ) : null}
 
-          <div className="mb-4 grid grid-cols-2 gap-2 md:hidden">
+          <div className="mb-3 flex items-center gap-2 md:hidden">
             <button
               type="button"
               onClick={() => setViewMode("list")}
-              className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold ${
                 viewMode === "list"
                   ? "bg-blue-600 text-white"
                   : isDark
-                    ? "bg-zinc-900/70 text-zinc-200"
-                    : "bg-white text-zinc-700"
+                    ? "bg-zinc-800 text-zinc-300"
+                    : "border border-zinc-300 bg-white text-zinc-700"
               }`}
             >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
+              </svg>
               {t("offers.showList")}
             </button>
             <button
               type="button"
               onClick={() => setViewMode("map")}
-              className={`w-full rounded-xl px-3 py-2 text-sm font-semibold ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold ${
                 viewMode === "map"
                   ? "bg-blue-600 text-white"
                   : isDark
-                    ? "bg-zinc-900/70 text-zinc-200"
-                    : "bg-white text-zinc-700"
+                    ? "bg-zinc-800 text-zinc-300"
+                    : "border border-zinc-300 bg-white text-zinc-700"
               }`}
             >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+                <line x1="8" y1="2" x2="8" y2="18" />
+                <line x1="16" y1="6" x2="16" y2="22" />
+              </svg>
               {t("offers.showMap")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(true)}
+              className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border transition ${
+                offersFiltersActive
+                  ? "border-orange-400/60 bg-orange-500/15 text-orange-700 dark:text-orange-300"
+                  : isDark
+                    ? "border-zinc-600 bg-zinc-800 text-zinc-300"
+                    : "border-zinc-300 bg-white text-zinc-600"
+              }`}
+              aria-label="Filtry"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="8" y1="12" x2="16" y2="12" />
+                <line x1="11" y1="18" x2="13" y2="18" />
+              </svg>
             </button>
           </div>
 
@@ -772,22 +873,6 @@ export default function OffersPageClient() {
 
           {!loading && baseMatches.length > 0 ? (
             <>
-              <div className="mb-3 md:hidden">
-                <button
-                  type="button"
-                  onClick={() => setMobileFiltersOpen(true)}
-                  className={`w-full rounded-xl border px-4 py-3 text-base font-semibold ${
-                    offersFiltersActive
-                      ? "border-orange-400/60 bg-orange-500/15 text-orange-900 dark:border-orange-400/40 dark:bg-orange-500/10 dark:text-orange-100"
-                      : isDark
-                        ? "border-zinc-600 bg-zinc-900/70 text-zinc-100"
-                        : "border-zinc-300 bg-white text-zinc-800"
-                  }`}
-                >
-                  {offersFiltersActive ? t("offers.filtersActive") : t("offers.filtersOpen")}
-                </button>
-              </div>
-
               <MobileBottomSheet
                 isDark={isDark}
                 tallList
@@ -1052,123 +1137,178 @@ export default function OffersPageClient() {
                               : "border-blue-200 bg-white/80"
                         }`}
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
                             <h3 className="break-words text-base font-semibold leading-tight md:text-lg">{workshop.name}</h3>
-                            {workshop.isDemo ? (
-                              <p className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${isDark ? "border-amber-400/40 bg-amber-500/15 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
-                                Profil demonstracyjny
-                              </p>
-                            ) : null}
+                            <p className={`mt-0.5 text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{workshop.address}</p>
+                            <p
+                              className={`mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs ${isDark ? "text-zinc-300" : "text-zinc-700"}`}
+                            >
+                              <span>
+                                ⭐ <strong>{ratingDisplay}</strong>
+                              </span>
+                              <span className={isDark ? "text-zinc-600" : "text-zinc-300"}>·</span>
+                              <span>
+                                {workshop.reviewsCount} {t("offers.reviews")}
+                              </span>
+                              <span className={isDark ? "text-zinc-600" : "text-zinc-300"}>·</span>
+                              <span>{formatDistanceKm(distKm)} od centrum</span>
+                            </p>
                           </div>
-                          <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              checked={compareIds.includes(workshop.id)}
-                              onChange={() => toggleCompare(workshop.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-4 w-4 rounded border-zinc-400"
-                            />
-                            {t("offers.compareToggle")}
-                          </label>
+                          <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
+                            {workshop.isDemo ? (
+                              <span
+                                className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${isDark ? "border-amber-400/40 bg-amber-500/15 text-amber-200" : "border-amber-300 bg-amber-50 text-amber-800"}`}
+                              >
+                                Demo
+                              </span>
+                            ) : null}
+                            <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={compareIds.includes(workshop.id)}
+                                onChange={() => toggleCompare(workshop.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-4 w-4 rounded border-zinc-400"
+                              />
+                              {t("offers.compareToggle")}
+                            </label>
+                          </div>
                         </div>
-                        <p className={`mt-0.5 text-xs md:text-sm ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{workshop.address}</p>
-                        <p className={`mt-1 text-xs md:text-sm ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                          <strong>⭐ {ratingDisplay}</strong> ({workshop.reviewsCount} {t("offers.reviews")}) ·{" "}
-                          {t("offers.distanceFromCenter")}: {formatDistanceKm(distKm)}
-                        </p>
-                        <div className="mt-2 grid grid-cols-1 gap-1.5 text-xs leading-snug sm:grid-cols-2 md:text-sm">
-                          <p>
-                            <strong>{t("offers.price")}:</strong> {formatPriceRange(firstOffer.price_from, firstOffer.price_to)}
+
+                        <div className={`mt-3 rounded-xl border px-3 py-2.5 ${isDark ? "border-zinc-700 bg-zinc-800/60" : "border-zinc-200 bg-zinc-50"}`}>
+                          <p
+                            className={`mb-1.5 text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-zinc-400" : "text-zinc-500"}`}
+                          >
+                            Usługi i ceny
                           </p>
-                          <p>
-                            <strong>{t("offers.duration")}:</strong> {firstOffer.duration_minutes} min
-                          </p>
-                          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <strong>{t("offers.service")}:</strong>
-                            <span className="inline-flex flex-wrap items-center gap-2">
-                              <span>{firstOffer.service_name}</span>
-                              {"difficulty_level" in firstOffer && firstOffer.difficulty_level != null ? (
-                                <ServiceDifficultyBadge
-                                  difficulty_level={firstOffer.difficulty_level}
-                                  isDark={isDark}
-                                  compact
-                                />
-                              ) : null}
-                            </span>
-                          </p>
-                          <p>
-                            <strong>{t("offers.nearestSlot")}:</strong> {firstOffer.next_available}
-                          </p>
+                          {workshop.services.map((s) => (
+                            <div
+                              key={`${s.service_name}-${s.price_from}`}
+                              className="flex items-center justify-between border-b border-dashed border-zinc-200 py-1 last:border-0 dark:border-zinc-700"
+                            >
+                              <span className={`text-xs ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{s.service_name}</span>
+                              <span className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                                {formatPriceRange(s.price_from, s.price_to)}
+                              </span>
+                            </div>
+                          ))}
+                          {workshop.services.length > 1 ? (
+                            <div
+                              className={`mt-2 flex items-center justify-between border-t pt-2 ${isDark ? "border-zinc-600" : "border-zinc-300"}`}
+                            >
+                              <span className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                                Łącznie szacunkowo
+                              </span>
+                              <span className={`text-sm font-semibold ${isDark ? "text-blue-300" : "text-blue-700"}`}>
+                                {formatTotalPriceRange(workshop.services)}
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-2.5 grid grid-cols-2 gap-2">
+                          <div className={`rounded-lg border px-2.5 py-2 ${isDark ? "border-zinc-700 bg-zinc-800/40" : "border-zinc-200 bg-white"}`}>
+                            <p
+                              className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-zinc-400" : "text-zinc-500"}`}
+                            >
+                              Czas wykonania
+                            </p>
+                            <p className={`mt-0.5 text-sm font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+                              {formatDuration(totalDurationMinutes(workshop.services))}
+                            </p>
+                          </div>
+                          <div
+                            className={`rounded-lg border px-2.5 py-2 ${isDark ? "border-zinc-700 bg-zinc-800/40" : "border-zinc-200 bg-white"}`}
+                          >
+                            <p
+                              className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-zinc-400" : "text-zinc-500"}`}
+                            >
+                              Najbliższy termin
+                            </p>
+                            <p className={`mt-0.5 text-sm font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>
+                              {resolveNearestSlotLabel(workshop.id, slotAvailability, slotsLoading)}
+                            </p>
+                          </div>
                         </div>
                         {selectedItemsForMatch.length > 0 && workshop.matchDetail.selectedCount > 0 ? (
                           <div
-                            className={`mt-2 rounded-lg border px-2 py-2 text-[11px] leading-snug ${
-                              isDark ? "border-zinc-600 bg-zinc-950/60" : "border-zinc-200 bg-slate-50"
-                            }`}
+                            className={`mt-2.5 rounded-xl border px-3 py-2.5 ${isDark ? "border-zinc-700 bg-zinc-800/60" : "border-zinc-200 bg-zinc-50"}`}
                           >
-                            <p className="font-semibold">
-                              {workshop.matchDetail.matchedCount}/{workshop.matchDetail.selectedCount} usług ·{" "}
-                              {workshop.matchDetail.isFullMatch
-                                ? "Pełne dopasowanie"
-                                : `Częściowe dopasowanie · obsługuje ${workshop.matchDetail.matchedCount} z ${workshop.matchDetail.selectedCount}`}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                                {workshop.matchDetail.matchedCount}/{workshop.matchDetail.selectedCount} usług
+                              </span>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                                  workshop.matchDetail.isFullMatch
+                                    ? isDark
+                                      ? "border-green-500/40 bg-green-500/15 text-green-300"
+                                      : "border-green-300 bg-green-50 text-green-800"
+                                    : isDark
+                                      ? "border-amber-400/40 bg-amber-500/15 text-amber-200"
+                                      : "border-amber-300 bg-amber-50 text-amber-800"
+                                }`}
+                              >
+                                {workshop.matchDetail.isFullMatch ? "Pełne dopasowanie" : "Częściowe"}
+                              </span>
+                            </div>
                             {workshop.matchDetail.matchedServices.length > 0 ? (
-                              <p className="mt-1">
-                                <span className="font-medium">Obsługiwane z Twojej listy:</span>{" "}
-                                {workshop.matchDetail.matchedServices.map((s) => s.name).join(", ")}
+                              <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                                Obsługiwane:{" "}
+                                <span className={isDark ? "text-zinc-300" : "text-zinc-700"}>
+                                  {workshop.matchDetail.matchedServices.map((s) => s.name).join(", ")}
+                                </span>
                               </p>
                             ) : null}
                             {workshop.matchDetail.missingServices.length > 0 ? (
-                              <p className={`mt-1 ${isDark ? "text-orange-200" : "text-orange-800"}`}>
-                                <span className="font-medium">Brakujące usługi:</span>{" "}
-                                {workshop.matchDetail.missingServices.map((s) => s.name).join(", ")}
+                              <p className={`mt-0.5 text-[11px] ${isDark ? "text-orange-300" : "text-orange-700"}`}>
+                                Brakujące: {workshop.matchDetail.missingServices.map((s) => s.name).join(", ")}
                               </p>
                             ) : null}
                           </div>
                         ) : null}
+
                         {getCustomSelectedItems(selectedItemsForMatch).length > 0 ? (
                           <p
-                            className={`mt-2 rounded-lg border px-2 py-2 text-[11px] leading-snug ${
-                              isDark ? "border-zinc-600 bg-zinc-950/50 text-zinc-300" : "border-zinc-200 bg-white/90 text-zinc-700"
-                            }`}
+                            className={`mt-2 rounded-lg border px-2.5 py-2 text-[11px] leading-snug ${isDark ? "border-zinc-600 bg-zinc-950/50 text-zinc-300" : "border-zinc-200 bg-white/90 text-zinc-700"}`}
                           >
-                            <span className="font-semibold">Dodatkowy opis z koszyka:</span>{" "}
-                            {getCustomSelectedItems(selectedItemsForMatch)
-                              .map((c) => c.name)
-                              .join(", ")}
+                            <span className="font-semibold">Dodatkowy opis:</span>{" "}
+                            {getCustomSelectedItems(selectedItemsForMatch).map((c) => c.name).join(", ")}
                           </p>
                         ) : null}
-                        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                          <Link
-                            href={detailsHref}
-                            onClick={() =>
-                              void trackEvent("workshop_click", {
-                                workshopId: workshop.id,
-                                workshopName: workshop.name,
-                                service: firstOffer.service_name,
-                                city: workshop.city,
-                              })
-                            }
-                            className="inline-flex flex-1 items-center justify-center rounded-xl border border-blue-400/70 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 dark:border-blue-500/50 dark:text-blue-200 dark:hover:bg-zinc-800"
+
+                        <Link
+                          href={detailsHref}
+                          onClick={() =>
+                            void trackEvent("workshop_click", {
+                              workshopId: workshop.id,
+                              workshopName: workshop.name,
+                              service: firstOffer.service_name,
+                              city: workshop.city,
+                            })
+                          }
+                          className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                            isDark
+                              ? "border-blue-500/50 text-blue-300 hover:bg-zinc-800"
+                              : "border-blue-300 text-blue-700 hover:bg-blue-50"
+                          }`}
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                           >
-                            {t("offers.checkWorkshop")}
-                          </Link>
-                          <Link
-                            href={detailsHref}
-                            onClick={() =>
-                              void trackEvent("workshop_click", {
-                                workshopId: workshop.id,
-                                workshopName: workshop.name,
-                                source: "book_visit",
-                                city: workshop.city,
-                              })
-                            }
-                            className="inline-flex flex-1 items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-orange-500 px-3 py-2 text-sm font-semibold text-white"
-                          >
-                            {t("offers.bookVisit")}
-                          </Link>
-                        </div>
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                          Sprawdź szczegóły i umów wizytę
+                        </Link>
                       </article>
                     );
                   })}
@@ -1179,11 +1319,11 @@ export default function OffersPageClient() {
                 className={`${viewMode === "list" ? "hidden md:block" : "block"} md:sticky md:top-20 md:self-start ${resultsDesktopHeightClass}`}
               >
                 <div
-                  className={`relative h-[420px] overflow-hidden rounded-2xl border sm:h-[520px] md:h-full ${
+                  className={`relative h-[calc(100vh-180px)] overflow-hidden rounded-2xl border sm:h-[calc(100vh-160px)] md:h-full ${
                     isDark ? "border-blue-500/25 bg-zinc-950" : "border-blue-200 bg-white"
                   }`}
                 >
-                  {mapMarkers.length > 0 ? (
+                  {shouldMountLeafletMap ? (
                     <OffersLeafletMapErrorBoundary
                       fallback={
                         <div
@@ -1200,16 +1340,16 @@ export default function OffersPageClient() {
                     >
                       <OffersLeafletMap
                         markers={mapMarkers}
-                        selectedId={activeSelectedWorkshopId}
+                        selectedId={mapFocusWorkshopId}
                         onMarkerClick={(id) => setSelectedWorkshopId(id)}
                         seeOfferLabel={t("offers.seeOfferOnMap")}
                       />
                     </OffersLeafletMapErrorBoundary>
-                  ) : (
+                  ) : mapMarkers.length === 0 ? (
                     <div className="flex h-full items-center justify-center px-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
                       {t("offers.mapNoPins")}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </section>
             </div>
@@ -1259,9 +1399,11 @@ export default function OffersPageClient() {
                               {Number.isFinite(Number(w.rating)) ? Number(w.rating).toFixed(1) : "—"} ({w.reviewsCount})
                             </td>
                             <td className="py-2 pr-2">{formatDistanceKm(d)}</td>
-                            <td className="py-2 pr-2">{formatPriceRange(o?.price_from, o?.price_to)}</td>
-                            <td className="py-2 pr-2">{o ? `${o.duration_minutes} min` : "—"}</td>
-                            <td className="py-2">{o?.next_available ?? "—"}</td>
+                            <td className="py-2 pr-2">{formatTotalPriceRange(w.services)}</td>
+                            <td className="py-2 pr-2">{totalDurationMinutes(w.services)} min</td>
+                            <td className="py-2">
+                              {resolveNearestSlotLabel(w.id, slotAvailability, slotsLoading)}
+                            </td>
                           </tr>
                         );
                       })}

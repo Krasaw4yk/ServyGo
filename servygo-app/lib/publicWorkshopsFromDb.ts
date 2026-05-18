@@ -234,6 +234,9 @@ function buildVehicleSpecificOffers(rows: WorkshopVehiclePriceRow[]): WorkshopSe
       duration_minutes: row.duration_minutes ?? 60,
       next_available: "—",
       required_roles: [],
+      body_types: (row as { body_type?: string | null }).body_type
+        ? String((row as { body_type?: string | null }).body_type).split(",").filter(Boolean)
+        : null,
     }));
 }
 
@@ -361,6 +364,14 @@ export function matchWorkshopServicesForVehicle(
     return true;
   });
   if (strictMatches.length > 0) return strictMatches;
+
+  if (vehicleType) {
+    const bodyTypeMatches = services.filter((s) => {
+      const bt = (s as { body_types?: string[] | null }).body_types;
+      return Array.isArray(bt) && bt.length > 0;
+    });
+    if (bodyTypeMatches.length > 0) return bodyTypeMatches;
+  }
 
   // Bez pełnego dopasowania paliwa: pokaż tę samą usługę + auto (+ rocznik), żeby klient widział ofertę „do potwierdzenia”.
   if (normalizeText(motorQueryRaw) && brand && model) {

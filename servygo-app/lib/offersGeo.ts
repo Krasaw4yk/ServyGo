@@ -34,6 +34,16 @@ export function getApproxCityCenterCoords(city: string | null): { lat: number; l
 
 const EARTH_RADIUS_KM = 6371;
 
+/** Leaflet wymaga skończonych liczb — `Number.isFinite(null)` jest błędnie true. */
+export function isValidLatLng(lat: unknown, lng: unknown): lat is number {
+  return (
+    typeof lat === "number" &&
+    typeof lng === "number" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng)
+  );
+}
+
 export function haversineDistanceKm(
   a: { lat: number; lng: number },
   b: { lat: number; lng: number },

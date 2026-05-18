@@ -131,6 +131,7 @@ export type WorkshopServiceVehiclePriceRow = {
   duration_minutes: number | null;
   is_active: boolean;
   difficulty_level?: "low" | "medium" | "high" | null;
+  body_type?: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -675,6 +676,7 @@ export async function upsertWorkshopServiceVehiclePricesForOwner(
     duration_minutes?: number | null;
     is_active?: boolean;
     difficulty_level?: "low" | "medium" | "high" | null;
+    body_type?: string | null;
   }>,
 ): Promise<void> {
   if (!supabase) throw new Error("Supabase client not available.");
@@ -696,6 +698,7 @@ export async function upsertWorkshopServiceVehiclePricesForOwner(
     duration_minutes: row.duration_minutes ?? null,
     is_active: row.is_active ?? true,
     difficulty_level: row.difficulty_level ?? "medium",
+    body_type: row.body_type?.trim() || null,
   }));
   if (payload.length === 0) return;
   const { error } = await supabase

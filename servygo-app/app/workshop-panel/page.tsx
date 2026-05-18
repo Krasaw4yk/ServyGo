@@ -164,6 +164,7 @@ type ServiceVehiclePriceDraftRow = {
   duration_minutes: string;
   difficulty_level: ServiceDifficultyLevel;
   is_active: boolean;
+  body_types: string[];
 };
 type DayOverride = { closed: boolean; open: string; close: string };
 type EmployeeDraft = {
@@ -874,6 +875,7 @@ function WorkshopPanelPageContent() {
         duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
         difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
         is_active: row.is_active,
+        body_types: row.body_type ? row.body_type.split(",").filter(Boolean) : [],
       })),
     );
     setEmployeeDraftRows(
@@ -1094,6 +1096,7 @@ function WorkshopPanelPageContent() {
                 duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
                 difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
                 is_active: row.is_active,
+                body_types: row.body_type ? row.body_type.split(",").filter(Boolean) : [],
               })),
             );
           }
@@ -1573,6 +1576,7 @@ function WorkshopPanelPageContent() {
       duration_minutes: "",
       difficulty_level: "medium" as ServiceDifficultyLevel,
       is_active: true,
+      body_types: [],
     });
   }, []);
 
@@ -2006,6 +2010,7 @@ function WorkshopPanelPageContent() {
         duration_minutes: row.duration_minutes == null ? "" : String(row.duration_minutes),
         difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
         is_active: row.is_active,
+        body_types: row.body_type ? row.body_type.split(",").filter(Boolean) : [],
       })),
     );
   }
@@ -2040,6 +2045,7 @@ function WorkshopPanelPageContent() {
           duration_minutes: draft.duration_minutes.trim() ? Number(draft.duration_minutes) : null,
           difficulty_level: normalizeServiceDifficultyLevel(draft.difficulty_level),
           is_active: draft.is_active,
+          body_type: draft.body_types.length > 0 ? draft.body_types.join(",") : null,
         },
       ]);
       await refreshVehiclePriceRows(workshop.id);
@@ -2081,6 +2087,7 @@ function WorkshopPanelPageContent() {
           duration_minutes: row.duration_minutes.trim() ? Number(row.duration_minutes) : null,
           difficulty_level: normalizeServiceDifficultyLevel(row.difficulty_level),
           is_active: nextValue,
+          body_type: row.body_types.length > 0 ? row.body_types.join(",") : null,
         },
       ]);
       await refreshVehiclePriceRows(workshop.id);

@@ -164,6 +164,11 @@ export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
         if (free) slots.push(hhmmFromMinutes(t));
       }
     }
+    const todayKey = dateKeyFromDate(new Date());
+    if (args.date === todayKey) {
+      const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+      return slots.filter((slot) => minutesFromHHmm(slot) > nowM);
+    }
     return slots;
   }
 
@@ -202,6 +207,11 @@ export async function getAvailableSlots(args: SlotArgs): Promise<string[]> {
       });
       if (hasEmployee) slots.push(hhmmFromMinutes(t));
     }
+  }
+  const todayKey = dateKeyFromDate(new Date());
+  if (args.date === todayKey) {
+    const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+    return slots.filter((slot) => minutesFromHHmm(slot) > nowM);
   }
   return slots;
 }

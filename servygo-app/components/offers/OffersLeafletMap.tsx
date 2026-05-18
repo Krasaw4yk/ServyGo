@@ -5,6 +5,7 @@ import { useEffect, useMemo } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import Link from "next/link";
+import { isValidLatLng } from "@/lib/offersGeo";
 
 export type OffersMapMarker = {
   id: string;
@@ -26,10 +27,6 @@ export type OffersMapMarker = {
   /** Gdy ustawione, zamiast standardowego popupu ofert. */
   adminPopup?: ReactNode;
 };
-
-function isValidLatLng(lat: number, lng: number): boolean {
-  return Number.isFinite(lat) && Number.isFinite(lng);
-}
 
 function createMarkerIcon(selected: boolean, tone: "primary" | "muted" = "primary") {
   const color = selected ? "#ea580c" : tone === "muted" ? "#71717a" : "#2563eb";
@@ -63,7 +60,12 @@ function FlyToSelected({ selectedId, markers }: { selectedId: string | null; mar
     if (!selectedId) return;
     const m = markers.find((x) => x.id === selectedId);
     if (!m || !isValidLatLng(m.lat, m.lng)) return;
-    const z = Math.max(map.getZoom(), 15);
+
+    const size = map.getSize();
+    if (size.x <= 0 || size.y <= 0) return;
+
+    const zoom = map.getZoom();
+    const z = Number.isFinite(zoom) ? Math.max(zoom, 15) : 15;
     map.flyTo([m.lat, m.lng], z, { duration: 0.35 });
   }, [map, markers, selectedId]);
   return null;
