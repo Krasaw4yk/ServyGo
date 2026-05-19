@@ -11,6 +11,7 @@ import MobileBottomSheet from "@/components/MobileBottomSheet";
 import InternalInbox from "@/components/InternalInbox";
 import UserCenterCards from "@/components/home/UserCenterCards";
 import SearchWizard, { type SearchFieldKey } from "@/components/home/SearchWizard";
+import type { BodyTypeKey } from "@/lib/bodyTypeMap";
 import MobileBottomNav from "@/components/home/MobileBottomNav";
 import { VinOptionalHint } from "@/components/VinOptionalHint";
 import UserDetailsSection from "@/components/home/UserDetailsSection";
@@ -132,6 +133,7 @@ function HomePageContent() {
   const [model, setModel] = useState("");
   const [year, setYear] = useState("");
   const [fuel, setFuel] = useState("");
+  const [bodyType, setBodyType] = useState<BodyTypeKey | "">("");
   const [selectedServiceItems, setSelectedServiceItems] = useState<SelectedServiceItem[]>([]);
   const [searchCity, setSearchCity] = useState("");
   const [searchVin, setSearchVin] = useState("");
@@ -483,6 +485,7 @@ function HomePageContent() {
         setModel("");
         setYear("");
         setFuel("");
+        setBodyType("");
         setSearchVin("");
         setSearchCity("");
       } catch {
@@ -510,6 +513,7 @@ function HomePageContent() {
       }
       setBrand(selected.brand);
       setModel(selected.model);
+      setBodyType("");
       setYear(selected.year);
       setFuel(selected.fuel);
       if (selected.city.trim()) {
@@ -840,6 +844,7 @@ function HomePageContent() {
     query.set("year", String(payload.year ?? ""));
     query.set("fuel", String(payload.fuel ?? ""));
     query.set("engine", String(payload.fuel ?? ""));
+    if (bodyType) query.set("bodyType", bodyType);
     if (payload.vin) query.set("vin", payload.vin);
     if (payload.firstName) query.set("firstName", payload.firstName);
     if (payload.lastName) query.set("lastName", payload.lastName);
@@ -2403,6 +2408,7 @@ function HomePageContent() {
                             setVehicleType("");
                             setBrand("");
                             setModel("");
+                            setBodyType("");
                             setYear("");
                             setFuel("");
                             setSelectedServiceItems([]);
@@ -2500,6 +2506,8 @@ function HomePageContent() {
               setYear={setYear}
               fuel={fuel}
               setFuel={setFuel}
+              bodyType={bodyType}
+              setBodyType={setBodyType}
               selectedServiceItems={selectedServiceItems}
               setSelectedServiceItems={setSelectedServiceItems}
               searchCity={searchCity}
@@ -2532,6 +2540,7 @@ function HomePageContent() {
                 setModel("");
                 setYear("");
                 setFuel("");
+                setBodyType("");
                 setSelectedServiceItems([]);
                 setSearchCity("");
                 setSearchVin("");

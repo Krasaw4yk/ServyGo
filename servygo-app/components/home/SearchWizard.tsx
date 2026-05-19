@@ -12,6 +12,12 @@ import {
   type SelectedServiceItem,
 } from "@/lib/selectedServices";
 import type { ServiceCategory } from "@/lib/serviceCatalog";
+import {
+  getBodyTypeForModel,
+  hasMultipleBodyTypes,
+  BODY_TYPE_LABELS,
+  type BodyTypeKey,
+} from "@/lib/bodyTypeMap";
 import { vehicleTypeOptions, type VehicleTypeKey } from "@/lib/vehicleData";
 
 const SHOW_MANUAL_MISSING_VEHICLE_UI = false;
@@ -46,6 +52,8 @@ export type SearchWizardProps = {
   setYear: (value: string) => void;
   fuel: string;
   setFuel: (value: string) => void;
+  bodyType: BodyTypeKey | "";
+  setBodyType: (value: BodyTypeKey | "") => void;
   selectedServiceItems: SelectedServiceItem[];
   setSelectedServiceItems: Dispatch<SetStateAction<SelectedServiceItem[]>>;
   searchCity: string;
@@ -164,6 +172,8 @@ export default function SearchWizard({
   setYear,
   fuel,
   setFuel,
+  bodyType,
+  setBodyType,
   selectedServiceItems,
   setSelectedServiceItems,
   searchCity,
@@ -248,6 +258,16 @@ export default function SearchWizard({
   const mobileStep1Hidden = wizardStep !== 1;
   const mobileStep2Hidden = wizardStep !== 2;
 
+  const availableBodyTypes = ((): BodyTypeKey[] => {
+    if (!brand || !model) return [];
+    const val = getBodyTypeForModel(brand, model);
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    return [val];
+  })();
+
+  const showBodyTypePicker = availableBodyTypes.length > 1;
+
   const secondaryButtonClass = `inline-flex h-10 w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-300 hover:scale-[1.01] max-md:h-11 md:h-12 md:px-6 md:py-3 md:text-base ${
     isDark
       ? "border-zinc-600 bg-zinc-900/70 text-zinc-100 hover:border-blue-400/60"
@@ -310,6 +330,7 @@ export default function SearchWizard({
             clearSearchFieldError("brand");
             setBrand(nextBrand);
             setModel("");
+            setBodyType("");
           }}
           options={brandsForVehicleType}
           placeholder={vehicleType ? t("form.selects.brand") : t("form.selects.chooseTypeFirst")}
@@ -336,9 +357,10 @@ export default function SearchWizard({
         <AutocompleteSelect
           name="model"
           value={model}
-          onChange={(nextModel) => {
+          onChange={(val) => {
             clearSearchFieldError("model");
-            setModel(nextModel);
+            setModel(val);
+            setBodyType("");
           }}
           options={modelsForBrand}
           placeholder={brand ? t("form.selects.model") : t("form.selects.chooseBrandFirst")}
@@ -379,6 +401,38 @@ export default function SearchWizard({
           isDark={isDark}
         />
       </MobileCompactSearchField>
+
+      {showBodyTypePicker && (
+        <div className={searchFormAutocompleteShell}>
+          <label
+            htmlFor="bodyType"
+            className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400"
+          >
+            Wersja nadwozia
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {availableBodyTypes.map((bt) => (
+              <button
+                key={bt}
+                type="button"
+                onClick={() => setBodyType(bodyType === bt ? "" : bt)}
+                className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                  bodyType === bt
+                    ? "border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                    : "border-zinc-300 bg-white text-zinc-700 hover:border-blue-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                }`}
+              >
+                {BODY_TYPE_LABELS[bt]}
+              </button>
+            ))}
+          </div>
+          {showBodyTypePicker && !bodyType && (
+            <p className="mt-1 text-xs text-zinc-400">
+              Wybierz wersję aby zobaczyć dokładną cenę
+            </p>
+          )}
+        </div>
+      )}
 
       <MobileCompactSearchField
         label={translatedFuelLabel}

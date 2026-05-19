@@ -5,6 +5,7 @@ import { mockWorkshops } from "@/lib/mockWorkshops";
 import { getApproxCityCenterCoords } from "@/lib/offersGeo";
 import { normalizeServiceTextForMatch } from "@/lib/serviceCategoryClassifier";
 import { formatSupabaseError } from "@/lib/workshopApi";
+import type { BodyTypeKey } from "@/lib/bodyTypeMap";
 
 /** Statusy warsztatu widoczne publicznie (wyniki, oferty, strona warsztatu). */
 export function isPubliclyListedWorkshopStatus(status: string | null | undefined): boolean {
@@ -201,6 +202,7 @@ export type VehicleSearchCriteria = {
   year?: number | null;
   engine?: string;
   fuel?: string;
+  bodyType?: BodyTypeKey | "";
 };
 
 function inferFuelType(engine: string | null | undefined, fuel: string | null | undefined) {
@@ -344,6 +346,7 @@ export function matchWorkshopServicesForVehicle(
   const fuel = normalizeText(criteria.fuel ?? "");
   const motorQueryRaw = [criteria.fuel, criteria.engine].filter(Boolean).join(" ").trim();
   const year = typeof criteria.year === "number" && Number.isFinite(criteria.year) ? criteria.year : null;
+  const bodyType = (criteria.bodyType ?? "").trim() as BodyTypeKey | "";
 
   const strictMatches = services.filter((service) => {
     if (
@@ -365,10 +368,14 @@ export function matchWorkshopServicesForVehicle(
   });
   if (strictMatches.length > 0) return strictMatches;
 
-  if (vehicleType) {
+  if (vehicleType || bodyType) {
     const bodyTypeMatches = services.filter((s) => {
       const bt = (s as { body_types?: string[] | null }).body_types;
-      return Array.isArray(bt) && bt.length > 0;
+      if (!Array.isArray(bt) || bt.length === 0) return false;
+      // Jeśli klient wybrał konkretny typ nadwozia — filtruj dokładnie
+      if (bodyType) return bt.includes(bodyType);
+      // Jeśli nie wybrał — pokaż wszystkie ogólne ceny nadwoziowe
+      return true;
     });
     if (bodyTypeMatches.length > 0) return bodyTypeMatches;
   }

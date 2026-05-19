@@ -9,6 +9,7 @@ import { createTranslator, LanguageCode } from "@/lib/translations";
 import { useServyGoLanguage } from "@/lib/useServyGoLanguage";
 import type { MockWorkshop, WorkshopServiceOffer } from "@/lib/mockWorkshops";
 import { fetchPublicWorkshopsAsMock, matchWorkshopServicesForVehicle } from "@/lib/publicWorkshopsFromDb";
+import type { BodyTypeKey } from "@/lib/bodyTypeMap";
 import { resolveAvailableSlotsForWorkshopDay, toLocalDateKey } from "@/lib/bookingAvailability";
 import { getApproxCityCenterCoords, haversineDistanceKm, isValidLatLng } from "@/lib/offersGeo";
 import { classifyServiceCategory } from "@/lib/serviceCategoryClassifier";
@@ -192,6 +193,7 @@ export default function OffersPageClient() {
     year: "",
     engine: "",
     fuel: "",
+    bodyType: "" as BodyTypeKey | "",
     problem: "",
     vin: "",
     firstName: "",
@@ -266,6 +268,7 @@ export default function OffersPageClient() {
         year: (params.get("year") ?? "").trim().toLowerCase(),
         engine: (params.get("engine") ?? "").trim().toLowerCase(),
         fuel: (params.get("fuel") ?? params.get("engine") ?? "").trim().toLowerCase(),
+        bodyType: (params.get("bodyType") ?? "") as BodyTypeKey | "",
         problem: (params.get("problem") ?? "").trim(),
         vin: (params.get("vin") ?? "").trim().toUpperCase().slice(0, 17),
         firstName: (params.get("firstName") ?? "").trim(),
@@ -325,8 +328,9 @@ export default function OffersPageClient() {
         : null,
       engine: queryFilters.engine,
       fuel: queryFilters.fuel,
+      bodyType: queryFilters.bodyType,
     }),
-    [queryFilters.brand, queryFilters.engine, queryFilters.fuel, queryFilters.model, queryFilters.vehicleType, queryFilters.year],
+    [queryFilters.brand, queryFilters.bodyType, queryFilters.engine, queryFilters.fuel, queryFilters.model, queryFilters.vehicleType, queryFilters.year],
   );
 
   const catalogForOffersMatch = useMemo(() => {
@@ -411,6 +415,7 @@ export default function OffersPageClient() {
         year: yearFilter,
         engine: queryFilters.engine,
         fuel: queryFilters.fuel,
+        bodyType: queryFilters.bodyType,
       });
       if (svc.length === 0) return { workshop: w.name, rejected: "service_or_vehicle_mismatch" as const };
       return { workshop: w.name, rejected: "passed" as const };
